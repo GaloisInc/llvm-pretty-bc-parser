@@ -13,7 +13,7 @@ Extra-source-files:  disasm-test/tests/*.ll
 
 Source-repository head
   type:                git
-  location:            http://github.com/elliottt/llvm-pretty
+  location:            http://github.com/galoisinc/llvm-pretty-bc-parser
 
 Library
   Hs-source-dirs:      src
