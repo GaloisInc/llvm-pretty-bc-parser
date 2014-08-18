@@ -9,6 +9,10 @@ Build-type:          Simple
 Cabal-version:       >=1.16
 Synopsis:            LLVM bitcode parsing library
 
+Description:
+  A parser for the LLVM bitcode file format, yielding a Module from the
+  llvm-pretty package.
+
 Extra-source-files:  disasm-test/tests/*.ll
 
 Source-repository head
