@@ -1,0 +1,82 @@
+Name:                llvm-pretty-bc-parser
+Version:             0.1.2.0
+License:             BSD3
+License-file:        LICENSE
+Author:              Trevor Elliott <trevor@galois.com>
+Maintainer:          Trevor Elliott
+Category:            Text
+Build-type:          Simple
+Cabal-version:       >=1.16
+Synopsis:            LLVM bitcode parsing library
+
+Extra-source-files:  disasm-test/tests/*.ll
+
+Source-repository head
+  type:                git
+  location:            http://github.com/elliottt/llvm-pretty
+
+Library
+  Hs-source-dirs:      src
+  Exposed-modules:     Data.LLVM.CFG,
+                       Data.LLVM.BitCode
+
+  Default-language:    Haskell2010
+
+  Other-modules:       Data.LLVM.BitCode.BitString,
+                       Data.LLVM.BitCode.Bitstream,
+                       Data.LLVM.BitCode.GetBits,
+                       Data.LLVM.BitCode.IR,
+                       Data.LLVM.BitCode.IR.Attrs
+                       Data.LLVM.BitCode.IR.Blocks,
+                       Data.LLVM.BitCode.IR.Constants,
+                       Data.LLVM.BitCode.IR.Function,
+                       Data.LLVM.BitCode.IR.Globals,
+                       Data.LLVM.BitCode.IR.Metadata,
+                       Data.LLVM.BitCode.IR.Module,
+                       Data.LLVM.BitCode.IR.Types,
+                       Data.LLVM.BitCode.IR.Values,
+                       Data.LLVM.BitCode.Match,
+                       Data.LLVM.BitCode.Parse,
+                       Data.LLVM.BitCode.Record
+
+  Ghc-options:         -Wall
+
+  Build-depends:       base       >= 4 && < 5,
+                       containers >= 0.4,
+                       array      >= 0.3,
+                       pretty     >= 1.0.1,
+                       monadLib   >= 3.7.2,
+                       fgl        >= 5.5,
+                       cereal     >= 0.3.5.2,
+                       bytestring >= 0.9.1,
+                       llvm-pretty>= 0.1.0.0
+
+Executable llvm-disasm
+  Main-is:             LLVMDis.hs
+  Default-language:    Haskell2010
+  Ghc-options:         -Wall
+  Hs-source-dirs:      llvm-disasm
+  Build-depends:       bytestring >= 0.9.1,
+                       base       >= 4 && < 5,
+                       pretty     >= 1.0.1,
+                       containers >= 0.4,
+                       array      >= 0.3,
+                       monadLib   >= 3.7.2,
+                       fgl        >= 5.5,
+                       fgl-visualize >= 0.1,
+                       cereal     >= 0.3.5.2,
+                       llvm-pretty>= 0.1.0.0,
+                       llvm-pretty-bc-parser
+
+Test-suite disasm-test
+  type:                exitcode-stdio-1.0
+  Main-is:             Main.hs
+  hs-source-dirs:      disasm-test
+  Ghc-options:         -Wall
+  build-depends:       base >= 4 && < 5,
+                       process,
+                       directory,
+                       bytestring,
+                       filepath,
+                       llvm-pretty>= 0.1.0.0,
+                       llvm-pretty-bc-parser
