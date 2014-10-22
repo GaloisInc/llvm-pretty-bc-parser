@@ -83,6 +83,7 @@ type DefineList = Seq.Seq PartialDefine
 -- bocks.
 data PartialDefine = PartialDefine
   { partialAttrs   :: FunAttrs
+  , partialSection :: Maybe String
   , partialRetType :: Type
   , partialName    :: Symbol
   , partialArgs    :: [Typed Ident]
@@ -104,6 +105,7 @@ emptyPartialDefine proto = do
 
   return PartialDefine
     { partialAttrs     = protoAttrs proto
+    , partialSection   = protoSect proto
     , partialRetType   = rty
     , partialName      = Symbol (protoName proto)
     , partialArgs      = zipWith Typed tys names
@@ -176,6 +178,7 @@ finalizePartialDefine lkp pd =
       , defArgs    = partialArgs pd
       , defVarArgs = partialVarArgs pd
       , defBody    = body
+      , defSection = partialSection pd
       }
 
 -- | Individual label resolution step.

@@ -388,6 +388,7 @@ data FunProto = FunProto
   , protoAttrs :: FunAttrs
   , protoName  :: String
   , protoIndex :: Int
+  , protoSect  :: Maybe String
   } deriving (Show)
 
 -- | Push a function prototype on to the prototype stack.

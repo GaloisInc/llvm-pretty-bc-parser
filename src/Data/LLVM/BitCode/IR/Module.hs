@@ -16,7 +16,7 @@ import Data.LLVM.BitCode.Parse
 import Data.LLVM.BitCode.Record
 import Text.LLVM.AST
 
-import Control.Monad (foldM,guard)
+import Control.Monad (foldM,guard,when)
 import Data.List (sortBy)
 import Data.Monoid (mempty)
 import Data.Ord (comparing)
@@ -38,6 +38,7 @@ data PartialModule = PartialModule
   , partialAliases    :: AliasList
   , partialNamedMd    :: [NamedMd]
   , partialUnnamedMd  :: [PartialUnnamedMd]
+  , partialSections   :: Seq.Seq String
   }
 
 emptyPartialModule :: PartialModule
@@ -52,6 +53,7 @@ emptyPartialModule  = PartialModule
   , partialAliases    = mempty
   , partialNamedMd    = mempty
   , partialUnnamedMd  = mempty
+  , partialSections   = mempty
   }
 
 -- | Fixup the global variables and declarations, and return the completed
@@ -201,6 +203,10 @@ parseModuleBlockEntry pm (moduleCodeVersion -> Just r) = do
 
   return pm
 
+parseModuleBlockEntry pm (moduleCodeSectionname -> Just r) = do
+  name <- parseFields r 0 char
+  return pm { partialSections = partialSections pm Seq.|> name }
+
 parseModuleBlockEntry _ e =
   fail ("unexpected: " ++ show e)
 
@@ -212,6 +218,18 @@ parseFunProto r pm = label "FUNCTION" $ do
   isProto <-             field 2 numeric
 
   link    <-             field 3 linkage
+
+  section <-
+    if length (recordFields r) >= 6
+       then do ix <- field 6 numeric
+               if ix == 0
+                  then return Nothing
+                  else do let ix' = ix - 1
+                          when (ix' >= Seq.length (partialSections pm))
+                              (fail "invalid section name index")
+                          return (Just (Seq.index (partialSections pm) (ix - 1)))
+
+       else return Nothing
 
   -- push the function type
   ix   <- nextValueId
@@ -229,6 +247,7 @@ parseFunProto r pm = label "FUNCTION" $ do
           }
         , protoName  = name
         , protoIndex = ix
+        , protoSect  = section
         }
 
   if isProto == (0 :: Int)
