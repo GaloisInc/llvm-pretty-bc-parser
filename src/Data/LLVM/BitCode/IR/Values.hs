@@ -23,8 +23,8 @@ import qualified Data.Map as Map
 
 -- | Get either a value from the value table, with its value, or parse a value
 -- and a type.
-getValueTypePair :: Record -> Int -> Parse (Typed PValue, Int)
-getValueTypePair r ix = do
+getValueTypePair :: ValueTable -> Record -> Int -> Parse (Typed PValue, Int)
+getValueTypePair t r ix = do
   let field = parseField r
   n  <- field ix numeric
   mb <- lookupValue n
@@ -34,9 +34,14 @@ getValueTypePair r ix = do
 
     -- forward reference
     Nothing -> do
-      ty   <- getType =<< field (ix+1) numeric
-      name <- entryName =<< adjustId n
-      return (Typed ty (ValIdent (Ident name)), ix+2)
+      ty  <- getType =<< field (ix+1) numeric
+      n'  <- adjustId n
+      cxt <- getContext
+      let ref = forwardRef cxt n' t
+
+      -- generate the forward reference to the value only, as we already know
+      -- what the type should be.
+      return (Typed ty (typedValue ref), ix+2)
 
 -- | Get a single value from the value table.
 getValue :: Type -> Int -> Parse (Typed PValue)

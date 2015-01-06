@@ -311,7 +311,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
   -- [opval,ty,opval,opcode]
   2 -> label "FUNC_CODE_INST_BINOP" $ do
     let field = parseField r
-    (lhs,ix) <- getValueTypePair r 0
+    (lhs,ix) <- getValueTypePair t r 0
     rhs      <- getValue (typedType lhs) =<< field ix numeric
     mkInstr  <- field (ix + 1) binop
     -- if there's an extra field on the end of the record, it's for designating
@@ -323,24 +323,24 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
   -- [opval,opty,destty,castopc]
   3 -> label "FUNC_CODE_INST_CAST" $ do
     let field = parseField r
-    (tv,ix) <- getValueTypePair r 0
+    (tv,ix) <- getValueTypePair t r 0
     resty   <- getType =<< field ix numeric
     cast'   <-             field (ix+1) castOp
     result resty (cast' tv resty) d
 
-  4 -> label "FUNC_CODE_INST_GEP" (parseGEP False r d)
+  4 -> label "FUNC_CODE_INST_GEP" (parseGEP t False r d)
 
   -- [opval,ty,opval,opval]
   5 -> label "FUNC_CODE_INST_SELECT" $ do
     let field = parseField r
-    (tval,ix) <- getValueTypePair r 0
+    (tval,ix) <- getValueTypePair t r 0
     fval      <- getValue (typedType tval)       =<< field  ix    numeric
     cond      <- getValue (PrimType (Integer 1)) =<< field (ix+1) numeric
     result (typedType tval) (Select cond tval (typedValue fval)) d
 
   -- [ty,opval,opval]
   6 -> label "FUNC_CODE_INST_EXTRACTELT" $ do
-    (tv,ix) <- getValueTypePair r 0
+    (tv,ix) <- getValueTypePair t r 0
     idx     <- getValue (PrimType (Integer 32)) =<< parseField r ix numeric
     (_, ty) <- elimVector (typedType tv)
         `mplus` fail "invalid EXTRACTELT record"
@@ -349,7 +349,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
   -- [ty,opval,opval,opval]
   7 -> label "FUNC_CODE_INST_INSERTELT" $ do
     let field = parseField r
-    (tv,ix) <- getValueTypePair r 0
+    (tv,ix) <- getValueTypePair t r 0
     (_,pty) <- elimVector (typedType tv)
                  `mplus` fail "invalid INSERTELT record (not a vector)"
     elt     <- getValue pty                     =<< field  ix    numeric
@@ -359,9 +359,9 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
   -- [opval,ty,opval,opval]
   8 -> label "FUNC_CODE_INST_SHUFFLEVEC" $ do
     let field = parseField r
-    (vec1,ix) <- getValueTypePair r 0
+    (vec1,ix) <- getValueTypePair t r 0
     vec2      <- getValue (typedType vec1) =<< field  ix    numeric
-    (mask,_)  <- getValueTypePair r (ix+1)
+    (mask,_)  <- getValueTypePair t r (ix+1)
     result (typedType vec1) (ShuffleVector vec1 (typedValue vec2) mask) d
 
   -- 9 is handled lower down, as it's processed the same way as 28
@@ -370,7 +370,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
   10 -> label "FUNC_CODE_INST_RET" $ case length (recordFields r) of
     0 -> effect RetVoid d
     _ -> do
-      (tv,_) <- getValueTypePair r 0
+      (tv,_) <- getValueTypePair t r 0
       effect (Ret tv) d
 
   -- [bb#,bb#,cond] or [bb#]
@@ -432,10 +432,10 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     let field = parseField r
     normal      <- field 2 numeric
     unwind      <- field 3 numeric
-    (f,ix)      <- getValueTypePair r 4
+    (f,ix)      <- getValueTypePair t r 4
     (ret,as,va) <- elimFunPtr (typedType f)
         `mplus` fail "invalid INVOKE record"
-    args        <- parseInvokeArgs va r ix as
+    args        <- parseInvokeArgs t va r ix as
     result ret (Invoke (typedType f) (typedValue f) args normal unwind) d
 
   14 -> label "FUNC_CODE_INST_UNWIND" (effect Unwind d)
@@ -479,7 +479,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
 
   -- [opty,op,align,vol]
   20 -> label "FUNC_CODE_INST_LOAD" $ do
-    (tv,ix) <- getValueTypePair r 0
+    (tv,ix) <- getValueTypePair t r 0
     aval    <- parseField r ix numeric
     ret     <- elimPtrTo (typedType tv)
         `mplus` fail "invalid type to INST_LOAD"
@@ -500,7 +500,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
   -- [ptrty,ptr,val,align,vol]
   24 -> label "FUNC_CODE_INST_STORE" $ do
     let field = parseField r
-    (ptr,ix) <- getValueTypePair r 0
+    (ptr,ix) <- getValueTypePair t r 0
     ty       <- elimPtrTo (typedType ptr)
                   `mplus` fail "invalid type to INST_STORE"
     val      <- getValue ty =<< field ix numeric
@@ -513,14 +513,14 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
 
   -- [opty, opval, n x indices]
   26 -> label "FUNC_CODE_INST_EXTRACTVAL" $ do
-    (tv,ix) <- getValueTypePair r 0
+    (tv,ix) <- getValueTypePair t r 0
     ixs     <- parseIndexes r ix
     ret     <- interpValueIndex (typedType tv) ixs
     result ret (ExtractValue tv ixs) d
 
   27 -> label "FUNC_CODE_INST_INSERTVAL" $ do
-    (tv,ix)   <- getValueTypePair r 0
-    (elt,ix') <- getValueTypePair r ix
+    (tv,ix)   <- getValueTypePair t r 0
+    (elt,ix') <- getValueTypePair t r ix
     ixs       <- parseIndexes r ix'
     result (typedType tv) (InsertValue tv elt ixs) d
 
@@ -528,13 +528,13 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
 
   29 -> label "FUNC_CODE_INST_VSELECT" $ do
     let field = parseField r
-    (tv,ix) <- getValueTypePair r 0
+    (tv,ix) <- getValueTypePair t r 0
     fv      <- getValue (typedType tv) =<< field ix numeric
-    (c,_)   <- getValueTypePair r (ix+1)
+    (c,_)   <- getValueTypePair t r (ix+1)
     result (typedType tv) (Select c tv (typedValue fv)) d
 
   -- 30 is handled lower down, as it's processed the same way as 4
-  30 -> label "FUNC_CODE_INST_INBOUNDS_GEP" (parseGEP True r d)
+  30 -> label "FUNC_CODE_INST_INBOUNDS_GEP" (parseGEP t True r d)
 
   31 -> label "FUNC_CODE_INST_INDIRECTBR" $ do
     let field = parseField r
@@ -551,10 +551,10 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
 
   -- [paramattrs, cc, fnty, fnid, arg0 .. arg n]
   34 -> label "FUNC_CODE_INST_CALL" $ do
-    (Typed fnty fn,ix) <- getValueTypePair r 2
+    (Typed fnty fn,ix) <- getValueTypePair t r 2
     label (show fn) $ do
       (ret,as,va) <- elimFunPtr fnty `mplus` fail "invalid CALL record"
-      args <- parseCallArgs va r ix as
+      args <- parseCallArgs t va r ix as
       result ret (Call False fnty fn args) d
 
   -- [Line,Col,ScopeVal, IAVal]
@@ -599,18 +599,18 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
 
   -- [opval]
   39 -> label "FUNC_CODE_RESUME" $ do
-    (tv,_) <- getValueTypePair r 0
+    (tv,_) <- getValueTypePair t r 0
     effect (Resume tv) d
 
   -- [ty,val,val,num,id0,val0...]
   40 -> label "FUNC_CODE_LANDINGPAD" $ do
     let field = parseField r
     ty          <- getType =<< field 0 numeric
-    (persFn,ix) <- getValueTypePair r 1
+    (persFn,ix) <- getValueTypePair t r 1
     val         <- field ix numeric
     let isCleanup = val /= (0 :: Int)
     len         <- field (ix + 1) numeric
-    clauses     <- parseClauses r len (ix + 2)
+    clauses     <- parseClauses t r len (ix + 2)
     result ty (LandingPad ty persFn isCleanup clauses) d
 
   -- [opty, op, align, vol,
@@ -628,7 +628,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
    |  code == 9
    || code == 28 -> label "FUNC_CODE_INST_CMP2" $ do
     let field = parseField r
-    (lhs,ix) <- getValueTypePair r 0
+    (lhs,ix) <- getValueTypePair t r 0
     rhs      <- getValue (typedType lhs) =<< field ix numeric
 
     let ty = typedType lhs
@@ -666,10 +666,10 @@ parseFunctionBlockEntry _ _ e = do
   fail ("function block: unexpected: " ++ show e)
 
 -- [n x operands]
-parseGEP :: Bool -> Record -> PartialDefine -> Parse PartialDefine
-parseGEP ib r d = do
-  (tv,ix) <- getValueTypePair r 0
-  args    <- label "parseGepArgs" (parseGepArgs r ix)
+parseGEP :: ValueTable -> Bool -> Record -> PartialDefine -> Parse PartialDefine
+parseGEP t ib r d = do
+  (tv,ix) <- label "valuetypepair" $ getValueTypePair t r 0
+  args    <- label "parseGepArgs" (parseGepArgs t r ix)
   rty     <- label "interpGep"    (interpGep (typedType tv) args)
   result rty (GEP ib tv args) d
 
@@ -715,20 +715,20 @@ parsePhiArgs relIds t r = loop 1
       return (entry:rest)
 
 -- | Parse the arguments for a call record.
-parseCallArgs :: Bool -> Record -> Int -> [Type] -> Parse [Typed PValue]
-parseCallArgs  = parseArgs $ \ ty i ->
+parseCallArgs :: ValueTable -> Bool -> Record -> Int -> [Type] -> Parse [Typed PValue]
+parseCallArgs t = parseArgs t $ \ ty i ->
   case ty of
     PrimType Label -> return (Typed ty (ValLabel i))
     _              -> getValue ty i
 
 -- | Parse the arguments for an invoke record.
-parseInvokeArgs :: Bool -> Record -> Int -> [Type] -> Parse [Typed PValue]
-parseInvokeArgs  = parseArgs getValue
+parseInvokeArgs :: ValueTable -> Bool -> Record -> Int -> [Type] -> Parse [Typed PValue]
+parseInvokeArgs t = parseArgs t getValue
 
 -- | Parse arguments for the invoke and call instructions.
-parseArgs :: (Type -> Int -> Parse (Typed PValue))
+parseArgs :: ValueTable -> (Type -> Int -> Parse (Typed PValue))
           -> Bool -> Record -> Int -> [Type] -> Parse [Typed PValue]
-parseArgs parse va r = loop
+parseArgs t parse va r = loop
   where
   field = parseField r
 
@@ -744,19 +744,19 @@ parseArgs parse va r = loop
 
   varArgs ix
     | ix < len  = do
-      (tv,ix') <- getValueTypePair r ix
+      (tv,ix') <- getValueTypePair t r ix
       rest     <- varArgs ix'
       return (tv:rest)
     | otherwise = return []
 
 
-parseGepArgs :: Record -> Int -> Parse [Typed PValue]
-parseGepArgs r = loop
+parseGepArgs :: ValueTable -> Record -> Int -> Parse [Typed PValue]
+parseGepArgs t r = loop
   where
   loop n = parse `mplus` return []
     where
     parse = do
-      (tv,ix') <- getValueTypePair r n
+      (tv,ix') <- getValueTypePair t r n
       rest     <- loop ix'
       return (tv:rest)
 
@@ -871,14 +871,14 @@ parseNewSwitchLabels width r = loop
 
 type PClause = Clause' Int
 
-parseClauses :: Record -> Int -> Int -> Parse [PClause]
-parseClauses r = loop
+parseClauses :: ValueTable -> Record -> Int -> Int -> Parse [PClause]
+parseClauses t r = loop
   where
   loop n ix
     | n <= 0    = return []
     | otherwise = do
       cty       <- parseField r ix numeric
-      (val,ix') <- getValueTypePair r (ix + 1)
+      (val,ix') <- getValueTypePair t r (ix + 1)
       cs        <- loop (n-1) ix'
       case cty :: Int of
         0 -> return (Catch  val : cs)
