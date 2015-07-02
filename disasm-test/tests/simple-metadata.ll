@@ -1,5 +1,5 @@
 
-!0 = metadata !{ metadata !"string" }
+!0 = !{ !"string" }
 
 define void @f() {
   ret void

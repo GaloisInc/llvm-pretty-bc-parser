@@ -1,8 +1,8 @@
 
 ; Some unnamed metadata nodes, which are referenced by the named metadata.
-!0 = metadata !{ metadata !"zero" }
-!1 = metadata !{ metadata !{ metadata !"three" }, metadata !2 }
-!2 = metadata !{ metadata !"one"  }
+!0 = !{ !"zero" }
+!1 = !{ !{ !"three" }, !2 }
+!2 = !{ !"one"  }
 
 ; A named metadata.
 !thinger = !{ !0, !1, !2 }
