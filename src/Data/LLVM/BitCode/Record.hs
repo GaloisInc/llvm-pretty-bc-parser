@@ -79,7 +79,7 @@ parseField :: Record -> LookupField a
 parseField r n p = case (p <=< fieldAt n) r of
   Just a  -> return a
   Nothing -> fail $ unwords
-    [ "unable to parse record field", show n, "of record", show r ]
+    [ "parseField: unable to parse record field", show n, "of record", show r ]
 
 -- | Parse all record fields starting from an index.
 parseFields :: Record -> Int -> Match Field a -> Parse [a]
@@ -93,7 +93,7 @@ parseSlice r l n p = loop (take n (drop l (recordFields r)))
     case p f of
       Just a  -> (a:) `fmap` loop fs
       Nothing -> fail $ unwords
-        ["unable to parse record field", show n, "of record", show r]
+        ["parseSlice: unable to parse record field", show n, "of record", show r]
 
   loop []     = return []
 
@@ -124,7 +124,7 @@ char :: Match Field Char
 char  = fmap chr . numeric
 
 string :: Match Field String
-string  = fieldArray (fmap chr . numeric)
+string  = fieldArray char
 
 cstring :: Match Field String
 cstring  = fieldArray (fieldChar6 ||| char)

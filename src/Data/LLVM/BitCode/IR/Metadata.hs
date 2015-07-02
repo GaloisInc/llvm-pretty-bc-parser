@@ -191,7 +191,7 @@ parseMetadataEntry :: ValueTable -> MetadataTable -> PartialMetadata -> Entry
 parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
   -- [values]
   1 -> label "METADATA_STRING" $ do
-    str <- parseFields r 0 char `mplus` parseField r 0 cstring
+    str <- parseFields r 0 char `mplus` parseField r 0 string
     return $! updateMetadataTable (addString str) pm
 
   -- [type num, value num]
@@ -216,7 +216,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
 
   -- [values]
   4 -> label "METADATA_NAME" $ do
-    name <- parseFields r 0 char
+    name <- parseFields r 0 char `mplus` parseField r 0 cstring
     return $! setNextName name pm
 
   -- [n x md num]
