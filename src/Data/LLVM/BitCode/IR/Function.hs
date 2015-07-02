@@ -654,9 +654,9 @@ parseFunctionBlockEntry t d (metadataBlockId -> Just es) = do
   _ <- parseMetadataBlock t es
   return d
 
-parseFunctionBlockEntry _ d (metadataAttachmentBlockId -> Just _) = do
-  -- skip the metadata attachment block
-  return d
+parseFunctionBlockEntry t d (metadataAttachmentBlockId -> Just es) = do
+  (_,_,md) <- parseMetadataBlock t es
+  return d { partialBody = addAttachments md (partialBody d) }
 
 parseFunctionBlockEntry _ d (abbrevDef -> Just _) =
   -- ignore any abbreviation definitions
@@ -664,6 +664,30 @@ parseFunctionBlockEntry _ d (abbrevDef -> Just _) =
 
 parseFunctionBlockEntry _ _ e = do
   fail ("function block: unexpected: " ++ show e)
+
+addAttachments :: MetadataAttachments -> BlockList -> BlockList
+addAttachments atts blocks = go 0 (Map.toList atts) (Seq.viewl blocks)
+  where
+  go _   []  (b Seq.:< bs) = b Seq.<| bs
+  go off mds (b Seq.:< bs) =
+    b' Seq.<| go (off + numStmts) delay (Seq.viewl bs)
+    where
+    numStmts = Seq.length (partialStmts b)
+
+    -- partition the attachments into those that apply to this block, and those
+    -- that don't
+    (use,delay)   = span applies mds
+    applies (i,_) = i - off < numStmts
+
+    b' | null use  = b
+       | otherwise = b { partialStmts = foldl addMd (partialStmts b) use }
+
+    addMd stmts (i,md') = Seq.adjust update i stmts
+      where
+      update (Result n s md) = Result n s (md ++ md')
+      update (Effect   s md) = Effect   s (md ++ md')
+
+  go _ _ Seq.EmptyL = Seq.empty
 
 -- [n x operands]
 parseGEP :: ValueTable -> Bool -> Record -> PartialDefine -> Parse PartialDefine

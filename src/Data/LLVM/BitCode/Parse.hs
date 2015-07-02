@@ -4,6 +4,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Data.LLVM.BitCode.Parse where
 
@@ -85,6 +86,7 @@ data ParseState = ParseState
   , psTypeName      :: Maybe String
   , psNextTypeId    :: !Int
   , psLastLoc       :: Maybe PDebugLoc
+  , psKinds         :: !KindTable
   } deriving (Show)
 
 -- | The initial parsing state.
@@ -100,6 +102,7 @@ emptyParseState  = ParseState
   , psTypeName      = Nothing
   , psNextTypeId    = 0
   , psLastLoc       = Nothing
+  , psKinds         = emptyKindTable
   }
 
 -- | The next implicit result id.
@@ -579,3 +582,35 @@ addTypeSymbol ix n ts = ts
   { tsById   = Map.insert ix n (tsById ts)
   , tsByName = Map.insert n ix (tsByName ts)
   }
+
+
+-- Metadata Kind Table ---------------------------------------------------------
+
+data KindTable = KindTable
+  { ktNames :: Map.Map Int String
+  } deriving (Show)
+
+emptyKindTable :: KindTable
+emptyKindTable  = KindTable
+  { ktNames = Map.fromList
+    [ (0, "dbg"   )
+    , (1, "tbaa"  )
+    , (2, "prof"  )
+    , (3, "fpmath")
+    , (4, "range" )
+    ]
+  }
+
+addKind :: Int -> String -> Parse ()
+addKind kind name = Parse $ do
+  ps <- get
+  let KindTable { .. } = psKinds ps
+  set $! ps { psKinds = KindTable { ktNames = Map.insert kind name ktNames } }
+
+getKind :: Int -> Parse String
+getKind kind = Parse $ do
+  ps <- get
+  let KindTable { .. } = psKinds ps
+  case Map.lookup kind ktNames of
+    Just name -> return name
+    Nothing   -> fail ("Unknown kind id: " ++ show kind)

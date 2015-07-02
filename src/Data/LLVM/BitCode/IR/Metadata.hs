@@ -5,6 +5,7 @@ module Data.LLVM.BitCode.IR.Metadata (
     parseMetadataBlock
   , PartialUnnamedMd(..)
   , finalizePartialUnnamedMd
+  , MetadataAttachments
   ) where
 
 import Data.LLVM.BitCode.Bitstream
@@ -15,40 +16,10 @@ import Text.LLVM.AST
 import Text.LLVM.Labels
 
 import Control.Exception (throw)
-import Control.Monad (foldM,guard)
+import Control.Monad (foldM,guard,mplus,unless,when)
 import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
 import qualified Data.Traversable as T
-
-
--- Kind Tables -----------------------------------------------------------------
-
-data KindTable = KindTable
-  { ktNextId  :: !Int
-  , ktNameMap :: Map.Map String Int
-  } deriving (Show)
-
-emptyKindTable :: KindTable
-emptyKindTable  = KindTable
-  { ktNextId  = 5
-  , ktNameMap = Map.fromList
-    [ ("dbg",    0)
-    , ("tbaa",   1)
-    , ("prof",   2)
-    , ("fpmath", 3)
-    , ("range",  4)
-    ]
-  }
-
-getKindId :: String -> KindTable -> (Int,KindTable)
-getKindId str kt = case Map.lookup str (ktNameMap kt) of
-  Just i  -> (i,kt)
-  Nothing -> (ktNextId kt, kt')
-  where
-  kt' = kt
-    { ktNextId  = ktNextId kt + 1
-    , ktNameMap = Map.insert str (ktNextId kt) (ktNameMap kt)
-    }
 
 
 -- Parsing State ---------------------------------------------------------------
@@ -56,7 +27,7 @@ getKindId str kt = case Map.lookup str (ktNameMap kt) of
 data MetadataTable = MetadataTable
   { mtEntries   :: MdTable
   , mtNextNode  :: !Int
-  , mtNodes     :: Map.Map Int (Bool,Int)
+  , mtNodes     :: Map.Map Int (Bool,Bool,Int)
   } deriving (Show)
 
 emptyMetadataTable :: MdTable -> MetadataTable
@@ -74,71 +45,74 @@ addMetadata val mt = (ix, mt { mtEntries = es' })
   where
   (ix,es') = addValue' (metadata val) (mtEntries mt)
 
-nameNode :: Bool -> Int -> MetadataTable -> MetadataTable
-nameNode fnLocal ix mt = mt
-  { mtNodes    = Map.insert ix (fnLocal,mtNextNode mt) (mtNodes mt)
+addMdValue :: Typed PValue -> MetadataTable -> MetadataTable
+addMdValue tv mt = mt { mtEntries = addValue tv (mtEntries mt) }
+
+nameNode :: Bool -> Bool -> Int -> MetadataTable -> MetadataTable
+nameNode fnLocal isDistinct ix mt = mt
+  { mtNodes    = Map.insert ix (fnLocal,isDistinct,mtNextNode mt) (mtNodes mt)
   , mtNextNode = mtNextNode mt + 1
   }
 
 addString :: String -> MetadataTable -> MetadataTable
 addString str = snd . addMetadata (ValMdString str)
 
+-- | Add a new node, that might be distinct.
 addNode :: Bool -> [Typed PValue] -> MetadataTable -> MetadataTable
-addNode fnLocal vals mt = nameNode fnLocal ix mt'
+addNode isDistinct vals mt = nameNode False isDistinct ix mt'
+  where
+  (ix,mt') = addMetadata (ValMdNode vals) mt
+
+addOldNode :: Bool -> [Typed PValue] -> MetadataTable -> MetadataTable
+addOldNode fnLocal vals mt = nameNode fnLocal False ix mt'
   where
   (ix,mt') = addMetadata (ValMdNode vals) mt
 
 mdForwardRef :: [String] -> MetadataTable -> Int -> Typed PValue
 mdForwardRef cxt mt ix = fromMaybe fallback nodeRef
   where
-  fallback  = forwardRef cxt ix (mtEntries mt)
-  reference = metadata . ValMdRef . snd
-  nodeRef   = reference `fmap` Map.lookup ix (mtNodes mt)
+  fallback          = forwardRef cxt ix (mtEntries mt)
+  reference (_,_,r) = metadata (ValMdRef r)
+  nodeRef           = reference `fmap` Map.lookup ix (mtNodes mt)
 
 mdNodeRef :: [String] -> MetadataTable -> Int -> Int
 mdNodeRef cxt mt ix =
-  maybe (throw (BadValueRef cxt ix)) snd (Map.lookup ix (mtNodes mt))
+  maybe (throw (BadValueRef cxt ix)) prj (Map.lookup ix (mtNodes mt))
+  where
+  prj (_,_,x) = x
 
 mkMdRefTable :: MetadataTable -> MdRefTable
 mkMdRefTable mt = Map.mapMaybe step (mtNodes mt)
   where
-  step (fnLocal,ix) = do
+  step (fnLocal,_,ix) = do
     guard (not fnLocal)
     return ix
-
-type KindMap = Map.Map Int Int
 
 data PartialMetadata = PartialMetadata
   { pmEntries       :: MetadataTable
   , pmNamedEntries  :: Map.Map String [Int]
-  , pmKindMap       :: KindMap
-  , pmKindTable     :: KindTable
   , pmNextName      :: Maybe String
+  , pmAttachments   :: MetadataAttachments
   } deriving (Show)
 
 emptyPartialMetadata :: MdTable -> PartialMetadata
 emptyPartialMetadata es = PartialMetadata
   { pmEntries       = emptyMetadataTable es
   , pmNamedEntries  = Map.empty
-  , pmKindMap       = Map.empty
-  , pmKindTable     = emptyKindTable
   , pmNextName      = Nothing
+  , pmAttachments   = Map.empty
   }
 
 updateMetadataTable :: (MetadataTable -> MetadataTable)
                     -> (PartialMetadata -> PartialMetadata)
 updateMetadataTable f pm = pm { pmEntries = f (pmEntries pm) }
 
-addKind :: Int -> String -> PartialMetadata -> PartialMetadata
-addKind ix str pm = pm
-  { pmKindMap   = Map.insert ix strId (pmKindMap pm)
-  , pmKindTable = kt'
-  }
-  where
-  (strId,kt') = getKindId str (pmKindTable pm)
-
 setNextName :: String -> PartialMetadata -> PartialMetadata
 setNextName name pm = pm { pmNextName = Just name }
+
+addAttachment :: Int -> [(String,PValMd)] -> PartialMetadata -> PartialMetadata
+addAttachment instr md pm =
+  pm { pmAttachments = Map.insert instr md (pmAttachments pm) }
 
 nameMetadata :: [Int] -> PartialMetadata -> Parse PartialMetadata
 nameMetadata val pm = case pmNextName pm of
@@ -156,6 +130,7 @@ namedEntries  = map (uncurry NamedMd)
 data PartialUnnamedMd = PartialUnnamedMd
   { pumIndex  :: Int
   , pumValues :: [Typed PValue]
+  , pumDistinct :: Bool
   } deriving (Show)
 
 finalizePartialUnnamedMd :: PartialUnnamedMd -> Parse UnnamedMd
@@ -166,6 +141,7 @@ finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` fixLabels (pumValues pum)
   mkUnnamedMd vs = UnnamedMd
     { umIndex  = pumIndex pum
     , umValues = vs
+    , umDistinct = pumDistinct pum
     }
 
 unnamedEntries :: PartialMetadata -> ([PartialUnnamedMd],[PartialUnnamedMd])
@@ -174,22 +150,24 @@ unnamedEntries pm = foldl resolveNode ([],[]) (Map.toList (mtNodes mt))
   mt = pmEntries pm
   es = valueEntries (mtEntries mt)
 
-  resolveNode (gs,fs) (ref,(fnLocal,ix)) = case lookupNode ref ix of
+  resolveNode (gs,fs) (ref,(fnLocal,d,ix)) = case lookupNode ref d ix of
     Just pum | fnLocal   -> (gs,pum:fs)
              | otherwise -> (pum:gs,fs)
     Nothing              -> (gs,fs)
 
-  lookupNode ref ix = do
+  lookupNode ref d ix = do
     Typed { typedValue = ValMd (ValMdNode vs) } <- Map.lookup ref es
     return PartialUnnamedMd
       { pumIndex  = ix
       , pumValues = vs
+      , pumDistinct = d
       }
 
-type ParsedMetadata = ([NamedMd],([PartialUnnamedMd],[PartialUnnamedMd]))
+type MetadataAttachments = Map.Map Int [(String,PValMd)]
+type ParsedMetadata = ([NamedMd],([PartialUnnamedMd],[PartialUnnamedMd]),MetadataAttachments)
 
 parsedMetadata :: PartialMetadata -> ParsedMetadata
-parsedMetadata pm = (namedEntries pm, unnamedEntries pm)
+parsedMetadata pm = (namedEntries pm, unnamedEntries pm, pmAttachments pm)
 
 -- Metadata Parsing ------------------------------------------------------------
 
@@ -213,33 +191,53 @@ parseMetadataEntry :: ValueTable -> MetadataTable -> PartialMetadata -> Entry
 parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
   -- [values]
   1 -> label "METADATA_STRING" $ do
-    str <- parseFields r 0 char
+    str <- parseFields r 0 char `mplus` parseField r 0 cstring
     return $! updateMetadataTable (addString str) pm
 
-  -- 2 is unused.
+  -- [type num, value num]
+  2 -> label "METADATA_VALUE" $ do
+    unless (length (recordFields r) == 2)
+           (fail "Invalid record")
 
-  -- 3 is unused.
+    let field = parseField r
+    ty  <- getType =<< field 0 numeric
+    when (ty == PrimType Metadata || ty == PrimType Void)
+         (fail "invalid record")
+
+    cxt <- getContext
+    ix  <- field 1 numeric
+    let tv = forwardRef cxt ix vt
+
+    return $! updateMetadataTable (addMdValue tv) pm
+
+
+  -- [n x md num]
+  3 -> label "METADATA_NODE" (parseMetadataNode False mt r pm)
 
   -- [values]
   4 -> label "METADATA_NAME" $ do
     name <- parseFields r 0 char
     return $! setNextName name pm
 
-  -- 5 is unused.
+  -- [n x md num]
+  5 -> label "METADATA_DISTINCT_NODE" (parseMetadataNode True mt r pm)
 
   -- [n x [id, name]]
   6 -> label "METADATA_KIND" $ do
     kind <- parseField  r 0 numeric
     name <- parseFields r 1 char
-    return $! addKind kind name pm
+    addKind kind name
+    return pm
 
-  -- 7 is unused.
+  -- [distinct, line, col, scope, inlined-at?] 
+  7 -> label "METADATA_LOCATION" $ do
+    fail "not implemented"
 
   -- [n x (type num, value num)]
-  8 -> label "METADATA_NODE" (parseMetadataNode False vt mt r pm)
+  8 -> label "METADATA_OLD_NODE" (parseMetadataOldNode False vt mt r pm)
 
   -- [n x (type num, value num)]
-  9 -> label "METADATA_FN_NODE" (parseMetadataNode True vt mt r pm)
+  9 -> label "METADATA_OLD_FN_NODE" (parseMetadataOldNode True vt mt r pm)
 
   -- [n x mdnodes]
   10 -> label "METADATA_NAMED_NODE" $ do
@@ -250,7 +248,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
 
   -- [m x [value, [n x [id, mdnode]]]
   11 -> label "METADATA_ATTACHMENT" $ do
-    fail "not implemented"
+    let field = parseField r
+    inst <- field 0 numeric
+    md   <- parseAttachment r
+    return $! addAttachment inst md pm
 
   code -> fail ("unknown record code: " ++ show code)
 
@@ -261,12 +262,31 @@ parseMetadataEntry _ _ _ r =
   fail ("unexpected: " ++ show r)
 
 
--- | Parse out a metadata node.
-parseMetadataNode :: Bool -> ValueTable -> MetadataTable -> Record
-                  -> PartialMetadata -> Parse PartialMetadata
-parseMetadataNode fnLocal vt mt r pm = do
+parseAttachment :: Record -> Parse [(String,PValMd)]
+parseAttachment r = loop (length (recordFields r) - 1) []
+  where
+  loop 0 acc = return acc
+  loop n acc = do
+    kind <- getKind     =<< parseField r (n - 1) numeric
+    md   <- getMetadata =<< parseField r  n      numeric
+    loop (n - 2) ((kind,typedValue md) : acc)
+
+-- | Parse a metadata node.
+parseMetadataNode :: Bool -> MetadataTable -> Record -> PartialMetadata
+                  -> Parse PartialMetadata
+parseMetadataNode isDistinct mt r pm = do
+  ixs <- parseFields r 0 numeric
+  cxt <- getContext
+  let tvs = [ mdForwardRef cxt mt (ix - 1) | ix <- ixs ]
+  return $! updateMetadataTable (addNode isDistinct tvs) pm
+
+
+-- | Parse out a metadata node in the old format.
+parseMetadataOldNode :: Bool -> ValueTable -> MetadataTable -> Record
+                     -> PartialMetadata -> Parse PartialMetadata
+parseMetadataOldNode fnLocal vt mt r pm = do
   values <- loop =<< parseFields r 0 numeric
-  return $! updateMetadataTable (addNode fnLocal values) pm
+  return $! updateMetadataTable (addOldNode fnLocal values) pm
   where
   loop fs = case fs of
 
