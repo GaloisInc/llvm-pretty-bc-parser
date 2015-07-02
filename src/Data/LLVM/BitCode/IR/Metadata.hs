@@ -58,7 +58,7 @@ addString :: String -> MetadataTable -> MetadataTable
 addString str = snd . addMetadata (ValMdString str)
 
 -- | Add a new node, that might be distinct.
-addNode :: Bool -> [Typed PValue] -> MetadataTable -> MetadataTable
+addNode :: Bool -> [Maybe PValMd] -> MetadataTable -> MetadataTable
 addNode isDistinct vals mt = nameNode False isDistinct ix mt'
   where
   (ix,mt') = addMetadata (ValMdNode vals) mt
@@ -66,13 +66,15 @@ addNode isDistinct vals mt = nameNode False isDistinct ix mt'
 addOldNode :: Bool -> [Typed PValue] -> MetadataTable -> MetadataTable
 addOldNode fnLocal vals mt = nameNode fnLocal False ix mt'
   where
-  (ix,mt') = addMetadata (ValMdNode vals) mt
+  (ix,mt') = addMetadata (ValMdNode [ Just (ValMdValue tv) | tv <- vals ]) mt
 
-mdForwardRef :: [String] -> MetadataTable -> Int -> Typed PValue
+mdForwardRef :: [String] -> MetadataTable -> Int -> PValMd
 mdForwardRef cxt mt ix = fromMaybe fallback nodeRef
   where
-  fallback          = forwardRef cxt ix (mtEntries mt)
-  reference (_,_,r) = metadata (ValMdRef r)
+  fallback          = case forwardRef cxt ix (mtEntries mt) of
+                        Typed { typedValue = ValMd md } -> md
+                        tv                              -> ValMdValue tv
+  reference (_,_,r) = ValMdRef r
   nodeRef           = reference `fmap` Map.lookup ix (mtNodes mt)
 
 mdNodeRef :: [String] -> MetadataTable -> Int -> Int
@@ -129,7 +131,7 @@ namedEntries  = map (uncurry NamedMd)
 
 data PartialUnnamedMd = PartialUnnamedMd
   { pumIndex  :: Int
-  , pumValues :: [Typed PValue]
+  , pumValues :: [Maybe PValMd]
   , pumDistinct :: Bool
   } deriving (Show)
 
@@ -137,7 +139,7 @@ finalizePartialUnnamedMd :: PartialUnnamedMd -> Parse UnnamedMd
 finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` fixLabels (pumValues pum)
   where
   -- map through the list and typed PValue to change labels to textual ones
-  fixLabels      = mapM (T.mapM (relabel (const requireBbEntryName)))
+  fixLabels      = T.mapM (T.mapM (relabel (const requireBbEntryName)))
   mkUnnamedMd vs = UnnamedMd
     { umIndex  = pumIndex pum
     , umValues = vs
@@ -277,8 +279,9 @@ parseMetadataNode :: Bool -> MetadataTable -> Record -> PartialMetadata
 parseMetadataNode isDistinct mt r pm = do
   ixs <- parseFields r 0 numeric
   cxt <- getContext
-  let tvs = [ mdForwardRef cxt mt (ix - 1) | ix <- ixs ]
-  return $! updateMetadataTable (addNode isDistinct tvs) pm
+  let lkp ix | ix > 0    = Just (mdForwardRef cxt mt (ix - 1))
+             | otherwise = Nothing
+  return $! updateMetadataTable (addNode isDistinct (map lkp ixs)) pm
 
 
 -- | Parse out a metadata node in the old format.
@@ -294,7 +297,8 @@ parseMetadataOldNode fnLocal vt mt r pm = do
       cxt <- getContext
       ty  <- getType' tyId
       val <- case ty of
-        PrimType Metadata -> return (mdForwardRef cxt mt valId)
+        PrimType Metadata -> return $ Typed (PrimType Metadata)
+                                            (ValMd (mdForwardRef cxt mt valId))
         -- XXX need to check for a void type here
         _                 -> return (forwardRef cxt valId vt)
 
