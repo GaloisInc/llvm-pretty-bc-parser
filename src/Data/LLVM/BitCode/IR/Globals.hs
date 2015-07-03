@@ -77,6 +77,6 @@ finalizeGlobal pg = case pgValueIx pg of
     { globalSym   = pgSym pg
     , globalAttrs = pgAttrs pg
     , globalType  = pgType pg
-    , globalValue = val
+    , globalValue = Just val
     , globalAlign = pgAlign pg
     }

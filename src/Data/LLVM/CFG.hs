@@ -28,8 +28,10 @@ import           Control.Arrow
 import qualified Data.Graph.Inductive.Query.Dominators as Dom
 import qualified Data.Graph.Inductive                  as G
 import qualified Data.Map                              as M
+import           MonadLib (runId)
 
 import           Text.LLVM                             hiding (BB)
+import qualified Text.LLVM.Labels                      as L
 
 -- import Debug.Trace
 
@@ -132,23 +134,22 @@ buildCFG bs = cfg
 
     -- Graph construction
     (exit, gr)    = stitchDummyExit lab (G.mkGraph nodes' edges')
-                      where lab n = BasicBlock (BBId n, Named $ Ident dummyExitName)
+                      where lab n = BasicBlock (Just (BBId n, Named $ Ident dummyExitName))
                                       [Effect Unreachable []]
     nodes'        = map (nodeId &&& id) bs'
     edges'        = concatMap bbOutEdges bs'
+
+    bbOutEdges :: BB -> [G.LEdge ()]
     bbOutEdges bb = edgesTo (brTargets bb)
       where
-        edgesTo  = map (\tgt -> nodeId bb `to` lkup tgt)
-        lkup x   = maybe (err x) id (M.lookup x nodeByName)
-        err x    = error $ "Data.LLVM.CFG internal: "
-                           ++ "failed to find ident "
-                           ++ show (ppLabel x)
-                           ++ " in name map"
+        srcId    = nodeId bb
+        edgesTo  = map (\(BBId tgt,_) -> srcId `to` tgt)
 
     -- Relabeling and aux data structures; note that unnamed basic blocks get a
     -- generated name here so that clients don't have to deal with extraneous
     -- checks.
-    (nodeByName, bs', _, _) = foldr relabel (M.empty, [], length bs - 1, 0) bs
+    bs' :: [BB]
+    (bbIds, bs', _, _) = foldr relabel (M.empty, [], length bs - 1, 0) bs
       where
         relabel (BasicBlock mid stmts) (mp, acc, n, s :: Int) =
 --           trace ("relabel: mid = " ++ show mid)
@@ -156,12 +157,22 @@ buildCFG bs = cfg
           let (s', nm) = case mid of
                            Nothing ->  (s + 1, Named $ Ident $ "__anon_" ++ show s)
                            Just nm' -> (s, nm')
+              bbid     = (BBId n, nm)
           in
-            ( M.insert nm n mp
-            , BasicBlock (BBId n, nm) stmts : acc
+            ( M.insert nm bbid mp
+            , BasicBlock (Just bbid) (fixLabels stmts) : acc
             , n - 1
             , s'
             )
+
+    nodeByName = fmap (\(BBId n, _) -> n) bbIds
+
+    fixLabels stmts = runId (mapM (L.relabel f) stmts)
+      where
+      -- This should be fine, as there shouldn't be references to labels that
+      -- aren't defined.
+      f _ lab = return (bbIds M.! lab)
+
 
 --------------------------------------------------------------------------------
 -- Utility functions
@@ -172,11 +183,17 @@ bbFromCtx (_, _, bb, _) = bb
 to :: G.Node -> G.Node -> G.LEdge ()
 u `to` v = (u, v, ())
 
+requireLabel :: BB -> (BBId, BlockLabel)
+requireLabel bb =
+  case bbLabel bb of
+    Just lab -> lab
+    Nothing  -> error ("requireLabel: basic block without a label\n" ++ show bb)
+
 blockId :: BB -> BBId
-blockId = fst . bbLabel
+blockId = fst . requireLabel
 
 blockName :: BB -> BlockLabel
-blockName = snd . bbLabel
+blockName = snd . requireLabel
 
 nodeId :: BB -> G.Node
 nodeId = unBBId . blockId
@@ -221,34 +238,3 @@ instance Show CFG where
                      ]
 
 instance Show BBId where show (BBId n) = "BB#" ++ show n
-
---------------------------------------------------------------------------------
--- Debug pretty printing
-
-ppBBBrief :: BasicBlock' (G.Node, Maybe Ident) -> String
-ppBBBrief (BasicBlock (n, mid) _) =
-  "BB#"
-  ++ show n
-  ++ (maybe "" (\ident -> " (" ++ show (ppIdent ident) ++ ")") mid)
-
-ppCtxBrief :: G.Context (BasicBlock' (G.Node, Maybe Ident)) () -> String
-ppCtxBrief (p, n, bb, s) = show (p, n, ppBBBrief bb, s)
-
---------------------------------------------------------------------------------
--- Testing
-
-test :: Module -> CFG
-test m = buildCFG blks where [defBody -> blks] = modDefines m
-
--- Very cursory check for now
-domSanity :: Module -> Bool
-domSanity m =
-  and $ map (\x -> dom cfg (entryId cfg) (blockId x)) (allBBs cfg)
-        ++
-        map (\x -> pdom cfg (exitId cfg) (blockId x)) (allBBs cfg)
-  where
-    cfg = test m
-
-_nowarn_unused :: forall t. t
-_nowarn_unused = undefined
-  test domSanity ppBBBrief ppCtxBrief
