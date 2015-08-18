@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE RecursiveDo #-}
 
@@ -56,6 +57,11 @@ nameNode fnLocal isDistinct ix mt = mt
 
 addString :: String -> MetadataTable -> MetadataTable
 addString str = snd . addMetadata (ValMdString str)
+
+addLoc :: Bool -> PDebugLoc -> MetadataTable -> MetadataTable
+addLoc isDistinct loc mt = nameNode False isDistinct ix mt'
+  where
+  (ix,mt') = addMetadata (ValMdLoc loc) mt
 
 -- | Add a new node, that might be distinct.
 addNode :: Bool -> [Maybe PValMd] -> MetadataTable -> MetadataTable
@@ -233,7 +239,20 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
 
   -- [distinct, line, col, scope, inlined-at?] 
   7 -> label "METADATA_LOCATION" $ do
-    fail "not implemented"
+    cxt       <- getContext
+    let field = parseField r
+    distinct  <- field 0 numeric
+    dlLine    <- field 1 numeric
+    dlCol     <- field 2 numeric
+    scopeId   <- field 3 numeric
+    iaIx      <- field 4 numeric
+    let dlScope          = mdForwardRef cxt mt scopeId
+        dlIA | iaIx > 0  = Just (mdForwardRef cxt mt (iaIx - 1))
+             | otherwise = Nothing
+        isDistinct       = distinct /= (0 :: Int)
+        loc              = DebugLoc { .. }
+    return $! updateMetadataTable (addLoc isDistinct loc) pm
+
 
   -- [n x (type num, value num)]
   8 -> label "METADATA_OLD_NODE" (parseMetadataOldNode False vt mt r pm)
