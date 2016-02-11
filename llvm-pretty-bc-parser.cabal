@@ -6,7 +6,7 @@ Author:              Trevor Elliott <trevor@galois.com>
 Maintainer:          Trevor Elliott
 Category:            Text
 Build-type:          Simple
-Cabal-version:       >=1.16
+Cabal-version:       >=1.10
 Synopsis:            LLVM bitcode parsing library
 
 Description:
