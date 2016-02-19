@@ -34,39 +34,48 @@ binop :: Match Field (Maybe Int -> Typed PValue -> PValue -> PInstr)
 binop  = choose <=< numeric
   where
 
-  constant = return . const
+  constant k kf = return $ \_mb x y ->
+    case typedType x of
+      PrimType (FloatType _) -> kf x y
+      _ -> k x y
 
   nuw x = testBit x 0
   nsw x = testBit x 1
 
   -- operations that accept the nuw and nsw flags
-  wrapFlags i k = return $ \ mb x y ->
-    case mb of
-      Nothing -> i (k  False   False)  x y
-      Just w  -> i (k (nuw w) (nsw w)) x y
+  wrapFlags i k kf = return $ \ mb x y ->
+    case typedType x of
+      PrimType (FloatType _) -> i kf x y
+      _ ->
+        case mb of
+          Nothing -> i (k  False   False)  x y
+          Just w  -> i (k (nuw w) (nsw w)) x y
 
   exact x = testBit x 0
 
   -- operations that accept the exact flag
-  exactFlag i k = return $ \ mb x y ->
-    case mb of
-      Nothing -> i (k  False)    x y
-      Just w  -> i (k (exact w)) x y
+  exactFlag i k kf = return $ \ mb x y ->
+    case typedType x of
+      PrimType (FloatType _) -> i kf x y
+      _ ->
+        case mb of
+          Nothing -> i (k  False)    x y
+          Just w  -> i (k (exact w)) x y
 
   choose :: Match Int (Maybe Int -> Typed PValue -> PValue -> PInstr)
-  choose 0  = wrapFlags Arith Add
-  choose 1  = wrapFlags Arith Sub
-  choose 2  = wrapFlags Arith Mul
-  choose 3  = exactFlag Arith UDiv
-  choose 4  = exactFlag Arith SDiv
-  choose 5  = constant (Arith URem)
-  choose 6  = constant (Arith SRem)
-  choose 7  = wrapFlags Bit Shl
-  choose 8  = exactFlag Bit Lshr
-  choose 9  = exactFlag Bit Ashr
-  choose 10 = constant (Bit And)
-  choose 11 = constant (Bit Or)
-  choose 12 = constant (Bit Xor)
+  choose 0  = wrapFlags Arith Add   FAdd
+  choose 1  = wrapFlags Arith Sub   FSub
+  choose 2  = wrapFlags Arith Mul   FMul
+  choose 3  = exactFlag Arith UDiv  FDiv
+  choose 4  = exactFlag Arith SDiv  FDiv
+  choose 5  = constant (Arith URem) (Arith FRem)
+  choose 6  = constant (Arith SRem) (Arith FRem)
+  choose 7  = wrapFlags Bit Shl  (error "invalid shl on floating point")
+  choose 8  = exactFlag Bit Lshr (error "invalid lshr on floating point")
+  choose 9  = exactFlag Bit Ashr (error "invalid ashr on floating point")
+  choose 10 = constant (Bit And) (error "invalid and on floating point")
+  choose 11 = constant (Bit Or)  (error "invalid or on floating point")
+  choose 12 = constant (Bit Xor) (error "invalid xor on floating point")
   choose _  = mzero
 
 fcmpOp :: Match Field (Typed PValue -> PValue -> PInstr)
