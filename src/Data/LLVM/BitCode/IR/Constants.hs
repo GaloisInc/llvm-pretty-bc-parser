@@ -374,7 +374,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     let test = testBit (mask :: Word32)
         hasSideEffects = test 0
         isAlignStack   = test 1
-        asmDialect     = mask `shiftR` 2
+        _asmDialect    = mask `shiftR` 2
 
     let len = length (recordFields r)
     asmStrSize <- field 1 numeric
