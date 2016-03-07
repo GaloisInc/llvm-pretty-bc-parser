@@ -11,7 +11,7 @@ import Data.LLVM.BitCode.Parse
 import Data.LLVM.BitCode.Record
 import Text.LLVM.AST
 
-import Control.Monad (mplus,mzero,foldM,(<=<))
+import Control.Monad (mplus,mzero,foldM,(<=<),when)
 import Control.Monad.ST (runST,ST)
 import Data.Array.ST (newArray,readArray,MArray,STUArray)
 import Data.Bits (shiftL,shiftR,testBit)
@@ -25,6 +25,8 @@ import Data.Array.Unsafe (castSTUArray)
 #else
 import Data.Array.ST (castSTUArray)
 #endif
+
+import Debug.Trace
 
 
 -- Instruction Field Parsing ---------------------------------------------------
@@ -312,7 +314,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   17 -> label "CST_CODE_CE_CMP" $ do
     fail "not implemented"
 
-  18 -> label "CST_CODE_INLINEASM" $ do
+  18 -> label "CST_CODE_INLINEASM_OLD" $ do
     let field = parseField r
     ty    <- getTy
     flags <- field 0 numeric
@@ -366,6 +368,35 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
       FloatType Float  -> build ValFloat
       FloatType Double -> build ValDouble
       _                -> fail "unknown element type in CE_DATA"
+
+  23 -> label "CST_CODE_INLINEASM" $ do
+    let field = parseField r
+    mask <- field 0 numeric
+
+    let test = testBit (mask :: Word32)
+        hasSideEffects = test 0
+        isAlignStack   = test 1
+        asmDialect     = mask `shiftR` 2
+
+    let len = length (recordFields r)
+    asmStrSize <- field 1 numeric
+    when (2 + asmStrSize >= len)
+         (fail "Invalid record")
+
+    constStrSize <- field (2 + asmStrSize) numeric
+    when (3 + asmStrSize + constStrSize > len)
+         (fail "Invalid record")
+
+    asmStr   <- parseSlice r  2               asmStrSize   char
+    constStr <- parseSlice r (3 + asmStrSize) constStrSize char
+
+    ty <- getTy
+    let val = ValAsm hasSideEffects isAlignStack asmStr constStr
+
+    return (getTy, Typed ty val : cs)
+
+
+
 
   code -> fail ("unknown constant record code: " ++ show code)
 
