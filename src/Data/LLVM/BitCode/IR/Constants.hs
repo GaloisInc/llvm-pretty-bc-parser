@@ -26,8 +26,6 @@ import Data.Array.Unsafe (castSTUArray)
 import Data.Array.ST (castSTUArray)
 #endif
 
-import Debug.Trace
-
 
 -- Instruction Field Parsing ---------------------------------------------------
 
