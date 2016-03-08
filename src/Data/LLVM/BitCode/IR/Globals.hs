@@ -9,9 +9,10 @@ import Data.LLVM.BitCode.Parse
 import Text.LLVM.AST
 import Text.LLVM.Labels
 
-import Control.Monad (guard)
-import Data.Bits (bit,shiftR)
+import Control.Monad (guard,mplus)
+import Data.Bits (bit,shiftR,testBit)
 import qualified Data.Sequence as Seq
+import Data.Word (Word32)
 
 
 -- Global Variables ------------------------------------------------------------
@@ -34,7 +35,9 @@ parseGlobalVar :: Int -> Record -> Parse PartialGlobal
 parseGlobalVar n r = label "GLOBALVAR" $ do
   let field = parseField r
   ptrty   <- getType =<< field 0 numeric
-  isconst <-             field 1 numeric
+  mask    <-             field 1 numeric
+  let isconst    = testBit (mask :: Word32) 0
+      explicitTy = testBit  mask            1
   initid  <-             field 2 numeric
   link    <-             field 3 linkage
 
@@ -42,7 +45,10 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
                 then Just `fmap` field 4 numeric
                 else return Nothing
 
-  ty      <- elimPtrTo ptrty
+  ty <- if explicitTy
+           then return ptrty
+           else elimPtrTo ptrty `mplus` fail "Invalid type for value"
+
   name    <- entryName n
   _       <- pushValue (Typed ptrty (ValSymbol (Symbol name)))
   let valid | initid == 0 = Nothing
@@ -51,7 +57,7 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
         { gaLinkage    = do
           guard (link /= External)
           return link
-        , gaConstant   = isconst == (1 :: Int)
+        , gaConstant   = isconst
         }
 
   return PartialGlobal

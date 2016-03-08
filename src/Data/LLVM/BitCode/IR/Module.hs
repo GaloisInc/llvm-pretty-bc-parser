@@ -214,7 +214,11 @@ parseModuleBlockEntry _ e =
 parseFunProto :: Record -> PartialModule -> Parse PartialModule
 parseFunProto r pm = label "FUNCTION" $ do
   let field = parseField r
-  ty      <- getType =<< field 0 numeric
+  funTy   <- getType =<< field 0 numeric
+  let ty = case funTy of
+             PtrTo ty -> ty
+             _        -> funTy
+
   isProto <-             field 2 numeric
 
   link    <-             field 3 linkage

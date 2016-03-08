@@ -16,7 +16,7 @@ import Text.LLVM.Labels
 
 import Control.Applicative ((<$>),(<*>))
 import Control.Monad (unless,mplus,mzero,foldM,(<=<))
-import Data.Bits (shiftR,bit,shiftL)
+import Data.Bits (shiftR,bit,shiftL,testBit)
 import Data.Int (Int32)
 import qualified Data.Foldable as F
 import qualified Data.Map as Map
@@ -97,7 +97,7 @@ data PartialDefine = PartialDefine
 -- | Generate a partial function definition from a function prototype.
 emptyPartialDefine :: FunProto -> Parse PartialDefine
 emptyPartialDefine proto = do
-  (rty,tys,va) <- elimFunPtr (protoType proto)
+  (rty,tys,va) <- elimFunTy (protoType proto)
       `mplus` fail "invalid function type in prototype"
   names <- mapM nameNextValue tys
 
@@ -472,8 +472,13 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
           _                     -> Just size
         aval = bit align `shiftR` 1
 
-    ret <- elimPtrTo instty
-        `mplus` fail "invalid return type in INST_ALLOCA"
+
+    let explicitType = testBit align 6
+
+    ret <- if explicitType
+              then return instty
+              else elimPtrTo instty
+                      `mplus` fail "invalid return type in INST_ALLOCA"
 
     result instty (Alloca ret sval (Just aval)) d
 
@@ -621,6 +626,18 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
   -- [ptrty,ptr,val, align, vol
   --  ordering, synchscope]
   42 -> label "FUNC_CODE_STOREATOMIC" $ do
+    notImplemented
+
+  43 -> label "FUNC_CODE_STORE" $ do
+    notImplemented
+
+  44 -> label "FUNC_CODE_STOREATOMIC" $ do
+    notImplemented
+
+  45 -> label "FUNC_CODE_CMPXCHG" $ do
+    notImplemented
+
+  46 -> label "FUNC_CODE_LANDINGPAD" $ do
     notImplemented
 
   -- [opty,opval,opval,pred]
