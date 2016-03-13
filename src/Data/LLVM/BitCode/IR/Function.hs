@@ -724,6 +724,10 @@ parseFunctionBlockEntry _ d (abbrevDef -> Just _) =
   -- ignore any abbreviation definitions
   return d
 
+parseFunctionBlockEntry _ d (uselistBlockId -> Just _) = do
+  -- ignore the uselist block
+  return d
+
 parseFunctionBlockEntry _ _ e = do
   fail ("function block: unexpected: " ++ show e)
 
