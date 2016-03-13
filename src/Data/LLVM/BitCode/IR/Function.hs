@@ -486,9 +486,17 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
   -- [opty,op,align,vol]
   20 -> label "FUNC_CODE_INST_LOAD" $ do
     (tv,ix) <- getValueTypePair t r 0
-    aval    <- parseField r ix numeric
-    ret     <- elimPtrTo (typedType tv)
-        `mplus` fail "invalid type to INST_LOAD"
+
+    (ret,ix') <-
+      if length (recordFields r) == ix + 3
+         then do ty <- getType ix
+                 return (ty,ix+1)
+
+         else do ty <- elimPtrTo (typedType tv)
+                           `mplus` fail "invalid type to INST_LOAD"
+                 return (ty,ix)
+
+    aval    <- parseField r ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
     result ret (Load tv align) d
@@ -660,7 +668,13 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     notImplemented
 
   44 -> label "FUNC_CODE_INST_STORE" $ do
-    notImplemented
+    let field = parseField r
+    (ptr,ix)  <- getValueTypePair t r 0
+    (val,ix') <- getValueTypePair t r ix
+    aval      <- field ix' numeric
+    let align | aval > 0  = Just (bit aval `shiftR` 1)
+              | otherwise = Nothing
+    effect (Store val ptr align) d
 
   45 -> label "FUNC_CODE_INST_STOREATOMIC" $ do
     notImplemented
