@@ -216,8 +216,8 @@ parseFunProto r pm = label "FUNCTION" $ do
   let field = parseField r
   funTy   <- getType =<< field 0 numeric
   let ty = case funTy of
-             PtrTo ty -> ty
-             _        -> funTy
+             PtrTo ty -> funTy
+             _        -> PtrTo funTy
 
   isProto <-             field 2 numeric
 

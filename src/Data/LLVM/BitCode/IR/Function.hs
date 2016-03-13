@@ -18,6 +18,7 @@ import Control.Applicative ((<$>),(<*>))
 import Control.Monad (unless,mplus,mzero,foldM,(<=<))
 import Data.Bits (shiftR,bit,shiftL,testBit)
 import Data.Int (Int32)
+import Data.Word (Word32)
 import qualified Data.Foldable as F
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
@@ -97,7 +98,7 @@ data PartialDefine = PartialDefine
 -- | Generate a partial function definition from a function prototype.
 emptyPartialDefine :: FunProto -> Parse PartialDefine
 emptyPartialDefine proto = do
-  (rty,tys,va) <- elimFunTy (protoType proto)
+  (rty,tys,va) <- elimFunPtr (protoType proto)
       `mplus` fail "invalid function type in prototype"
   names <- mapM nameNextValue tys
 
@@ -556,10 +557,40 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
 
   -- [paramattrs, cc, fnty, fnid, arg0 .. arg n]
   34 -> label "FUNC_CODE_INST_CALL" $ do
-    (Typed fnty fn,ix) <- getValueTypePair t r 2
+    let field = parseField r
+
+    -- pal <- field 0 numeric
+    ccinfo <- field 1 numeric
+
+    (mbFnTy, ix) <- if testBit (ccinfo :: Word32) 15
+                       then do fnTy <- getType =<< field 2 numeric
+                               return (Just fnTy, 3)
+                       else    return (Nothing,   2)
+
+    (callee, ix') <- getValueTypePair t r ix
+                         `mplus` fail "Invalid record"
+
+    let fn = typedValue callee
+
+    opTy <- elimPtrTo (typedType callee)
+                `mplus` do t' <- getValueTable
+                           () <- traceShowM t'
+                           fail "Callee is not a pointer type"
+
+    fnty <- case mbFnTy of
+             Just ty | ty == opTy -> return ty
+                     | otherwise  -> fail "Explicit call type does not match \
+                                          \pointee type of callee operand"
+
+             Nothing ->
+               case opTy of
+                 FunTy{} -> return opTy
+                 _       -> fail "Callee is not of pointer to function type"
+
+
     label (show fn) $ do
-      (ret,as,va) <- elimFunPtr fnty `mplus` fail "invalid CALL record"
-      args <- parseCallArgs t va r ix as
+      (ret,as,va) <- elimFunTy fnty `mplus` fail "invalid CALL record"
+      args <- parseCallArgs t va r ix' as
       result ret (Call False fnty fn args) d
 
   -- [Line,Col,ScopeVal, IAVal]
