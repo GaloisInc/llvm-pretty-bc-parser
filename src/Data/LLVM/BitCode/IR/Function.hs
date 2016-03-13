@@ -504,7 +504,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     result resTy (VaArg op resTy) d
 
   -- [ptrty,ptr,val,align,vol]
-  24 -> label "FUNC_CODE_INST_STORE" $ do
+  24 -> label "FUNC_CODE_INST_STORE_OLD" $ do
     let field = parseField r
     (ptr,ix) <- getValueTypePair t r 0
     ty       <- elimPtrTo (typedType ptr)
@@ -637,7 +637,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     effect (Resume tv) d
 
   -- [ty,val,val,num,id0,val0...]
-  40 -> label "FUNC_CODE_LANDINGPAD" $ do
+  40 -> label "FUNC_CODE_LANDINGPAD_OLD" $ do
     let field = parseField r
     ty          <- getType =<< field 0 numeric
     (persFn,ix) <- getValueTypePair t r 1
@@ -652,21 +652,23 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
   41 -> label "FUNC_CODE_LOADATOMIC" $ do
     notImplemented
 
-  -- [ptrty,ptr,val, align, vol
-  --  ordering, synchscope]
-  42 -> label "FUNC_CODE_STOREATOMIC" $ do
+  -- [ptrty, ptr, val, align, vol, ordering, synchscope]
+  42 -> label "FUNC_CODE_INST_STOREATOMIC_OLD" $ do
     notImplemented
 
-  43 -> label "FUNC_CODE_STORE" $ do
+  43 -> label "FUNC_CODE_INST_GEP" $ do
     notImplemented
 
-  44 -> label "FUNC_CODE_STOREATOMIC" $ do
+  44 -> label "FUNC_CODE_INST_STORE" $ do
     notImplemented
 
-  45 -> label "FUNC_CODE_CMPXCHG" $ do
+  45 -> label "FUNC_CODE_INST_STOREATOMIC" $ do
     notImplemented
 
-  46 -> label "FUNC_CODE_LANDINGPAD" $ do
+  46 -> label "FUNC_CODE_CMPXCHG" $ do
+    notImplemented
+
+  47 -> label "FUNC_CODE_LANDINGPAD" $ do
     notImplemented
 
   -- [opty,opval,opval,pred]
