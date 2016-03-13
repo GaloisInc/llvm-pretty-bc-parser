@@ -573,9 +573,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     let fn = typedValue callee
 
     opTy <- elimPtrTo (typedType callee)
-                `mplus` do t' <- getValueTable
-                           () <- traceShowM t'
-                           fail "Callee is not a pointer type"
+                `mplus` fail "Callee is not a pointer type"
 
     fnty <- case mbFnTy of
              Just ty | ty == opTy -> return ty
