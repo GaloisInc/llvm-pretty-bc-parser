@@ -575,29 +575,26 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
                                return (Just fnTy, 3)
                        else    return (Nothing,   2)
 
-    (callee, ix') <- getValueTypePair t r ix
-                         `mplus` fail "Invalid record"
+    (Typed opTy fn, ix') <- getValueTypePair t r ix
+                                `mplus` fail "Invalid record"
 
-    let fn = typedValue callee
-
-    opTy <- elimPtrTo (typedType callee)
-                `mplus` fail "Callee is not a pointer type"
+    op <- elimPtrTo opTy `mplus` fail "Callee is not a pointer type"
 
     fnty <- case mbFnTy of
-             Just ty | ty == opTy -> return ty
-                     | otherwise  -> fail "Explicit call type does not match \
-                                          \pointee type of callee operand"
+             Just ty | ty == op  -> return op
+                     | otherwise -> fail "Explicit call type does not match \
+                                         \pointee type of callee operand"
 
              Nothing ->
-               case opTy of
-                 FunTy{} -> return opTy
+               case op of
+                 FunTy{} -> return op
                  _       -> fail "Callee is not of pointer to function type"
 
 
     label (show fn) $ do
       (ret,as,va) <- elimFunTy fnty `mplus` fail "invalid CALL record"
       args <- parseCallArgs t va r ix' as
-      result ret (Call False fnty fn args) d
+      result ret (Call False opTy fn args) d
 
   -- [Line,Col,ScopeVal, IAVal]
   35 -> label "FUNC_CODE_DEBUG_LOC" $ do
