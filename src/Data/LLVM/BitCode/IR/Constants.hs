@@ -268,7 +268,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
 
   -- [opcode,opval,opval]
   10 -> label "CST_CODE_CE_BINOP" $ do
-    fail "not implemented"
+    notImplemented
 
   -- [opcode, opty, opval]
   11 -> label "CST_CODE_CE_CAST" $ do
@@ -301,16 +301,16 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
 
   -- [opty,opval,opval]
   14 -> label "CST_CODE_CE_EXTRACTELT" $ do
-    fail "not implemented"
+    notImplemented
 
   15 -> label "CST_CODE_CE_INSERTELT" $ do
-    fail "not implemented"
+    notImplemented
 
   16 -> label "CST_CODE_CE_SHUFFLEVEC" $ do
-    fail "not implemented"
+    notImplemented
 
   17 -> label "CST_CODE_CE_CMP" $ do
-    fail "not implemented"
+    notImplemented
 
   18 -> label "CST_CODE_INLINEASM_OLD" $ do
     let field = parseField r
@@ -328,7 +328,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     return (getTy, Typed ty (ValAsm sideEffect alignStack asm cst):cs)
 
   19 -> label "CST_CODE_CE_SHUFFLEVEC_EX" $ do
-    fail "not implemented"
+    notImplemented
 
   -- [n x operands]
   20 -> label "CST_CODE_CE_INBOUNDS_GEP" $ do
