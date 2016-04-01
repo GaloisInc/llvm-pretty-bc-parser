@@ -559,7 +559,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
 
   -- 32 is unused
 
-  33 -> label "FUNC_CODE_INST_LOC_AGAIN" $ do
+  33 -> label "FUNC_CODE_DEBUG_LOC_AGAIN" $ do
     loc <- getLastLoc
     updateLastStmt (extendMetadata ("dbg", ValMdLoc loc)) d
 
@@ -680,6 +680,27 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     notImplemented
 
   47 -> label "FUNC_CODE_LANDINGPAD" $ do
+    notImplemented
+
+  48 -> label "FUNC_CODE_CLEANUPRET" $ do
+    notImplemented
+
+  49 -> label "FUNC_CODE_CATCHRET" $ do
+    notImplemented
+
+  50 -> label "FUNC_CODE_CATCHPAD" $ do
+    notImplemented
+
+  51 -> label "FUNC_CODE_CLEANUPPAD" $ do
+    notImplemented
+
+  52 -> label "FUNC_CODE_CATCHSWITCH" $ do
+    notImplemented
+
+  -- 53 is unused
+  -- 54 is unused
+
+  55 -> label "FUNC_CODE_OPERAND_BUNDLE" $ do
     notImplemented
 
   -- [opty,opval,opval,pred]
