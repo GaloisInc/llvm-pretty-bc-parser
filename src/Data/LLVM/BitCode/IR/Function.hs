@@ -329,7 +329,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     cast'   <-             field (ix+1) castOp
     result resty (cast' tv resty) d
 
-  4 -> label "FUNC_CODE_INST_GEP" (parseGEP t False r d)
+  4 -> label "FUNC_CODE_INST_GEP_OLD" (parseGEP t (Just False) r d)
 
   -- [opval,ty,opval,opval]
   5 -> label "FUNC_CODE_INST_SELECT" $ do
@@ -547,8 +547,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     (c,_)   <- getValueTypePair t r (ix+1)
     result (typedType tv) (Select c tv (typedValue fv)) d
 
-  -- 30 is handled lower down, as it's processed the same way as 4
-  30 -> label "FUNC_CODE_INST_INBOUNDS_GEP" (parseGEP t True r d)
+  30 -> label "FUNC_CODE_INST_INBOUNDS_GEP_OLD" (parseGEP t (Just True) r d)
 
   31 -> label "FUNC_CODE_INST_INDIRECTBR" $ do
     let field = parseField r
@@ -661,8 +660,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
   42 -> label "FUNC_CODE_INST_STOREATOMIC_OLD" $ do
     notImplemented
 
-  43 -> label "FUNC_CODE_INST_GEP" $ do
-    notImplemented
+  43 -> label "FUNC_CODE_INST_GEP" (parseGEP t Nothing r d)
 
   44 -> label "FUNC_CODE_INST_STORE" $ do
     let field = parseField r
@@ -774,9 +772,17 @@ addAttachments atts blocks = go 0 (Map.toList atts) (Seq.viewl blocks)
   go _ _ Seq.EmptyL = Seq.empty
 
 -- [n x operands]
-parseGEP :: ValueTable -> Bool -> Record -> PartialDefine -> Parse PartialDefine
-parseGEP t ib r d = do
-  (tv,ix) <- label "valuetypepair" $ getValueTypePair t r 0
+parseGEP :: ValueTable -> Maybe Bool -> Record -> PartialDefine -> Parse PartialDefine
+parseGEP t mib r d = do
+  let field = parseField r
+  (ib, mty, tyIx) <-
+      case mib of
+        Just ib -> return (ib, Nothing, 0)
+        Nothing -> do
+          ib <- field 0 boolean
+          ty <- getType =<< field 1 numeric
+          return (ib, Just ty, 2)
+  (tv,ix) <- label "valuetypepair" $ getValueTypePair t r tyIx
   args    <- label "parseGepArgs" (parseGepArgs t r ix)
   rty     <- label "interpGep"    (interpGep (typedType tv) args)
   result rty (GEP ib tv args) d
