@@ -773,17 +773,28 @@ addAttachments atts blocks = go 0 (Map.toList atts) (Seq.viewl blocks)
 
 -- [n x operands]
 parseGEP :: ValueTable -> Maybe Bool -> Record -> PartialDefine -> Parse PartialDefine
-parseGEP t mib r d = do
-  let field = parseField r
-  (ib, mty, tyIx) <-
-      case mib of
-        Just ib -> return (ib, Nothing, 0)
+parseGEP t mbInBound r d = do
+  (ib, tv, r', ix) <-
+      case mbInBound of
+
+        -- FUNC_CODE_INST_GEP_OLD
+        -- FUNC_CODE_INST_INBOUNDS_GEP_OLD
+        Just ib -> do
+          (tv,ix') <- getValueTypePair t r 0
+          return (ib, tv, r, ix')
+
+        -- FUNC_CODE_INST_GEP
         Nothing -> do
+          let r' = flattenRecord r
+          let field = parseField r'
           ib <- field 0 boolean
           ty <- getType =<< field 1 numeric
-          return (ib, Just ty, 2)
-  (tv,ix) <- label "valuetypepair" $ getValueTypePair t r tyIx
-  args    <- label "parseGepArgs" (parseGepArgs t r ix)
+          (tv,ix') <- getValueTypePair t r' 2
+          unless (typedType tv == ty)
+              (fail "Explicit gep type does not match pointee type of pointer operand")
+          return (ib, tv { typedType = PtrTo ty }, r', ix')
+
+  args    <- label "parseGepArgs" (parseGepArgs t r' ix)
   rty     <- label "interpGep"    (interpGep (typedType tv) args)
   result rty (GEP ib tv args) d
 

@@ -74,6 +74,13 @@ fieldArray _ _               = mzero
 
 type LookupField a = Int -> Match Field a -> Parse a
 
+-- | Flatten arrays inside a record.
+flattenRecord :: Record -> Record
+flattenRecord r = r { recordFields = concatMap flatten (recordFields r) }
+  where
+  flatten (FieldArray as) = as
+  flatten f               = [f]
+
 -- | Parse a field from a record.
 parseField :: Record -> LookupField a
 parseField r n p = case (p <=< fieldAt n) r of
