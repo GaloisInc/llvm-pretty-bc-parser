@@ -932,14 +932,17 @@ parseSwitchLabels ty r = loop
     | n >= len  = return []
     | otherwise = do
       tv <- getFnValueById ty =<< field n numeric
-      case typedValue tv of
-
-        ValInteger i -> do
-          l    <- field (n+1) numeric
-          rest <- loop (n+2)
-          return ((i,l):rest)
-
-        _ -> fail "Invalid SWITCH record"
+      i <- case typedValue tv of
+             ValInteger i -> return i
+             ValBool b -> return (toEnum (fromEnum b))
+             v -> fail $ unwords [ "Invalid value in SWITCH record. Found"
+                                 , show v
+                                 , "at position"
+                                 , show n
+                                 ]
+      l    <- field (n+1) numeric
+      rest <- loop (n+2)
+      return ((i,l):rest)
 
 -- | See the comment for 'parseSwitchLabels' for information about what this
 -- does.
