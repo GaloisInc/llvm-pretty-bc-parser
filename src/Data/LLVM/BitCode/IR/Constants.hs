@@ -205,7 +205,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     let field = parseField r
     ty <- getTy
     n  <- field 0 signed
-    let val = fromMaybe (ValInteger n) $ do
+    let val = fromMaybe (ValInteger (toInteger n)) $ do
                 Integer 0 <- elimPrimType ty
                 return (ValBool (n /= 0))
     return (getTy, Typed ty val:cs)
@@ -420,7 +420,7 @@ parseCeGep t r = loop 0
 parseWideInteger :: Record -> Parse Integer
 parseWideInteger r = do
   limbs <- parseFields r 0 signed
-  return (foldr (\l acc -> acc `shiftL` 64 + l) 0 limbs)
+  return (foldr (\l acc -> acc `shiftL` 64 + (toInteger l)) 0 limbs)
 
 resolveNull :: Type -> Parse PValue
 resolveNull ty = case typeNull ty of
