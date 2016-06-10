@@ -28,7 +28,7 @@ moduleBlock  = fmap blockEntries . hasBlockId 8 <=< block
 
 -- | Parse an LLVM Module out of a Bitstream object.
 parseModule :: Bitstream -> Parse Module
-parseModule Bitstream { bsAppMagic, bsEntries } = do
+parseModule Bitstream { bsAppMagic, bsEntries } = label "Bitstream" $ do
   unless (bsAppMagic == llvmIrMagic) (fail "Bitstream is not an llvm-ir")
   parseTopLevel bsEntries
 

@@ -12,7 +12,10 @@ type Match i a = i -> Maybe a
 
 -- | Run a match in the context of the parsing monad.
 match :: Match i a -> i -> Parse a
-match p = maybe (fail "match failed") return . p
+match p i =
+  case p i of
+    Just a  -> return a
+    Nothing -> failWithContext "match failed"
 
 -- | The match that always succeeds.
 keep :: Match i i
