@@ -1,5 +1,6 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Data.LLVM.BitCode.IR where
 
@@ -27,6 +28,22 @@ moduleBlock  = fmap blockEntries . hasBlockId 8 <=< block
 
 -- | Parse an LLVM Module out of a Bitstream object.
 parseModule :: Bitstream -> Parse Module
-parseModule bs = do
-  unless (bsAppMagic bs == llvmIrMagic) (fail "Bitstream is not an llvm-ir")
-  parseModuleBlock =<< match (moduleBlock <=< oneChild) (bsEntries bs)
+parseModule Bitstream { bsAppMagic, bsEntries } = do
+  unless (bsAppMagic == llvmIrMagic) (fail "Bitstream is not an llvm-ir")
+  parseTopLevel bsEntries
+
+
+-- | The only top-level block that we parse currently is the module block. The
+-- Identification block that's introduced in 3.8 is ignored. In the future, it
+-- might be advantageous to parse it, as it could include information that would
+-- aid error reporting.
+parseTopLevel :: [Entry] -> Parse Module
+
+parseTopLevel (EntryBlock Block { blockId = 8, blockEntries } : _) =
+  parseModuleBlock blockEntries
+
+parseTopLevel (_ : rest) =
+  parseTopLevel rest
+
+parseTopLevel [] =
+  fail "MODULE_BLOCK missing"
