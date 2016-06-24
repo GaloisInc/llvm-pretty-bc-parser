@@ -16,7 +16,7 @@ import Text.LLVM.Labels
 
 import Control.Applicative ((<$>),(<*>))
 import Control.Monad (unless,mplus,mzero,foldM,(<=<))
-import Data.Bits (shiftR,bit,shiftL,testBit)
+import Data.Bits (shiftR,bit,shiftL,testBit,(.&.),(.|.),complement)
 import Data.Int (Int32)
 import Data.Word (Word32)
 import qualified Data.Foldable as F
@@ -471,17 +471,20 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     let sval = case typedValue size of
           ValInteger i | i == 1 -> Nothing
           _                     -> Just size
-        aval = bit align `shiftR` 1
-
-
-    let explicitType = testBit align 6
+        mask :: Word32
+        mask = (1 `shiftL` 5) .|. -- inalloca
+               (1 `shiftL` 6) .|. -- explicit type
+               (1 `shiftL` 7)     -- swift error
+        aval = (1 `shiftL` (fromIntegral (align .&. complement mask))) `shiftR` 1
+        explicitType = testBit align 6
+        ity = if explicitType then PtrTo instty else instty
 
     ret <- if explicitType
               then return instty
               else elimPtrTo instty
                       `mplus` fail "invalid return type in INST_ALLOCA"
 
-    result instty (Alloca ret sval (Just aval)) d
+    result ity (Alloca ret sval (Just aval)) d
 
   -- [opty,op,align,vol]
   20 -> label "FUNC_CODE_INST_LOAD" $ do
