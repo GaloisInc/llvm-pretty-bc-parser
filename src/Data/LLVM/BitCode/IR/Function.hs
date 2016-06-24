@@ -492,7 +492,10 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
 
     (ret,ix') <-
       if length (recordFields r) == ix + 3
-         then do ty <- getType ix
+         then do ty <- elimPtrTo (typedType tv)
+                           `mplus` fail "invalid type to INST_LOAD" -- getType ix
+                 -- FIXME: The preceding should always match `getType
+                 -- ix`, but doesn't for some reason.
                  return (ty,ix+1)
 
          else do ty <- elimPtrTo (typedType tv)
