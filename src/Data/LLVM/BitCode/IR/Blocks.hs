@@ -54,6 +54,17 @@ typeBlockIdNew  = fmap blockEntries . hasBlockId 17 <=< block
 uselistBlockId :: Match Entry [Entry]
 uselistBlockId  = fmap blockEntries . hasBlockId 18 <=< block
 
+moduleStrtabBlockId :: Match Entry [Entry]
+moduleStrtabBlockId = fmap blockEntries . hasBlockId 19 <=< block
+
+globalvalSummaryBlockId :: Match Entry [Entry]
+globalvalSummaryBlockId = fmap blockEntries . hasBlockId 20 <=< block
+
+operandBundleTagsBlockId :: Match Entry [Entry]
+operandBundleTagsBlockId = fmap blockEntries . hasBlockId 21 <=< block
+
+metadataKindBlockId :: Match Entry [Entry]
+metadataKindBlockId  = fmap blockEntries . hasBlockId 22 <=< block
 
 -- Module Codes ----------------------------------------------------------------
 
@@ -96,4 +107,23 @@ moduleCodePurgevals  = hasRecordCode 10 <=< fromEntry
 moduleCodeGcname :: Match Entry Record
 moduleCodeGcname  = hasRecordCode 11 <=< fromEntry
 
+moduleCodeComdat :: Match Entry Record
+moduleCodeComdat = hasRecordCode 12 <=< fromEntry
 
+moduleCodeVSTOffset :: Match Entry Record
+moduleCodeVSTOffset = hasRecordCode 13 <=< fromEntry
+
+moduleCodeAliasNew :: Match Entry Record
+moduleCodeAliasNew = hasRecordCode 14 <=< fromEntry
+
+moduleCodeMDValsUnused :: Match Entry Record
+moduleCodeMDValsUnused = hasRecordCode 15 <=< fromEntry
+
+moduleCodeSourceFilename :: Match Entry Record
+moduleCodeSourceFilename = hasRecordCode 16 <=< fromEntry
+
+moduleCodeHash :: Match Entry Record
+moduleCodeHash = hasRecordCode 17 <=< fromEntry
+
+moduleCodeIFunc :: Match Entry Record
+moduleCodeIFunc = hasRecordCode 18 <=< fromEntry

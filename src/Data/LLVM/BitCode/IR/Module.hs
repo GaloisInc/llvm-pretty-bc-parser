@@ -183,7 +183,7 @@ parseModuleBlockEntry pm (moduleCodeGlobalvar -> Just r) = do
     }
 
 parseModuleBlockEntry pm (moduleCodeAlias -> Just r) = do
-  -- MODULE_CODE_ALIAS
+  -- MODULE_CODE_ALIAS_OLD
   pa <- parseAlias (partialAliasIx pm) r
   return pm
     { partialAliasIx = succ (partialAliasIx pm)
@@ -206,6 +206,57 @@ parseModuleBlockEntry pm (moduleCodeVersion -> Just r) = do
 parseModuleBlockEntry pm (moduleCodeSectionname -> Just r) = do
   name <- parseFields r 0 char
   return pm { partialSections = partialSections pm Seq.|> name }
+
+parseModuleBlockEntry _ (moduleCodeComdat -> Just _) = do
+  -- MODULE_CODE_COMDAT
+  fail "MODULE_CODE_COMDAT"
+
+parseModuleBlockEntry pm (moduleCodeVSTOffset -> Just _) = do
+  -- MODULE_CODE_VSTOFFSET
+  -- TODO: should we handle this?
+  return pm
+
+parseModuleBlockEntry _ (moduleCodeAliasNew -> Just _) = do
+  -- MODULE_CODE_ALIAS
+  fail "MODULE_CODE_ALIAS"
+
+parseModuleBlockEntry pm (moduleCodeMDValsUnused -> Just _) = do
+  -- MODULE_CODE_METADATA_VALUES_UNUSED
+  return pm
+
+parseModuleBlockEntry _ (moduleCodeSourceFilename -> Just _) = do
+  -- MODULE_CODE_SOURCE_FILENAME
+  fail "MODULE_CODE_SOURCE_FILENAME"
+
+parseModuleBlockEntry _ (moduleCodeHash -> Just _) = do
+  -- MODULE_CODE_HASH
+  fail "MODULE_CODE_HASH"
+
+parseModuleBlockEntry _ (moduleCodeIFunc -> Just _) = do
+  -- MODULE_CODE_IFUNC
+  fail "MODULE_CODE_IFUNC"
+
+parseModuleBlockEntry _ (uselistBlockId -> Just _) = do
+  -- USELIST_BLOCK_ID
+  fail "USELIST_BLOCK_ID"
+
+parseModuleBlockEntry _ (moduleStrtabBlockId -> Just _) = do
+  -- MODULE_STRTAB_BLOCK_ID
+  fail "MODULE_STRTAB_BLOCK_ID"
+
+parseModuleBlockEntry _ (globalvalSummaryBlockId -> Just _) = do
+  -- GLOBALVAL_SUMMARY_BLOCK_ID
+  fail "GLOBALVAL_SUMMARY_BLOCK_ID"
+
+parseModuleBlockEntry pm (operandBundleTagsBlockId -> Just _) = do
+  -- OPERAND_BUNDLE_TAGS_BLOCK_ID
+  -- fail "OPERAND_BUNDLE_TAGS_BLOCK_ID"
+  return pm
+
+parseModuleBlockEntry pm (metadataKindBlockId -> Just _) = do
+  -- METADATA_KIND_BLOCK_ID
+  -- fail "METADATA_KIND_BLOCK_ID"
+  return pm
 
 parseModuleBlockEntry _ e =
   fail ("unexpected: " ++ show e)
