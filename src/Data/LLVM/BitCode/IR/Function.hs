@@ -837,7 +837,7 @@ parsePhiArgs relIds t r = loop 1
     | relIds    = do
       i   <- field n signed
       pos <- getNextId
-      return (pos - i)
+      return (pos - fromIntegral i)
     | otherwise =
       field n numeric
 
@@ -999,7 +999,7 @@ parseNewSwitchLabels width r = loop
       chunks <- parseSlice r lowStart activeWords signed
 
       -- decode limbs in big-endian order
-      let low = foldr (\l acc -> acc `shiftL` 64 + l) 0 chunks
+      let low = foldr (\l acc -> acc `shiftL` 64 + toInteger l) 0 chunks
 
       (num,n') <-
         if isSingleNumber

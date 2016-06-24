@@ -7,6 +7,8 @@ import Data.LLVM.BitCode.Parse
 
 import Data.Bits (Bits,testBit,shiftR,bit)
 import Data.Char (chr)
+import Data.Word (Word64)
+
 import Control.Monad ((<=<),MonadPlus(..),guard)
 
 
@@ -109,7 +111,7 @@ numeric :: Num a => Match Field a
 numeric  = fmap fromBitString . (fieldLiteral ||| fieldFixed ||| fieldVbr)
 
 -- | Parse a @Field@ as a sign-encoded number.
-signed :: (Bits a, Num a) => Match Field a
+signed :: Match Field Word64
 signed  = fmap decode . (fieldLiteral ||| fieldFixed ||| fieldVbr)
   where
   decode bs
