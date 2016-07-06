@@ -129,6 +129,13 @@ boolean  = decode <=< (fieldFixed ||| fieldLiteral ||| fieldVbr)
     | bsData bs == 0 = return False
     | otherwise      = mzero
 
+nonzero :: Match Field Bool
+nonzero  = decode <=< (fieldFixed ||| fieldLiteral ||| fieldVbr)
+  where
+  decode bs
+    | bsData bs == 0 = return False
+    | otherwise      = return True
+
 char :: Match Field Char
 char  = fmap chr . numeric
 
