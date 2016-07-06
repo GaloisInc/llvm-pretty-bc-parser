@@ -133,12 +133,12 @@ parseModuleBlockEntry pm (functionBlockId -> Just es) = do
 
 parseModuleBlockEntry pm (paramattrBlockId -> Just _) = do
   -- PARAMATTR_BLOCK_ID
-  -- skip for now
+  -- TODO: skip for now
   return pm
 
 parseModuleBlockEntry pm (paramattrGroupBlockId -> Just _) = do
   -- PARAMATTR_GROUP_BLOCK_ID
-  -- skip for now
+  -- TODO: skip for now
   return pm
 
 parseModuleBlockEntry pm (metadataBlockId -> Just es) = do
