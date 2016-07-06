@@ -83,6 +83,10 @@ mdForwardRef cxt mt ix = fromMaybe fallback nodeRef
   reference (_,_,r) = ValMdRef r
   nodeRef           = reference `fmap` Map.lookup ix (mtNodes mt)
 
+mdForwardRefOrNull :: [String] -> MetadataTable -> Int -> Maybe PValMd
+mdForwardRefOrNull cxt mt ix | ix > 0 = Just (mdForwardRef cxt mt (ix - 1))
+                             | otherwise = Nothing
+
 mdNodeRef :: [String] -> MetadataTable -> Int -> Int
 mdNodeRef cxt mt ix =
   maybe (throw (BadValueRef cxt ix)) prj (Map.lookup ix (mtNodes mt))
@@ -241,16 +245,12 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
   7 -> label "METADATA_LOCATION" $ do
     cxt       <- getContext
     let field = parseField r
-    distinct  <- field 0 numeric
-    dlLine    <- field 1 numeric
-    dlCol     <- field 2 numeric
-    scopeId   <- field 3 numeric
-    iaIx      <- field 4 numeric
-    let dlScope          = mdForwardRef cxt mt scopeId
-        dlIA | iaIx > 0  = Just (mdForwardRef cxt mt (iaIx - 1))
-             | otherwise = Nothing
-        isDistinct       = distinct /= (0 :: Int)
-        loc              = DebugLoc { .. }
+    isDistinct <- field 0 nonzero
+    dlLine     <- field 1 numeric
+    dlCol      <- field 2 numeric
+    dlScope    <- mdForwardRef cxt mt <$> field 3 numeric
+    dlIA       <- mdForwardRefOrNull cxt mt <$> field 4 numeric
+    let loc = DebugLoc { .. }
     return $! updateMetadataTable (addLoc isDistinct loc) pm
 
 
@@ -273,6 +273,152 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
     inst <- field 0 numeric
     md   <- parseAttachment r
     return $! addAttachment inst md pm
+
+  12 -> label "METADATA_GENERIC_DEBUG" $ do
+    isDistinct <- parseField r 0 numeric
+    tag <- parseField r 1 numeric
+    version <- parseField r 2 numeric
+    header <- parseField r 3 string
+    -- TODO: parse all remaining fields
+    fail "not yet implemented"
+  13 -> label "METADATA_SUBRANGE" $ do
+    isDistinct <- parseField r 0 numeric
+    parseField r 1 numeric
+    parseField r 2 signed
+    -- TODO
+    fail "not yet implemented"
+  14 -> label "METADATA_ENUMERATOR" $ do
+    isDistinct <- parseField r 0 numeric
+    parseField r 1 signed
+    parseField r 2 string
+    -- TODO
+    fail "not yet implemented"
+  15 -> label "METADATA_BASIC_TYPE" $ do
+    isDistinct <- parseField r 0 numeric
+    parseField r 1 numeric
+    name <- parseField r 2 numeric
+    parseField r 3 numeric
+    parseField r 4 numeric
+    parseField r 5 numeric
+    -- TODO
+    fail "not yet implemented"
+  16 -> label "METADATA_FILE" $ do
+    isDistinct <- parseField r 0 numeric
+    name <- parseField r 1 numeric
+    dir  <- parseField r 2 numeric
+    -- TODO
+    fail "not yet implemented"
+  17 -> label "METADATA_DERIVED_TYPE" $ do
+    -- TODO
+    fail "not yet implemented"
+  18 -> label "METADATA_COMPOSITE_TYPE" $ do
+    -- TODO
+    fail "not yet implemented"
+  19 -> label "METADATA_SUBROUTINE_TYPE" $ do
+    -- TODO
+    fail "not yet implemented"
+  20 -> label "METADATA_COMPILE_UNIT" $ do
+    -- TODO
+    fail "not yet implemented"
+  21 -> label "METADATA_SUBPROGRAM" $ do
+    -- TODO
+    fail "not yet implemented"
+  22 -> label "METADATA_LEXICAL_BLOCK" $ do
+    cxt <- getContext
+    isDistinct <- parseField r 0 numeric
+    mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
+    mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
+    parseField r 3 numeric
+    parseField r 4 numeric
+    -- TODO
+    fail "not yet implemented"
+  23 -> label "METADATA_LEXICAL_BLOCK_FILE" $ do
+    cxt <- getContext
+    isDistinct <- parseField r 0 numeric
+    mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
+    mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
+    parseField r 3 numeric
+    -- TODO
+    fail "not yet implemented"
+  24 -> label "METADATA_NAMESPACE" $ do
+    cxt <- getContext
+    isDistinct <- parseField r 0 numeric
+    mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
+    mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
+    parseField r 3 string
+    parseField r 4 numeric
+    -- TODO
+    fail "not yet implemented"
+  25 -> label "METADATA_TEMPLATE_TYPE" $ do
+    isDistinct <- parseField r 0 numeric
+    parseField r 1 string
+    -- getDITypeRefOrNull <$> parseField r 2 numeric
+    -- TODO
+    fail "not yet implemented"
+  26 -> label "METADATA_TEMPLATE_VALUE" $ do
+    cxt <- getContext
+    isDistinct <- parseField r 0 numeric
+    parseField r 1 numeric
+    parseField r 2 string
+    -- getDITypeRefOrNull cxt mt <$> parseField r 3 numeric
+    mdForwardRefOrNull cxt mt <$> parseField r 4 numeric
+    -- TODO
+    fail "not yet implemented"
+  27 -> label "METADATA_GLOBAL_VAR" $ do
+    -- TODO
+    fail "not yet implemented"
+  28 -> label "METADATA_LOCAL_VAR" $ do
+    -- TODO
+    fail "not yet implemented"
+  29 -> label "METADATA_EXPRESSION" $ do
+    -- TODO
+    fail "not yet implemented"
+  30 -> label "METADATA_OBJC_PROPERTY" $ do
+    -- TODO
+    fail "not yet implemented"
+  31 -> label "METADATA_IMPORTED_ENTITY" $ do
+    cxt <- getContext
+    isDistinct <- parseField r 0 numeric
+    parseField r 1 numeric
+    mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
+    -- getDITypeRefOrNull cxt mt <$> parseField r 3 numeric
+    parseField r 4 numeric
+    parseField r 5 string
+    -- TODO
+    fail "not yet implemented"
+  32 -> label "METADATA_MODULE" $ do
+    cxt <- getContext
+    isDistinct <- parseField r 0 numeric
+    mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
+    parseField r 2 string
+    parseField r 3 string
+    parseField r 4 string
+    parseField r 5 string
+    -- TODO
+    fail "not yet implemented"
+  33 -> label "METADATA_MACRO" $ do
+    isDistinct <- parseField r 0 numeric
+    parseField r 1 numeric
+    parseField r 2 numeric
+    parseField r 3 string
+    parseField r 4 string
+    -- TODO
+    fail "not yet implemented"
+  34 -> label "METADATA_MACRO_FILE" $ do
+    cxt <- getContext
+    isDistinct <- parseField r 0 numeric
+    parseField r 1 numeric
+    parseField r 2 numeric
+    mdForwardRefOrNull cxt mt <$> parseField r 3 numeric
+    mdForwardRefOrNull cxt mt <$> parseField r 4 numeric
+    -- TODO
+    fail "not yet implemented"
+  35 -> label "METADATA_STRINGS" $ do
+    -- TODO
+    fail "not yet implemented"
+  36 -> label "METADATA_GLOBAL_DECL_ATTACHMENT" $ do
+    -- TODO
+    fail "not yet implemented"
 
   code -> fail ("unknown record code: " ++ show code)
 
@@ -298,8 +444,7 @@ parseMetadataNode :: Bool -> MetadataTable -> Record -> PartialMetadata
 parseMetadataNode isDistinct mt r pm = do
   ixs <- parseFields r 0 numeric
   cxt <- getContext
-  let lkp ix | ix > 0    = Just (mdForwardRef cxt mt (ix - 1))
-             | otherwise = Nothing
+  let lkp = mdForwardRefOrNull cxt mt
   return $! updateMetadataTable (addNode isDistinct (map lkp ixs)) pm
 
 
