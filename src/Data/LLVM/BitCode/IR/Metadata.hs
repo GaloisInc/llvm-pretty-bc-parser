@@ -4,6 +4,7 @@
 
 module Data.LLVM.BitCode.IR.Metadata (
     parseMetadataBlock
+  , parseMetadataKindEntry
   , PartialUnnamedMd(..)
   , finalizePartialUnnamedMd
   , MetadataAttachments
@@ -472,3 +473,9 @@ parseMetadataOldNode fnLocal vt mt r pm = do
     [] -> return []
 
     _ -> fail "Malformed metadata node"
+
+parseMetadataKindEntry :: Record -> Parse ()
+parseMetadataKindEntry r = do
+  kind <- parseField  r 0 numeric
+  name <- parseFields r 1 char
+  addKind kind name

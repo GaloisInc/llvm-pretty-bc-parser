@@ -16,7 +16,7 @@ import Data.LLVM.BitCode.Parse
 import Data.LLVM.BitCode.Record
 import Text.LLVM.AST
 
-import Control.Monad (foldM,guard,when)
+import Control.Monad (foldM,guard,when,forM_)
 import Data.List (sortBy)
 import Data.Monoid (mempty)
 import Data.Ord (comparing)
@@ -253,9 +253,12 @@ parseModuleBlockEntry pm (operandBundleTagsBlockId -> Just _) = do
   -- fail "OPERAND_BUNDLE_TAGS_BLOCK_ID"
   return pm
 
-parseModuleBlockEntry pm (metadataKindBlockId -> Just _) = do
+parseModuleBlockEntry pm (metadataKindBlockId -> Just es) = do
   -- METADATA_KIND_BLOCK_ID
-  -- fail "METADATA_KIND_BLOCK_ID"
+  forM_ es $ \e ->
+    case fromEntry e of
+      Just r -> parseMetadataKindEntry r
+      Nothing -> fail "Can't parse metadata kind block entry."
   return pm
 
 parseModuleBlockEntry _ e =
