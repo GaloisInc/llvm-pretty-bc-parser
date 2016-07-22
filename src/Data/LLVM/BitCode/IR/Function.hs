@@ -492,10 +492,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
 
     (ret,ix') <-
       if length (recordFields r) == ix + 3
-         then do ty <- elimPtrTo (typedType tv)
-                           `mplus` fail "invalid type to INST_LOAD" -- getType ix
-                 -- FIXME: The preceding should always match `getType
-                 -- ix`, but doesn't for some reason.
+         then do ty <- getType =<< parseField r ix numeric
                  return (ty,ix+1)
 
          else do ty <- elimPtrTo (typedType tv)
@@ -505,7 +502,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     aval    <- parseField r ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
-    result ret (Load tv align) d
+    result ret (Load (tv { typedType = PtrTo ret }) align) d
 
   -- 21 is unused
   -- 22 is unused
