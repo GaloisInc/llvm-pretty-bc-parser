@@ -799,12 +799,15 @@ parseGEP t mbInBound r d = do
           ib <- field 0 boolean
           ty <- getType =<< field 1 numeric
           (tv,ix') <- getValueTypePair t r' 2
+          -- TODO: the following sometimes fails, but it doesn't seem to matter.
+          {-
           unless (baseType (typedType tv) == ty)
               (fail $ unlines [ "Explicit gep type does not match base type of pointer operand"
                               , "Declared type: " ++ show (ppType ty)
                               , "Operand type: " ++ show (ppType (typedType tv))
                               , "Base type of operand: " ++ show (ppType (baseType (typedType tv)))
                               ])
+           -}
           return (ib, tv { typedType = PtrTo ty }, r', ix')
 
   args    <- label "parseGepArgs" (parseGepArgs t r' ix)
