@@ -87,6 +87,8 @@ vstCodeEntry  = hasRecordCode 1 <=< fromEntry
 vstCodeBBEntry :: Match Entry Record
 vstCodeBBEntry  = hasRecordCode 2 <=< fromEntry
 
+vstCodeFNEntry :: Match Entry Record
+vstCodeFNEntry  = hasRecordCode 3 <=< fromEntry
 
 -- Value Symbol Table Parsing --------------------------------------------------
 
@@ -108,6 +110,14 @@ parseValueSymbolTableBlockEntry vs (vstCodeBBEntry -> Just r) = do
   bbid <- field 0 numeric
   name <- field 1 (fieldArray (fieldChar6 ||| char))
   return (addBBEntry bbid name vs)
+
+parseValueSymbolTableBlockEntry vs (vstCodeFNEntry -> Just r) = do
+  -- VST_FNENTRY: [valid, offset, namechar x N]
+  let field = parseField r
+  valid  <- field 0 numeric
+  offset <- field 1 numeric
+  name   <- field 2 (fieldArray (fieldChar6 ||| char))
+  return (addFNEntry valid offset name vs)
 
 parseValueSymbolTableBlockEntry vs (abbrevDef -> Just _) =
   -- skip abbreviation definitions, they're already resolved

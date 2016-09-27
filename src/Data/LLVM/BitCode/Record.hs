@@ -76,6 +76,13 @@ fieldArray _ _               = mzero
 
 type LookupField a = Int -> Match Field a -> Parse a
 
+-- | Flatten arrays inside a record.
+flattenRecord :: Record -> Record
+flattenRecord r = r { recordFields = concatMap flatten (recordFields r) }
+  where
+  flatten (FieldArray as) = as
+  flatten f               = [f]
+
 -- | Parse a field from a record.
 parseField :: Record -> LookupField a
 parseField r n p = case (p <=< fieldAt n) r of
@@ -121,6 +128,13 @@ boolean  = decode <=< (fieldFixed ||| fieldLiteral ||| fieldVbr)
     | bsData bs == 1 = return True
     | bsData bs == 0 = return False
     | otherwise      = mzero
+
+nonzero :: Match Field Bool
+nonzero  = decode <=< (fieldFixed ||| fieldLiteral ||| fieldVbr)
+  where
+  decode bs
+    | bsData bs == 0 = return False
+    | otherwise      = return True
 
 char :: Match Field Char
 char  = fmap chr . numeric

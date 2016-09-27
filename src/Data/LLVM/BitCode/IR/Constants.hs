@@ -406,8 +406,13 @@ parseConstantEntry _ _ e =
   fail ("constant block: unexpected: " ++ show e)
 
 parseCeGep :: ValueTable -> Record -> Parse [Typed PValue]
-parseCeGep t r = loop 0
+parseCeGep t r = loop firstIdx
   where
+
+  -- TODO: we should check the result type if it exists, but for now we
+  -- ignore it.
+  firstIdx = if odd (length (recordFields r)) then 1 else 0
+
   field = parseField r
 
   loop n = do

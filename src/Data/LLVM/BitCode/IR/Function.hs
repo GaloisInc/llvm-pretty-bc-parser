@@ -16,8 +16,8 @@ import Text.LLVM.Labels
 import Text.LLVM.PP
 
 import Control.Applicative ((<$>),(<*>))
-import Control.Monad (unless,mplus,mzero,foldM,(<=<),guard)
-import Data.Bits (shiftR,bit,shiftL,testBit)
+import Control.Monad (unless,mplus,mzero,foldM,(<=<))
+import Data.Bits (shiftR,bit,shiftL,testBit,(.&.),(.|.),complement)
 import Data.Int (Int32)
 import Data.Word (Word32)
 import qualified Data.Foldable as F
@@ -332,7 +332,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     cast'   <-             field (ix+1) castOp
     result resty (cast' tv resty) d
 
-  4 -> label "FUNC_CODE_INST_GEP" (parseGEP t False r d)
+  4 -> label "FUNC_CODE_INST_GEP_OLD" (parseGEP t (Just False) r d)
 
   -- [opval,ty,opval,opval]
   5 -> label "FUNC_CODE_INST_SELECT" $ do
@@ -474,22 +474,20 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     let sval = case typedValue size of
           ValInteger i | i == 1 -> Nothing
           _                     -> Just size
-        aval = bit align `shiftR` 1
-
-
-    let explicitType = testBit align 6
+        mask :: Word32
+        mask = (1 `shiftL` 5) .|. -- inalloca
+               (1 `shiftL` 6) .|. -- explicit type
+               (1 `shiftL` 7)     -- swift error
+        aval = (1 `shiftL` (fromIntegral (align .&. complement mask))) `shiftR` 1
+        explicitType = testBit align 6
+        ity = if explicitType then PtrTo instty else instty
 
     ret <- if explicitType
               then return instty
               else elimPtrTo instty
                       `mplus` fail "invalid return type in INST_ALLOCA"
 
-    let instty' | explicitType = PtrTo instty
-                | otherwise    = instty
-
-    traceShowM ("alloca", "instty", instty)
-
-    result instty' (Alloca ret sval (guard (aval > 0) >> Just aval)) d
+    result ity (Alloca ret sval (Just aval)) d
 
   -- [opty,op,align,vol]
   20 -> label "FUNC_CODE_INST_LOAD" $ do
@@ -497,7 +495,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
 
     (ret,ix') <-
       if length (recordFields r) == ix + 3
-         then do ty <- getType ix
+         then do ty <- getType =<< parseField r ix numeric
                  return (ty,ix+1)
 
          else do ty <- elimPtrTo (typedType tv)
@@ -507,7 +505,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     aval    <- parseField r ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
-    result ret (Load tv align) d
+    result ret (Load (tv { typedType = PtrTo ret }) align) d
 
   -- 21 is unused
   -- 22 is unused
@@ -555,8 +553,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
     (c,_)   <- getValueTypePair t r (ix+1)
     result (typedType tv) (Select c tv (typedValue fv)) d
 
-  -- 30 is handled lower down, as it's processed the same way as 4
-  30 -> label "FUNC_CODE_INST_INBOUNDS_GEP" (parseGEP t True r d)
+  30 -> label "FUNC_CODE_INST_INBOUNDS_GEP_OLD" (parseGEP t (Just True) r d)
 
   31 -> label "FUNC_CODE_INST_INDIRECTBR" $ do
     let field = parseField r
@@ -669,8 +666,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
   42 -> label "FUNC_CODE_INST_STOREATOMIC_OLD" $ do
     notImplemented
 
-  43 -> label "FUNC_CODE_INST_GEP" $ do
-    notImplemented
+  43 -> label "FUNC_CODE_INST_GEP" (parseGEP t Nothing r d)
 
   44 -> label "FUNC_CODE_INST_STORE" $ do
     let field = parseField r
@@ -781,11 +777,43 @@ addAttachments atts blocks = go 0 (Map.toList atts) (Seq.viewl blocks)
 
   go _ _ Seq.EmptyL = Seq.empty
 
+baseType :: Type -> Type
+baseType (PtrTo ty) = ty
+baseType (Array _ ty) = ty
+baseType (Vector _ ty) = ty
+baseType ty = ty
+
 -- [n x operands]
-parseGEP :: ValueTable -> Bool -> Record -> PartialDefine -> Parse PartialDefine
-parseGEP t ib r d = do
-  (tv,ix) <- label "valuetypepair" $ getValueTypePair t r 0
-  args    <- label "parseGepArgs" (parseGepArgs t r ix)
+parseGEP :: ValueTable -> Maybe Bool -> Record -> PartialDefine -> Parse PartialDefine
+parseGEP t mbInBound r d = do
+  (ib, tv, r', ix) <-
+      case mbInBound of
+
+        -- FUNC_CODE_INST_GEP_OLD
+        -- FUNC_CODE_INST_INBOUNDS_GEP_OLD
+        Just ib -> do
+          (tv,ix') <- getValueTypePair t r 0
+          return (ib, tv, r, ix')
+
+        -- FUNC_CODE_INST_GEP
+        Nothing -> do
+          let r' = flattenRecord r
+          let field = parseField r'
+          ib <- field 0 boolean
+          ty <- getType =<< field 1 numeric
+          (tv,ix') <- getValueTypePair t r' 2
+          -- TODO: the following sometimes fails, but it doesn't seem to matter.
+          {-
+          unless (baseType (typedType tv) == ty)
+              (fail $ unlines [ "Explicit gep type does not match base type of pointer operand"
+                              , "Declared type: " ++ show (ppType ty)
+                              , "Operand type: " ++ show (ppType (typedType tv))
+                              , "Base type of operand: " ++ show (ppType (baseType (typedType tv)))
+                              ])
+           -}
+          return (ib, tv { typedType = PtrTo ty }, r', ix')
+
+  args    <- label "parseGepArgs" (parseGepArgs t r' ix)
   rty     <- label "interpGep"    (interpGep (typedType tv) args)
   result rty (GEP ib tv args) d
 
@@ -923,14 +951,17 @@ parseSwitchLabels ty r = loop
     | n >= len  = return []
     | otherwise = do
       tv <- getFnValueById ty =<< field n numeric
-      case typedValue tv of
-
-        ValInteger i -> do
-          l    <- field (n+1) numeric
-          rest <- loop (n+2)
-          return ((i,l):rest)
-
-        _ -> fail "Invalid SWITCH record"
+      i <- case typedValue tv of
+             ValInteger i -> return i
+             ValBool b -> return (toEnum (fromEnum b))
+             v -> fail $ unwords [ "Invalid value in SWITCH record. Found"
+                                 , show v
+                                 , "at position"
+                                 , show n
+                                 ]
+      l    <- field (n+1) numeric
+      rest <- loop (n+2)
+      return ((i,l):rest)
 
 -- | See the comment for 'parseSwitchLabels' for information about what this
 -- does.

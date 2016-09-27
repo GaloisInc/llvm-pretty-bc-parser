@@ -516,6 +516,7 @@ type ValueSymtab = Map.Map SymTabEntry SymName
 data SymTabEntry
   = SymTabEntry !Int
   | SymTabBBEntry !Int
+  | SymTabFNEntry !Int
     deriving (Eq,Ord,Show)
 
 renderName :: SymName -> String
@@ -536,11 +537,17 @@ addBBEntry i n = Map.insert (SymTabBBEntry i) (Left n)
 addBBAnon :: Int -> Int -> ValueSymtab -> ValueSymtab
 addBBAnon i n = Map.insert (SymTabBBEntry i) (Right n)
 
+addFNEntry :: Int -> Int -> String -> ValueSymtab -> ValueSymtab
+-- TODO: do we ever need to be able to look up the offset?
+addFNEntry i _o n = Map.insert (SymTabFNEntry i) (Left n)
+
 -- | Lookup the name of an entry.
 entryName :: Int -> Parse String
 entryName n = do
   symtab <- getValueSymtab
-  case Map.lookup (SymTabEntry n) symtab of
+  let mentry = Map.lookup (SymTabEntry n) symtab `mplus`
+               Map.lookup (SymTabFNEntry n) symtab
+  case mentry of
     Just i  -> return (renderName i)
     Nothing -> fail ("entry " ++ show n ++ " is missing from the symbol table"
              ++ "\n" ++ show symtab)
