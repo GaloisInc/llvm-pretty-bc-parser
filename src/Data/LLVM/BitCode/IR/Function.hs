@@ -16,7 +16,7 @@ import Text.LLVM.Labels
 import Text.LLVM.PP
 
 import Control.Applicative ((<$>),(<*>))
-import Control.Monad (unless,mplus,mzero,foldM,(<=<))
+import Control.Monad (unless,mplus,mzero,foldM,(<=<),guard)
 import Data.Bits (shiftR,bit,shiftL,testBit)
 import Data.Int (Int32)
 import Data.Word (Word32)
@@ -482,7 +482,7 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
               else elimPtrTo instty
                       `mplus` fail "invalid return type in INST_ALLOCA"
 
-    result instty (Alloca ret sval (Just aval)) d
+    result instty (Alloca ret sval (guard (aval > 0) >> Just aval)) d
 
   -- [opty,op,align,vol]
   20 -> label "FUNC_CODE_INST_LOAD" $ do
