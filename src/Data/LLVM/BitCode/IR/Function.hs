@@ -25,6 +25,8 @@ import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Traversable as T
 
+import Debug.Trace
+
 
 -- Function Aliases ------------------------------------------------------------
 
@@ -482,7 +484,12 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
               else elimPtrTo instty
                       `mplus` fail "invalid return type in INST_ALLOCA"
 
-    result instty (Alloca ret sval (guard (aval > 0) >> Just aval)) d
+    let instty' | explicitType = PtrTo instty
+                | otherwise    = instty
+
+    traceShowM ("alloca", "instty", instty)
+
+    result instty' (Alloca ret sval (guard (aval > 0) >> Just aval)) d
 
   -- [opty,op,align,vol]
   20 -> label "FUNC_CODE_INST_LOAD" $ do
