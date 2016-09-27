@@ -9,6 +9,7 @@ Point-of-contact : jstanley
 {-# LANGUAGE OverloadedStrings           #-}
 {-# LANGUAGE ScopedTypeVariables         #-}
 {-# LANGUAGE ViewPatterns                #-}
+{-# LANGUAGE CPP                         #-}
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 
 module Data.LLVM.CFG
@@ -22,7 +23,10 @@ module Data.LLVM.CFG
   )
 where
 
+#if !(MIN_VERSION_base(4,8,0))
 import           Control.Applicative
+#endif
+
 import           Control.Arrow
 
 import qualified Data.Graph.Inductive.Query.Dominators as Dom

@@ -5,7 +5,7 @@ import Data.LLVM.BitCode.BitString hiding (drop,take)
 import Data.LLVM.BitCode.Match
 import Data.LLVM.BitCode.Parse
 
-import Data.Bits (Bits,testBit,shiftR,bit)
+import Data.Bits (testBit,shiftR,bit)
 import Data.Char (chr)
 import Data.Word (Word64)
 

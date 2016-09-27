@@ -1,7 +1,8 @@
 
 import Data.LLVM.BitCode (parseBitCode, formatError)
 import Data.LLVM.CFG (buildCFG, CFG(..), blockId)
-import Text.LLVM.AST (ppModule, defBody, modDefines)
+import Text.LLVM.AST (defBody, modDefines)
+import Text.LLVM.PP (ppLLVM, ppModule)
 
 import Control.Monad (when)
 import Data.Graph.Inductive.Graph (nmap, emap)
@@ -36,7 +37,7 @@ disasm doCFG file = do
       exitFailure
 
     Right m  -> do
-      print (ppModule m)
+      print (ppLLVM (ppModule m))
       when doCFG $ do
         let cfgs  = map (buildCFG . defBody) $ modDefines m
             fixup = nmap (show . blockId) . emap (const "")

@@ -13,6 +13,7 @@ import Data.LLVM.BitCode.Parse
 import Data.LLVM.BitCode.Record
 import Text.LLVM.AST
 import Text.LLVM.Labels
+import Text.LLVM.PP
 
 import Control.Applicative ((<$>),(<*>))
 import Control.Monad (unless,mplus,mzero,foldM,(<=<))
@@ -160,7 +161,7 @@ lookupBlockName dl = lkp
   where
   syms = Map.fromList [ (partialName d, partialSymtab d) | d <- F.toList dl ]
   lkp fn bid = case Map.lookup fn syms of
-    Nothing -> fail ("symbol " ++ show (ppSymbol fn) ++ " is not defined")
+    Nothing -> fail ("symbol " ++ show (ppLLVM (ppSymbol fn)) ++ " is not defined")
     Just st -> case Map.lookup (SymTabBBEntry bid) st of
       Nothing -> fail ("block id " ++ show bid ++ " does not exist")
       Just sn -> return (mkBlockLabel sn)

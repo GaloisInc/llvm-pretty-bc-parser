@@ -4,7 +4,8 @@
 module Main where
 
 import Data.LLVM.BitCode (parseBitCodeLazyFromFile,Error(..),formatError)
-import Text.LLVM.AST (Module,ppModule)
+import Text.LLVM.AST (Module)
+import Text.LLVM.PP (ppLLVM,ppModule)
 
 import Control.Monad (when)
 import Data.Char (ord,isSpace,chr)
@@ -152,7 +153,7 @@ processBitCode pfx file = do
     Right m  -> do
       tmp        <- getTemporaryDirectory
       (parsed,h) <- openTempFile tmp (pfx <.> "ll")
-      hPrint h (ppModule m)
+      hPrint h (ppLLVM (ppModule m))
       hClose h
       stripComments parsed
       return parsed
