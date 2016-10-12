@@ -1,5 +1,5 @@
 Name:                llvm-pretty-bc-parser
-Version:             0.2.1.0
+Version:             0.3.0.0
 License:             BSD3
 License-file:        LICENSE
 Author:              Trevor Elliott <trevor@galois.com>
