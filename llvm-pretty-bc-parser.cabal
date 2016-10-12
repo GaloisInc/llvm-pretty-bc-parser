@@ -53,7 +53,7 @@ Library
                        fgl        >= 5.5,
                        cereal     >= 0.3.5.2,
                        bytestring >= 0.9.1,
-                       llvm-pretty>= 0.4.0.0
+                       llvm-pretty>= 0.5
 
 Executable llvm-disasm
   Main-is:             LLVMDis.hs
@@ -69,7 +69,7 @@ Executable llvm-disasm
                        fgl        >= 5.5,
                        fgl-visualize >= 0.1,
                        cereal     >= 0.3.5.2,
-                       llvm-pretty>= 0.4.0.0,
+                       llvm-pretty>= 0.5
                        llvm-pretty-bc-parser
 
 Test-suite disasm-test
@@ -83,5 +83,5 @@ Test-suite disasm-test
                        directory,
                        bytestring,
                        filepath,
-                       llvm-pretty>= 0.4.0.0,
+                       llvm-pretty>= 0.5
                        llvm-pretty-bc-parser
