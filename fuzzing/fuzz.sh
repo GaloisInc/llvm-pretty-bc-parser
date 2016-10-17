@@ -51,12 +51,14 @@ if [ -n "${KEEP}" ]; then
     mkdir fuzz-results;
 fi
 
+RESULT=0
 for i in `seq 1 ${NUMTESTS:-100}`;
 do
     csmith > fuzz-temp-test.c;
     clang -I${CSMITH_PATH}/runtime -O -g -w -c -emit-llvm fuzz-temp-test.c -o fuzz-temp-test.bc;
     llvm-disasm fuzz-temp-test.bc &> /dev/null
     if [ $? -ne 0 ]; then
+        RESULT=1
         SEED=$(grep '^ \* Seed:\s*\([0-9]*\)' fuzz-temp-test.c | grep -o '[0-9]*$')
         echo ${SEED}
         if [ -n "${KEEP}" ]; then
@@ -64,3 +66,4 @@ do
         fi
     fi
 done
+exit ${RESULT}
