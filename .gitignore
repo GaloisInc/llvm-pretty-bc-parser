@@ -4,3 +4,4 @@ cabal.sandbox.config
 /dist-newstyle
 /fuzz-temp-test.c
 /fuzz-temp-test.bc
+/fuzz-results

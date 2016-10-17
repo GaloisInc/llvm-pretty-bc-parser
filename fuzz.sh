@@ -40,18 +40,25 @@ trap 'if [ -z $KEEP ]; then rm fuzz-temp-test.c fuzz-temp-test.bc; fi' EXIT
 
 if [ ${SEED+x} ]; then
     csmith -s ${SEED} > fuzz-temp-test.c;
-    clang -I${CSMITH_PATH}/runtime -O -w -c -emit-llvm fuzz-temp-test.c -o fuzz-temp-test.bc;
+    clang -I${CSMITH_PATH}/runtime -O -g -w -c -emit-llvm fuzz-temp-test.c -o fuzz-temp-test.bc;
     set -e
     llvm-disasm fuzz-temp-test.bc
     exit
 fi
 
+RESULT_DIR=${PWD}/fuzz-results
+if [ -n $KEEP ]; then
+    mkdir fuzz-results;
+fi
+
 for i in `seq 1 ${NUMTESTS:-100}`;
 do
     csmith > fuzz-temp-test.c;
-    clang -I${CSMITH_PATH}/runtime -O -w -c -emit-llvm fuzz-temp-test.c -o fuzz-temp-test.bc;
+    clang -I${CSMITH_PATH}/runtime -O -g -w -c -emit-llvm fuzz-temp-test.c -o fuzz-temp-test.bc;
     llvm-disasm fuzz-temp-test.bc &> /dev/null
     if [ $? -ne 0 ]; then
-        grep '^ \* Seed:\s*\([0-9]*\)' fuzz-temp-test.c | grep -o '[0-9]*$'
+        SEED=$(grep '^ \* Seed:\s*\([0-9]*\)' fuzz-temp-test.c | grep -o '[0-9]*$')
+        echo ${SEED}
+        cp fuzz-temp-test.c ${RESULT_DIR}/${SEED}.c
     fi
 done
