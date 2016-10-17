@@ -36,7 +36,7 @@ while getopts "kn:s:" opt; do
   esac
 done
 
-trap 'if [ -z $KEEP ]; then rm fuzz-temp-test.c fuzz-temp-test.bc; fi' EXIT
+trap 'if [ -z ${KEEP} ]; then rm fuzz-temp-test.c fuzz-temp-test.bc; fi' EXIT
 
 if [ ${SEED+x} ]; then
     csmith -s ${SEED} > fuzz-temp-test.c;
@@ -47,7 +47,7 @@ if [ ${SEED+x} ]; then
 fi
 
 RESULT_DIR=${PWD}/fuzz-results
-if [ -n $KEEP ]; then
+if [ -n "${KEEP}" ]; then
     mkdir fuzz-results;
 fi
 
@@ -59,6 +59,8 @@ do
     if [ $? -ne 0 ]; then
         SEED=$(grep '^ \* Seed:\s*\([0-9]*\)' fuzz-temp-test.c | grep -o '[0-9]*$')
         echo ${SEED}
-        cp fuzz-temp-test.c ${RESULT_DIR}/${SEED}.c
+        if [ -n "${KEEP}" ]; then
+            cp fuzz-temp-test.c ${RESULT_DIR}/${SEED}.c;
+        fi
     fi
 done
