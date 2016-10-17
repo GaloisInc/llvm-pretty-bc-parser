@@ -5,7 +5,7 @@
 # same error message, so modify the grep condition appropriately for
 # each bug.
 
-clang -I${CSMITH_PATH}/runtime -O -g -w -c -emit-llvm fuzz-temp-test.c -o fuzz-temp-test.bc;
+clang -I${CSMITH_PATH} -O -g -w -c -emit-llvm fuzz-temp-test.c -o fuzz-temp-test.bc;
 if [ $? -ne 0 ]; then
     exit 1
 fi
