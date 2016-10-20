@@ -93,7 +93,7 @@ Executable fuzz-llvm-disasm
   Ghc-options:         -Wall
   build-depends:       base >= 4 && < 5,
                        process,
-                       directory,
+                       directory >= 1.2.7,
                        bytestring,
                        filepath,
                        temporary,
@@ -101,5 +101,6 @@ Executable fuzz-llvm-disasm
                        containers,
                        xml,
                        time,
+                       deepseq,
                        llvm-pretty>= 0.5,
                        llvm-pretty-bc-parser
