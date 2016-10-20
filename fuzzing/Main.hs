@@ -14,7 +14,7 @@ import Data.Word (Word64)
 import GHC.Generics (Generic)
 import System.Console.GetOpt
            (ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo)
-import System.Directory (getFileSize)
+import System.Directory (copyFile, createDirectory, getFileSize, removeDirectoryRecursive)
 import System.Environment (getArgs, getProgName, lookupEnv)
 import System.Exit (ExitCode(..), exitFailure, exitSuccess)
 import System.FilePath ((</>), (<.>))
@@ -61,7 +61,7 @@ options :: [OptDescr (Endo Options)]
 options  =
   [ Option "n" [] (ReqArg setNumTests "NUMBER")
     "number of tests to run"
-  , Option ""  ["save"] (ReqArg setSaveTests "DIRECTORY")
+  , Option "o"  ["output"] (ReqArg setSaveTests "DIRECTORY")
     "directory to save failed tests"
   , Option "c" ["clang"] (ReqArg addClang "CLANG")
     "specify clang executables to use, e.g., `-c clang-3.8 -c clang-3.9'"
@@ -69,8 +69,8 @@ options  =
     "output JUnit-style XML test report"
   , Option ""  ["csmith-path"] (ReqArg setCsmithPath "DIRECTORY")
     "path to Csmith include files; default is $CSMITH_PATH environment variable"
-  , Option ""  ["collapse-redundant-errors"] (NoArg setCollapse)
-    "collapse failing test cases that have the same error message"
+  , Option ""  ["collapse-results"] (NoArg setCollapse)
+    "collapse failing test cases by error message and remove successes"
   , Option "h" ["help"] (NoArg setHelp)
     "display this message"
   ]
@@ -124,31 +124,62 @@ printUsage errs =
      putStrLn (usageInfo (unlines (errs ++ [banner])) options)
 
 main :: IO ()
-main = do
+main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   opts <- getOptions
   resultMaps <-
     forM (optClangs opts) $ \clang -> do
       putStrLn $ "[" ++ clang ++ "]"
       results <- forM [1..optNumTests opts] $ \_ -> do
         seed <- randomIO
-        runTest clang seed opts
+        runTest tmpDir clang seed opts
       return (Map.singleton clang results)
-  let allResults = Map.unions resultMaps
-  _ <- flip Map.traverseWithKey allResults $ \clang results -> do
+  let allResults' = Map.unions resultMaps
+      allResults | optCollapse opts = collapseResults allResults'
+                 | otherwise        = allResults'
+  forM_ (Map.toList allResults) $ \(clang, results) -> do
     let (_passes, fails) = partition isPass results
     when (not (null fails)) $ do
-      putStrLn $ "[" ++ clang ++ "]"
-      putStrLn $
-        show (length fails) ++ "/" ++
-        show (optNumTests opts) ++ " tests failed."
-      putStrLn "Failed test seeds:"
+      putStrLn $ "[" ++ clang ++ "] " ++
+        show (length fails) ++ " failing cases identified:"
       forM_ fails $ \(TestFail s _ _) ->
         print s
+  case optSaveTests opts of
+    Nothing -> return ()
+    Just root -> do
+      removeDirectoryRecursive root
+      createDirectory root
+      forM_ (Map.toList allResults) $ \(clang, results) ->
+        when (not (null (filter isFail results))) $ do
+          let clangRoot = root </> clang
+          createDirectory clangRoot
+          forM_ results $ \result ->
+            case result of
+              TestPass _ -> return ()
+              TestFail _ TestSrc{..} err -> do
+                copyFile (tmpDir </> srcFile) (clangRoot </> srcFile)
+                writeFile (clangRoot </> srcFile <.> "stderr") err
   case optJUnitXml opts of
     Nothing -> return ()
     Just f -> do
       xml <- mkJUnitXml allResults
       writeFile f (ppTopElement xml)
+
+collapseResults :: Map Clang [TestResult] -> Map Clang [TestResult]
+collapseResults = Map.map (collapse Map.empty)
+  where
+    collapse seen [] = Map.elems seen
+    collapse seen (r:results) =
+      case r of
+        TestPass _ -> collapse seen results
+        TestFail _ _ err ->
+          collapse (Map.insertWith f err r seen) results
+    -- choose the smallest source file
+    f r1@(TestFail _ src1 _) r2@(TestFail _ src2 _) =
+      case compare (srcSize src1) (srcSize src2) of
+        LT -> r1
+        EQ -> r1 -- arbitrarily
+        GT -> r2
+    f _ _ = error "only TestFails should go in this map"
 
 type Seed = Word64
 
@@ -167,24 +198,24 @@ isPass _            = False
 isFail :: TestResult -> Bool
 isFail = not . isPass
 
-runTest :: Clang -> Seed -> Options -> IO TestResult
-runTest clang seed opts = withTempDirectory "." ".fuzz." $ \tmpDir -> do
-  let baseFile = tmpDir </> "test-" ++ show seed
+runTest :: FilePath -> Clang -> Seed -> Options -> IO TestResult
+runTest tmpDir clang seed opts = do
+  let baseFile = clang ++ "-" ++ show seed
       srcFile  = baseFile <.> "c"
       bcFile   = baseFile <.> "bc"
   csmithPath <- getCsmithPath opts
   callProcess "csmith" [
-      "-o", srcFile
+      "-o", tmpDir </> srcFile
     , "-s", show seed
     ]
   callProcess clang [
       "-I" ++ csmithPath
     , "-O", "-g", "-w", "-c", "-emit-llvm"
-    , srcFile
-    , "-o", bcFile
+    , tmpDir </> srcFile
+    , "-o", tmpDir </> bcFile
     ]
   (ec, out, err) <-
-    readProcessWithExitCode "llvm-disasm" [ bcFile ] ""
+    readProcessWithExitCode "llvm-disasm" [ tmpDir </> bcFile ] ""
   case ec of
     ExitSuccess -> do
       putStrLn "[PASS]"
@@ -196,7 +227,7 @@ runTest clang seed opts = withTempDirectory "." ".fuzz." $ \tmpDir -> do
       putStrLn "[ERR]"
       putStr err
       putStrLn ("[ERROR CODE " ++ show c ++ "]")
-      srcSize <- getFileSize srcFile
+      srcSize <- getFileSize (tmpDir </> srcFile)
       return $!! TestFail seed TestSrc{..} err
 
 getCsmithPath :: Options -> IO FilePath
