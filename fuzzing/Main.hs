@@ -14,7 +14,7 @@ import Data.Word (Word64)
 import GHC.Generics (Generic)
 import System.Console.GetOpt
            (ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo)
-import System.Directory (copyFile, createDirectory, getFileSize, removeDirectoryRecursive)
+import System.Directory (copyFile, createDirectoryIfMissing, getFileSize)
 import System.Environment (getArgs, getProgName, lookupEnv)
 import System.Exit (ExitCode(..), exitFailure, exitSuccess)
 import System.FilePath ((</>), (<.>))
@@ -146,12 +146,11 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   case optSaveTests opts of
     Nothing -> return ()
     Just root -> do
-      removeDirectoryRecursive root
-      createDirectory root
+      createDirectoryIfMissing False root
       forM_ (Map.toList allResults) $ \(clang, results) ->
         when (not (null (filter isFail results))) $ do
           let clangRoot = root </> clang
-          createDirectory clangRoot
+          createDirectoryIfMissing False clangRoot
           forM_ results $ \result ->
             case result of
               TestPass _ -> return ()
