@@ -108,8 +108,9 @@ main = do
     putStrLn "Failed test seeds:"
     forM_ fails $ \(TestFail s _ _) ->
       print s
-    putStr (ppTopElement (mkJUnitXml hostname now results))
-    exitFailure
+  case optJUnitXml opts of
+    Nothing -> return ()
+    Just f -> writeFile f (ppTopElement (mkJUnitXml hostname now results))
 
 type Seed = Word64
 
