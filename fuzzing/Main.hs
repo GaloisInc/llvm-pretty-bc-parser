@@ -128,6 +128,7 @@ main = do
   opts <- getOptions
   resultMaps <-
     forM (optClangs opts) $ \clang -> do
+      putStrLn $ "[" ++ clang ++ "]"
       results <- forM [1..optNumTests opts] $ \_ -> do
         seed <- randomIO
         runTest clang seed opts
@@ -184,13 +185,16 @@ runTest clang seed opts = withTempDirectory "." ".fuzz." $ \tmpDir -> do
     ]
   (ec, out, err) <-
     readProcessWithExitCode "llvm-disasm" [ bcFile ] ""
-  putStrLn "[OUT]"
-  putStr out
-  putStrLn "[ERR]"
-  putStr err
   case ec of
-    ExitSuccess -> return (TestPass seed)
+    ExitSuccess -> do
+      putStrLn "[PASS]"
+      return (TestPass seed)
     ExitFailure c -> do
+      putStrLn "[ERROR]"
+      putStrLn "[OUT]"
+      putStr out
+      putStrLn "[ERR]"
+      putStr err
       putStrLn ("[ERROR CODE " ++ show c ++ "]")
       srcSize <- getFileSize srcFile
       return $!! TestFail seed TestSrc{..} err
@@ -216,6 +220,7 @@ mkJUnitXml allResults = do
       testsuites = map (testsuite hostname nowFmt) (Map.toList allResults)
   return $ unode "testsuites" testsuites
   where
+    toUnder = map (\c -> if c == '.' then '_' else c)
     testsuite hostname nowFmt (clang, results) =
       unode "testsuite" ([
           uattr "name"      "llvm-disasm fuzzer"
@@ -226,7 +231,7 @@ mkJUnitXml allResults = do
         , uattr "timestamp" nowFmt
         , uattr "time"      "0.0" -- irrelevant due to random input
         , uattr "id"        ""
-        , uattr "package"   clang
+        , uattr "package"   (toUnder clang)
         , uattr "hostname"  hostname
         ]
         , flip map results $ \res ->
@@ -234,13 +239,13 @@ mkJUnitXml allResults = do
               TestPass seed ->
                 unode "testcase" [
                     uattr "name"      (show seed)
-                  , uattr "classname" clang
+                  , uattr "classname" (toUnder clang)
                   , uattr "time"      "0.0"
                   ]
               TestFail seed _ err ->
                 unode "testcase" ([
                     uattr "name"      (show seed)
-                  , uattr "classname" clang
+                  , uattr "classname" (toUnder clang)
                   , uattr "time"      "0.0"
                   ]
                   , unode "failure" ([
