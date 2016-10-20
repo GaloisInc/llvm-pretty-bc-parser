@@ -85,3 +85,21 @@ Test-suite disasm-test
                        filepath,
                        llvm-pretty>= 0.5,
                        llvm-pretty-bc-parser
+
+Executable fuzz-llvm-disasm
+  Main-is:             Main.hs
+  Default-language:    Haskell2010
+  hs-source-dirs:      fuzzing
+  Ghc-options:         -Wall
+  build-depends:       base >= 4 && < 5,
+                       process,
+                       directory,
+                       bytestring,
+                       filepath,
+                       temporary,
+                       random,
+                       containers,
+                       xml,
+                       time,
+                       llvm-pretty>= 0.5,
+                       llvm-pretty-bc-parser
