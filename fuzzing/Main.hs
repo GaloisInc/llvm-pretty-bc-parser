@@ -18,7 +18,7 @@ import System.Console.GetOpt
   (ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo)
 import System.Directory
   (copyFile, createDirectoryIfMissing, getFileSize, getPermissions,
-   makeAbsolute, setPermissions, setOwnerExecutable)
+   setPermissions, setOwnerExecutable)
 import System.Environment (getArgs, getProgName, lookupEnv)
 import System.Exit (ExitCode(..), exitFailure, exitSuccess)
 import System.FilePath ((</>), (<.>), dropExtension)
@@ -179,8 +179,7 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
         print s
   case optSaveTests opts of
     Nothing -> return ()
-    Just root' -> do
-      root <- makeAbsolute root'
+    Just root -> do
       createDirectoryIfMissing False root
       forM_ (Map.toList allResults) $ \(clang, results) ->
         when (not (null (filter isFail results))) $ do
