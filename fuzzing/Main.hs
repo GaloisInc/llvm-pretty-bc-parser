@@ -236,7 +236,8 @@ reduce clang opts clangRoot srcFile err = do
     writeFile scriptFile script
     p <- getPermissions scriptFile
     setPermissions scriptFile (setOwnerExecutable True p)
-    void $ readProcessWithExitCode "creduce" [ scriptFile, srcReduced ] ""
+    h <- spawnProcess "creduce" [ scriptFile, srcReduced ]
+    void $ waitForProcess h
 
 collapseResults :: Map Clang [TestResult] -> Map Clang [TestResult]
 collapseResults = Map.map (collapse Map.empty)
