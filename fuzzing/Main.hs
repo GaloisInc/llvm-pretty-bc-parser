@@ -188,6 +188,8 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
           forM_ results $ \result ->
             case result of
               TestPass _ -> return ()
+              -- errors arise from bugs in clang, not our code
+              TestError _ -> return ()
               TestFail _ TestSrc{..} err -> do
                 copyFile (tmpDir </> srcFile) (clangRoot </> srcFile)
                 writeFile (clangRoot </> srcFile <.> "stderr") err
@@ -246,6 +248,8 @@ collapseResults = Map.map (collapse Map.empty)
     collapse seen (r:results) =
       case r of
         TestPass _ -> collapse seen results
+        -- errors arise from bugs in clang, not our code
+        TestError _ -> collapse seen results
         TestFail _ _ err ->
           collapse (Map.insertWith f err r seen) results
     -- choose the smallest source file
@@ -261,6 +265,9 @@ type Seed = Word64
 data TestResult
   = TestPass Seed
   | TestFail Seed TestSrc String
+  | TestError Seed
+  -- ^ For now, errors are treated the same as passes, since we're not
+  -- concerned with clang bugs
   deriving (Eq, Show, Generic, NFData)
 
 data TestSrc = TestSrc { srcFile :: FilePath, srcSize :: Integer }
@@ -283,27 +290,31 @@ runTest tmpDir clang seed opts = do
       "-o", tmpDir </> srcFile
     , "-s", show seed
     ]
-  callProcess clang [
+  h <- spawnProcess clang [
       "-I" ++ csmithPath
     , "-O", "-g", "-w", "-c", "-emit-llvm"
     , tmpDir </> srcFile
     , "-o", tmpDir </> bcFile
     ]
-  (ec, out, err) <-
-    readProcessWithExitCode "llvm-disasm" [ tmpDir </> bcFile ] ""
-  case ec of
-    ExitSuccess -> do
-      putStrLn "[PASS]"
-      return (TestPass seed)
-    ExitFailure c -> do
-      putStrLn "[ERROR]"
-      putStrLn "[OUT]"
-      putStr out
-      putStrLn "[ERR]"
-      putStr err
-      putStrLn ("[ERROR CODE " ++ show c ++ "]")
-      srcSize <- getFileSize (tmpDir </> srcFile)
-      return $!! TestFail seed TestSrc{..} err
+  clangErr <- waitForProcess h
+  case clangErr of
+    ExitFailure _ -> return (TestError seed)
+    _ -> do
+      (ec, out, err) <-
+        readProcessWithExitCode "llvm-disasm" [ tmpDir </> bcFile ] ""
+      case ec of
+        ExitSuccess -> do
+          putStrLn "[PASS]"
+          return (TestPass seed)
+        ExitFailure c -> do
+          putStrLn "[ERROR]"
+          putStrLn "[OUT]"
+          putStr out
+          putStrLn "[ERR]"
+          putStr err
+          putStrLn ("[ERROR CODE " ++ show c ++ "]")
+          srcSize <- getFileSize (tmpDir </> srcFile)
+          return $!! TestFail seed TestSrc{..} err
 
 getCsmithPath :: Options -> IO FilePath
 getCsmithPath opts =
@@ -348,6 +359,14 @@ mkJUnitXml allResults = do
                   , uattr "classname" (toUnder clang)
                   , uattr "time"      "0.0"
                   ]
+              TestPass seed ->
+                unode "testcase" ([
+                    uattr "name"      (show seed)
+                  , uattr "classname" (toUnder clang)
+                  , uattr "time"      "0.0"
+                  ]
+                  , "clang error"
+                  )
               TestFail seed _ err ->
                 unode "testcase" ([
                     uattr "name"      (show seed)
