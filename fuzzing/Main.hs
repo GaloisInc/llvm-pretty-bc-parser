@@ -5,19 +5,23 @@ module Main where
 
 import Control.DeepSeq (($!!), NFData)
 import Control.Monad-- (forM_, when)
-import Data.List (partition)
+import Data.List (isPrefixOf, partition)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.Maybe (fromMaybe)
 import Data.Monoid (mconcat, Endo(..))
 import Data.Time
+  (defaultTimeLocale, formatTime, getZonedTime, iso8601DateFormat)
 import Data.Word (Word64)
 import GHC.Generics (Generic)
 import System.Console.GetOpt
-           (ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo)
-import System.Directory (copyFile, createDirectoryIfMissing, getFileSize)
+  (ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo)
+import System.Directory
+  (copyFile, createDirectoryIfMissing, getFileSize, getPermissions,
+   makeAbsolute, setPermissions, setOwnerExecutable)
 import System.Environment (getArgs, getProgName, lookupEnv)
 import System.Exit (ExitCode(..), exitFailure, exitSuccess)
-import System.FilePath ((</>), (<.>))
+import System.FilePath ((</>), (<.>), dropExtension)
 import System.IO.Temp (withTempDirectory)
 import System.Process
 import System.Random (randomIO)
@@ -33,6 +37,8 @@ type Clang = String
 data Options = Options {
     optNumTests :: Integer
     -- ^ Number of Tests
+  , optSeeds :: Maybe [Word64]
+    -- ^ Specific seeds to use in fuzzing; overrides 'optNumTests'
   , optSaveTests :: Maybe FilePath
     -- ^ Location to save failed tests
   , optClangs :: [Clang]
@@ -43,25 +49,31 @@ data Options = Options {
     -- ^ Path to Csmith include files
   , optCollapse :: Bool
     -- ^ Whether to collapse failures with the same error message
-  , optHelp    :: Bool
+  , optReduce :: Bool
+    -- ^ Whether to try reducing the test case with Creduce
+  , optHelp :: Bool
   } deriving (Show)
 
 defaultOptions :: Options
 defaultOptions  = Options {
     optNumTests   = 100
+  , optSeeds      = Nothing
   , optSaveTests  = Nothing
   , optClangs     = ["clang"]
   , optJUnitXml   = Nothing
   , optCsmithPath = Nothing
   , optCollapse   = False
+  , optReduce     = False
   , optHelp       = False
   }
 
 options :: [OptDescr (Endo Options)]
 options  =
   [ Option "n" [] (ReqArg setNumTests "NUMBER")
-    "number of tests to run"
-  , Option "o"  ["output"] (ReqArg setSaveTests "DIRECTORY")
+    "number of tests to run; default is 100"
+  , Option "s" ["seed"] (ReqArg addSeed "SEED")
+    "specific Csmith seed to use; overrides -n"
+  , Option "o" ["output"] (ReqArg setSaveTests "DIRECTORY")
     "directory to save failed tests"
   , Option "c" ["clang"] (ReqArg addClang "CLANG")
     "specify clang executables to use, e.g., `-c clang-3.8 -c clang-3.9'"
@@ -69,8 +81,10 @@ options  =
     "output JUnit-style XML test report"
   , Option ""  ["csmith-path"] (ReqArg setCsmithPath "DIRECTORY")
     "path to Csmith include files; default is $CSMITH_PATH environment variable"
-  , Option ""  ["collapse-results"] (NoArg setCollapse)
+  , Option ""  ["collapse"] (NoArg setCollapse)
     "collapse failing test cases by error message and remove successes"
+  , Option ""  ["reduce"] (NoArg setReduce)
+    "reduce failing test cases with a best-guess Creduce (requires `--output`)"
   , Option "h" ["help"] (NoArg setHelp)
     "display this message"
   ]
@@ -78,8 +92,17 @@ options  =
 setNumTests :: String -> Endo Options
 setNumTests str = Endo $ \opt ->
   case readMaybe str of
-    Just n -> opt { optNumTests = n }
     Nothing -> error "expected integer number of tests"
+    Just n -> opt { optNumTests = n }
+
+addSeed :: String -> Endo Options
+addSeed str = Endo $ \opt ->
+  case readMaybe str of
+    Nothing -> error "expected 64-bit integer seed"
+    Just n ->
+      case optSeeds opt of
+        Nothing    -> opt { optSeeds = Just [n] }
+        Just seeds -> opt { optSeeds = Just (n : seeds) }
 
 setSaveTests :: String -> Endo Options
 setSaveTests str = Endo (\opt -> opt { optSaveTests = Just str })
@@ -98,6 +121,9 @@ setCsmithPath str = Endo (\opt -> opt { optCsmithPath = Just str })
 
 setCollapse :: Endo Options
 setCollapse = Endo (\opt -> opt { optCollapse = True })
+
+setReduce :: Endo Options
+setReduce = Endo (\opt -> opt { optReduce = True })
 
 setHelp :: Endo Options
 setHelp = Endo (\opt -> opt { optHelp = True })
@@ -126,12 +152,20 @@ printUsage errs =
 main :: IO ()
 main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   opts <- getOptions
+  when (optSaveTests opts == Nothing && optReduce opts) $
+    printUsage [ "--reduce requires --output to be set" ]
   resultMaps <-
     forM (optClangs opts) $ \clang -> do
       putStrLn $ "[" ++ clang ++ "]"
-      results <- forM [1..optNumTests opts] $ \_ -> do
-        seed <- randomIO
-        runTest tmpDir clang seed opts
+      results <-
+        case optSeeds opts of
+          Nothing ->
+            forM [1..optNumTests opts] $ \_ -> do
+              seed <- randomIO
+              runTest tmpDir clang seed opts
+          Just seeds ->
+            forM seeds $ \seed ->
+              runTest tmpDir clang seed opts
       return (Map.singleton clang results)
   let allResults' = Map.unions resultMaps
       allResults | optCollapse opts = collapseResults allResults'
@@ -145,7 +179,8 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
         print s
   case optSaveTests opts of
     Nothing -> return ()
-    Just root -> do
+    Just root' -> do
+      root <- makeAbsolute root'
       createDirectoryIfMissing False root
       forM_ (Map.toList allResults) $ \(clang, results) ->
         when (not (null (filter isFail results))) $ do
@@ -157,11 +192,52 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
               TestFail _ TestSrc{..} err -> do
                 copyFile (tmpDir </> srcFile) (clangRoot </> srcFile)
                 writeFile (clangRoot </> srcFile <.> "stderr") err
+                when (optReduce opts) $
+                  reduce clang opts clangRoot srcFile err
   case optJUnitXml opts of
     Nothing -> return ()
     Just f -> do
       xml <- mkJUnitXml allResults
       writeFile f (ppTopElement xml)
+
+reduce :: Clang -> Options -> FilePath -> FilePath -> String -> IO ()
+reduce clang opts clangRoot srcFile err = do
+  csmithPath <- getCsmithPath opts
+  -- copy a file for the reduction in place
+  let baseName   = dropExtension srcFile
+      srcReduced = clangRoot </> baseName ++ "-reduced.c"
+      scriptFile = clangRoot </> baseName ++ "-reduce.sh"
+  copyFile (clangRoot </> srcFile) srcReduced
+  -- find the best guess at the grep pattern for the Creduce script by
+  -- looking for the first line starting with a tab; this should be
+  -- the top of the stack trace
+  let grepPat =
+        case dropWhile (not . isPrefixOf "\t") (lines err) of
+          -- if we don't have a stack trace, we probably shouldn't
+          -- waste our time
+          [] -> Nothing
+          first:_ -> Just first
+      script = unlines [
+          "#!/usr/bin/env bash"
+        , "# Consider this script a best guess template for reducing failing"
+        , "# test cases. Not every bug will manifest in the same way and give"
+        , "# the same error message, so modify the grep condition appropriately"
+        , "# if the shrink is unsatisfactory."
+        , ""
+        , concat [ clang, " -I", csmithPath, " -O -g -w -c "
+                 , "-emit-llvm ", baseName ++"-reduced.c", " -o ", baseName <.> "bc" ]
+        , "if [ $? -ne 0 ]; then"
+        , "    exit 1"
+        , "fi"
+        , concat [ "llvm-disasm ", baseName <.> "bc", " 2>&1 | "
+                 , "grep '^", fromMaybe "" grepPat, "'"]
+        ]
+  when (grepPat /= Nothing) $ do
+    -- write out the shell script to drive Creduce and run it
+    writeFile scriptFile script
+    p <- getPermissions scriptFile
+    setPermissions scriptFile (setOwnerExecutable True p)
+    void $ readProcessWithExitCode "creduce" [ scriptFile, srcReduced ] ""
 
 collapseResults :: Map Clang [TestResult] -> Map Clang [TestResult]
 collapseResults = Map.map (collapse Map.empty)
