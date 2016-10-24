@@ -375,7 +375,7 @@ mkJUnitXml allResults = do
                   , uattr "classname" (toUnder clang)
                   , uattr "time"      "0.0"
                   ]
-              TestPass seed ->
+              TestError seed ->
                 unode "testcase" ([
                     uattr "name"      (show seed)
                   , uattr "classname" (toUnder clang)
