@@ -90,7 +90,7 @@ Executable fuzz-llvm-disasm
   Main-is:             Main.hs
   Default-language:    Haskell2010
   hs-source-dirs:      fuzzing
-  Ghc-options:         -Wall
+  Ghc-options:         -Wall -threaded -O2
   build-depends:       base >= 4 && < 5,
                        process,
                        directory >= 1.2.7,
@@ -102,5 +102,7 @@ Executable fuzz-llvm-disasm
                        xml,
                        time,
                        deepseq,
+                       abstract-par,
+                       monad-par,
                        llvm-pretty>= 0.5,
                        llvm-pretty-bc-parser

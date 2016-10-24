@@ -4,7 +4,10 @@
 module Main where
 
 import Control.DeepSeq (($!!), NFData)
-import Control.Monad-- (forM_, when)
+import Control.Monad (forM, forM_, void, when)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Par.Class (get, spawn)
+import Control.Monad.Par.IO (runParIO)
 import Data.List (isPrefixOf, partition)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -24,9 +27,11 @@ import System.Exit (ExitCode(..), exitFailure, exitSuccess)
 import System.FilePath ((</>), (<.>), dropExtension)
 import System.IO.Temp (withTempDirectory)
 import System.Process
+  (callProcess, readProcess, readProcessWithExitCode,
+   spawnProcess, waitForProcess)
 import System.Random (randomIO)
 import Text.Read (readMaybe)
-import Text.XML.Light
+import Text.XML.Light (Attr(..), Element, ppTopElement, unode, unqual)
 
 -- Option Parsing --------------------------------------------------------------
 
@@ -154,18 +159,24 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   opts <- getOptions
   when (optSaveTests opts == Nothing && optReduce opts) $
     printUsage [ "--reduce requires --output to be set" ]
+  -- run the tests within each clang version in parallel. We could
+  -- parallelize the runs across clang versions as well, but it's
+  -- probably not worth the complexity at that level of granularity
   resultMaps <-
-    forM (optClangs opts) $ \clang -> do
-      putStrLn $ "[" ++ clang ++ "]"
-      results <-
+    forM (optClangs opts) $ \clang -> runParIO $ do
+      liftIO $ putStrLn $ "[" ++ clang ++ "]"
+      results' <-
         case optSeeds opts of
           Nothing ->
-            forM [1..optNumTests opts] $ \_ -> do
+            forM [1..optNumTests opts] $ \_ ->
+              spawn $ liftIO $ do
               seed <- randomIO
               runTest tmpDir clang seed opts
           Just seeds ->
             forM seeds $ \seed ->
+              spawn $ liftIO $ do
               runTest tmpDir clang seed opts
+      results <- mapM get results'
       return (Map.singleton clang results)
   let allResults' = Map.unions resultMaps
       allResults | optCollapse opts = collapseResults allResults'
@@ -201,6 +212,11 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
       xml <- mkJUnitXml allResults
       writeFile f (ppTopElement xml)
 
+-- | Best-effort reduction of test cases using Creduce. Much of the
+-- art of using Creduce is in writing a correct interestingness test,
+-- which we try to approximate here using the stack trace from
+-- @llvm-disasm@. We also do not introduce any parallelism here
+-- because Creduce introduces its own parallelism when we invoke it.
 reduce :: Clang -> Options -> FilePath -> FilePath -> String -> IO ()
 reduce clang opts clangRoot srcFile err = do
   csmithPath <- getCsmithPath opts
