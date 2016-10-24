@@ -48,7 +48,7 @@ findMatch _ []     = return Nothing
 -- | Get the nth element of a list.
 index :: Int -> Match [a] a
 index n as = do
-  guard (n < length as)
+  guard (n >= 0 && n < length as)
   return (as !! n)
 
 -- | Drop elements of a list until a predicate matches.

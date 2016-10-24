@@ -144,7 +144,7 @@ parseModuleBlockEntry pm (paramattrGroupBlockId -> Just _) = do
 parseModuleBlockEntry pm (metadataBlockId -> Just es) = do
   -- METADATA_BLOCK_ID
   vt <- getValueTable
-  (ns,(gs,_),_) <- parseMetadataBlock vt es
+  (ns,(gs,_),_,_) <- parseMetadataBlock vt es
   return pm
     { partialNamedMd   = partialNamedMd   pm ++ ns
     , partialUnnamedMd = partialUnnamedMd pm ++ gs

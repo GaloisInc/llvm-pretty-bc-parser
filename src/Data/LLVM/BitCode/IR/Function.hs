@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -86,16 +87,17 @@ type DefineList = Seq.Seq PartialDefine
 -- | A define with a list of statements for a body, instead of a list of basic
 -- bocks.
 data PartialDefine = PartialDefine
-  { partialAttrs   :: FunAttrs
-  , partialSection :: Maybe String
-  , partialRetType :: Type
-  , partialName    :: Symbol
-  , partialArgs    :: [Typed Ident]
-  , partialVarArgs :: Bool
-  , partialBody    :: BlockList
-  , partialBlock   :: StmtList
-  , partialBlockId :: !Int
-  , partialSymtab  :: ValueSymtab
+  { partialAttrs    :: FunAttrs
+  , partialSection  :: Maybe String
+  , partialRetType  :: Type
+  , partialName     :: Symbol
+  , partialArgs     :: [Typed Ident]
+  , partialVarArgs  :: Bool
+  , partialBody     :: BlockList
+  , partialBlock    :: StmtList
+  , partialBlockId  :: !Int
+  , partialSymtab   :: ValueSymtab
+  , partialMetadata :: Map.Map PKindMd PValMd
   } deriving (Show)
 
 -- | Generate a partial function definition from a function prototype.
@@ -108,16 +110,17 @@ emptyPartialDefine proto = do
   symtab <- initialPartialSymtab
 
   return PartialDefine
-    { partialAttrs     = protoAttrs proto
-    , partialSection   = protoSect proto
-    , partialRetType   = rty
-    , partialName      = Symbol (protoName proto)
-    , partialArgs      = zipWith Typed tys names
-    , partialVarArgs   = va
-    , partialBody      = Seq.empty
-    , partialBlock     = Seq.empty
-    , partialBlockId   = 0
-    , partialSymtab    = symtab
+    { partialAttrs    = protoAttrs proto
+    , partialSection  = protoSect proto
+    , partialRetType  = rty
+    , partialName     = Symbol (protoName proto)
+    , partialArgs     = zipWith Typed tys names
+    , partialVarArgs  = va
+    , partialBody     = Seq.empty
+    , partialBlock    = Seq.empty
+    , partialBlockId  = 0
+    , partialSymtab   = symtab
+    , partialMetadata = Map.empty
     }
 
 -- | Set the statement list in a partial define.
@@ -175,15 +178,21 @@ finalizePartialDefine lkp pd =
   -- generate basic blocks.
   withValueSymtab (partialSymtab pd) $ do
     body <- finalizeBody lkp (partialBody pd)
+    md <- finalizeMetadata (partialMetadata pd)
     return Define
-      { defAttrs   = partialAttrs pd
-      , defRetType = partialRetType pd
-      , defName    = partialName pd
-      , defArgs    = partialArgs pd
-      , defVarArgs = partialVarArgs pd
-      , defBody    = body
-      , defSection = partialSection pd
+      { defAttrs    = partialAttrs pd
+      , defRetType  = partialRetType pd
+      , defName     = partialName pd
+      , defArgs     = partialArgs pd
+      , defVarArgs  = partialVarArgs pd
+      , defBody     = body
+      , defSection  = partialSection pd
+      , defMetadata = md
       }
+
+finalizeMetadata :: PFnMdAttachments -> Parse FnMdAttachments
+finalizeMetadata patt = Map.fromList <$> mapM f (Map.toList patt)
+  where f (k,md) = (,) <$> getKind k <*> finalizePValMd md
 
 -- | Individual label resolution step.
 resolveBlockLabel :: BlockLookup -> Maybe Symbol -> Int -> Parse BlockLabel
@@ -739,8 +748,10 @@ parseFunctionBlockEntry t d (metadataBlockId -> Just es) = do
   return d
 
 parseFunctionBlockEntry t d (metadataAttachmentBlockId -> Just es) = do
-  (_,_,md) <- parseMetadataBlock t es
-  return d { partialBody = addAttachments md (partialBody d) }
+  (_,_,instrAtt,fnAtt) <- parseMetadataBlock t es
+  return d { partialBody     = addInstrAttachments instrAtt (partialBody d)
+           , partialMetadata = Map.union fnAtt (partialMetadata d)
+           }
 
 parseFunctionBlockEntry _ d (abbrevDef -> Just _) =
   -- ignore any abbreviation definitions
@@ -753,8 +764,8 @@ parseFunctionBlockEntry _ d (uselistBlockId -> Just _) = do
 parseFunctionBlockEntry _ _ e = do
   fail ("function block: unexpected: " ++ show e)
 
-addAttachments :: MetadataAttachments -> BlockList -> BlockList
-addAttachments atts blocks = go 0 (Map.toList atts) (Seq.viewl blocks)
+addInstrAttachments :: InstrMdAttachments -> BlockList -> BlockList
+addInstrAttachments atts blocks = go 0 (Map.toList atts) (Seq.viewl blocks)
   where
   go _   []  (b Seq.:< bs) = b Seq.<| bs
   go off mds (b Seq.:< bs) =
@@ -838,7 +849,7 @@ parsePhiArgs relIds t r = loop 1
 
   getId n
     | relIds    = do
-      i   <- field n signed
+      i   <- field n signedWord64
       pos <- getNextId
       return (pos - fromIntegral i)
     | otherwise =
@@ -999,7 +1010,7 @@ parseNewSwitchLabels width r = loop
 
       -- read the chunks of the number in.  each chunk represents one 64-bit
       -- limb of a big num.
-      chunks <- parseSlice r lowStart activeWords signed
+      chunks <- parseSlice r lowStart activeWords signedWord64
 
       -- decode limbs in big-endian order
       let low = foldr (\l acc -> acc `shiftL` 64 + toInteger l) 0 chunks

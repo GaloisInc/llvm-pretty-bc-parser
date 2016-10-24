@@ -5,8 +5,9 @@ import Data.LLVM.BitCode.BitString hiding (drop,take)
 import Data.LLVM.BitCode.Match
 import Data.LLVM.BitCode.Parse
 
-import Data.Bits (testBit,shiftR,bit)
+import Data.Bits (Bits,testBit,shiftR,bit)
 import Data.Char (chr)
+import Data.Int  (Int64)
 import Data.Word (Word64)
 
 import Control.Monad ((<=<),MonadPlus(..),guard)
@@ -110,9 +111,8 @@ parseSlice r l n p = loop (take n (drop l (recordFields r)))
 numeric :: Num a => Match Field a
 numeric  = fmap fromBitString . (fieldLiteral ||| fieldFixed ||| fieldVbr)
 
--- | Parse a @Field@ as a sign-encoded number.
-signed :: Match Field Word64
-signed  = fmap decode . (fieldLiteral ||| fieldFixed ||| fieldVbr)
+signedImpl :: (Bits a, Num a) => Match Field a
+signedImpl = fmap decode . (fieldLiteral ||| fieldFixed ||| fieldVbr)
   where
   decode bs
     | not (testBit n 0) =         n `shiftR` 1
@@ -120,6 +120,14 @@ signed  = fmap decode . (fieldLiteral ||| fieldFixed ||| fieldVbr)
     | otherwise         = bit 63 -- not really right, but it's what llvm does
     where
     n = fromBitString bs
+
+-- | Parse a @Field@ as a sign-encoded number.
+signedWord64 :: Match Field Word64
+signedWord64 = signedImpl
+
+-- | Parse a @Field@ as a sign-encoded number.
+signedInt64 :: Match Field Int64
+signedInt64 = signedImpl
 
 boolean :: Match Field Bool
 boolean  = decode <=< (fieldFixed ||| fieldLiteral ||| fieldVbr)
