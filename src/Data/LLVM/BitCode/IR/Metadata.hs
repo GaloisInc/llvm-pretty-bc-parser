@@ -64,6 +64,11 @@ addLoc isDistinct loc mt = nameNode False isDistinct ix mt'
   where
   (ix,mt') = addMetadata (ValMdLoc loc) mt
 
+addFile :: Bool -> DebugFile -> MetadataTable -> MetadataTable
+addFile isDistinct df mt = nameNode False isDistinct ix mt'
+  where
+  (ix,mt') = addMetadata (ValMdFile df) mt
+
 -- | Add a new node, that might be distinct.
 addNode :: Bool -> [Maybe PValMd] -> MetadataTable -> MetadataTable
 addNode isDistinct vals mt = nameNode False isDistinct ix mt'
@@ -93,6 +98,17 @@ mdNodeRef cxt mt ix =
   maybe (throw (BadValueRef cxt ix)) prj (Map.lookup ix (mtNodes mt))
   where
   prj (_,_,x) = x
+
+mdString :: [String] -> MetadataTable -> Int -> String
+mdString cxt mt ix =
+  fromMaybe (throw (BadValueRef cxt ix)) (mdStringOrNull cxt mt ix)
+
+mdStringOrNull :: [String] -> MetadataTable -> Int -> Maybe String
+mdStringOrNull cxt mt ix =
+  case mdForwardRefOrNull cxt mt ix of
+    Nothing -> Nothing
+    Just (ValMdString str) -> Just str
+    Just _ -> throw (BadTypeRef cxt ix)
 
 mkMdRefTable :: MetadataTable -> MdRefTable
 mkMdRefTable mt = Map.mapMaybe step (mtNodes mt)
@@ -242,7 +258,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
     addKind kind name
     return pm
 
-  -- [distinct, line, col, scope, inlined-at?] 
+  -- [distinct, line, col, scope, inlined-at?]
   7 -> label "METADATA_LOCATION" $ do
     cxt       <- getContext
     let field = parseField r
@@ -303,12 +319,15 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
     parseField r 5 numeric
     -- TODO
     fail "not yet implemented"
+
+  -- [distinct, filename, directory]
   16 -> label "METADATA_FILE" $ do
-    isDistinct <- parseField r 0 numeric
-    name <- parseField r 1 numeric
-    dir  <- parseField r 2 numeric
-    -- TODO
-    fail "not yet implemented"
+    ctx <- getContext
+    isDistinct <- parseField r 0 nonzero
+    dfFilename <- mdString ctx mt <$> parseField r 1 numeric
+    dfDirectory <- mdString ctx mt <$> parseField r 2 numeric
+    return $! updateMetadataTable (addFile isDistinct DebugFile{..}) pm
+
   17 -> label "METADATA_DERIVED_TYPE" $ do
     -- TODO
     fail "not yet implemented"
