@@ -87,16 +87,16 @@ type DefineList = Seq.Seq PartialDefine
 -- | A define with a list of statements for a body, instead of a list of basic
 -- bocks.
 data PartialDefine = PartialDefine
-  { partialAttrs   :: FunAttrs
-  , partialSection :: Maybe String
-  , partialRetType :: Type
-  , partialName    :: Symbol
-  , partialArgs    :: [Typed Ident]
-  , partialVarArgs :: Bool
-  , partialBody    :: BlockList
-  , partialBlock   :: StmtList
-  , partialBlockId :: !Int
-  , partialSymtab  :: ValueSymtab
+  { partialAttrs    :: FunAttrs
+  , partialSection  :: Maybe String
+  , partialRetType  :: Type
+  , partialName     :: Symbol
+  , partialArgs     :: [Typed Ident]
+  , partialVarArgs  :: Bool
+  , partialBody     :: BlockList
+  , partialBlock    :: StmtList
+  , partialBlockId  :: !Int
+  , partialSymtab   :: ValueSymtab
   , partialMetadata :: Map.Map PKindMd PValMd
   } deriving (Show)
 
@@ -110,16 +110,16 @@ emptyPartialDefine proto = do
   symtab <- initialPartialSymtab
 
   return PartialDefine
-    { partialAttrs     = protoAttrs proto
-    , partialSection   = protoSect proto
-    , partialRetType   = rty
-    , partialName      = Symbol (protoName proto)
-    , partialArgs      = zipWith Typed tys names
-    , partialVarArgs   = va
-    , partialBody      = Seq.empty
-    , partialBlock     = Seq.empty
-    , partialBlockId   = 0
-    , partialSymtab    = symtab
+    { partialAttrs    = protoAttrs proto
+    , partialSection  = protoSect proto
+    , partialRetType  = rty
+    , partialName     = Symbol (protoName proto)
+    , partialArgs     = zipWith Typed tys names
+    , partialVarArgs  = va
+    , partialBody     = Seq.empty
+    , partialBlock    = Seq.empty
+    , partialBlockId  = 0
+    , partialSymtab   = symtab
     , partialMetadata = Map.empty
     }
 
@@ -180,13 +180,13 @@ finalizePartialDefine lkp pd =
     body <- finalizeBody lkp (partialBody pd)
     md <- finalizeMetadata (partialMetadata pd)
     return Define
-      { defAttrs   = partialAttrs pd
-      , defRetType = partialRetType pd
-      , defName    = partialName pd
-      , defArgs    = partialArgs pd
-      , defVarArgs = partialVarArgs pd
-      , defBody    = body
-      , defSection = partialSection pd
+      { defAttrs    = partialAttrs pd
+      , defRetType  = partialRetType pd
+      , defName     = partialName pd
+      , defArgs     = partialArgs pd
+      , defVarArgs  = partialVarArgs pd
+      , defBody     = body
+      , defSection  = partialSection pd
       , defMetadata = md
       }
 

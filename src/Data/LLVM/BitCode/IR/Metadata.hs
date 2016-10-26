@@ -126,20 +126,20 @@ mkMdRefTable mt = Map.mapMaybe step (mtNodes mt)
     return ix
 
 data PartialMetadata = PartialMetadata
-  { pmEntries       :: MetadataTable
-  , pmNamedEntries  :: Map.Map String [Int]
-  , pmNextName      :: Maybe String
-  , pmInstrAttachments   :: InstrMdAttachments
-  , pmFnAttachments :: PFnMdAttachments
+  { pmEntries          :: MetadataTable
+  , pmNamedEntries     :: Map.Map String [Int]
+  , pmNextName         :: Maybe String
+  , pmInstrAttachments :: InstrMdAttachments
+  , pmFnAttachments    :: PFnMdAttachments
   } deriving (Show)
 
 emptyPartialMetadata :: MdTable -> PartialMetadata
 emptyPartialMetadata es = PartialMetadata
-  { pmEntries       = emptyMetadataTable es
-  , pmNamedEntries  = Map.empty
-  , pmNextName      = Nothing
-  , pmInstrAttachments   = Map.empty
-  , pmFnAttachments = Map.empty
+  { pmEntries          = emptyMetadataTable es
+  , pmNamedEntries     = Map.empty
+  , pmNextName         = Nothing
+  , pmInstrAttachments = Map.empty
+  , pmFnAttachments    = Map.empty
   }
 
 updateMetadataTable :: (MetadataTable -> MetadataTable)
