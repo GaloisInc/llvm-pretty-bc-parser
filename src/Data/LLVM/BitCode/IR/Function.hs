@@ -26,8 +26,6 @@ import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Traversable as T
 
-import Debug.Trace
-
 
 -- Function Aliases ------------------------------------------------------------
 
