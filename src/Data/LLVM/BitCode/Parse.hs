@@ -549,8 +549,12 @@ entryName n = do
                Map.lookup (SymTabFNEntry n) symtab
   case mentry of
     Just i  -> return (renderName i)
-    Nothing -> fail ("entry " ++ show n ++ " is missing from the symbol table"
-             ++ "\n" ++ show symtab)
+    Nothing ->
+      do isRel <- getRelIds
+         fail $ unlines
+           [ "entry " ++ show n ++ (if isRel then " (relative)" else "")
+              ++ " is missing from the symbol table"
+           , show symtab ]
 
 -- | Lookup the name of a basic block.
 bbEntryName :: Int -> Parse (Maybe BlockLabel)
