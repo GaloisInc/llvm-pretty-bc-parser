@@ -738,6 +738,10 @@ parseFunctionBlockEntry t d (metadataBlockId -> Just es) = do
   _ <- parseMetadataBlock t es
   return d
 
+-- okay, so this is only enough to handle the instruction attachments
+-- right now. We need to handle the function attachments as well, and
+-- associate them with the definition as a whole, rather than with the
+-- blocklist
 parseFunctionBlockEntry t d (metadataAttachmentBlockId -> Just es) = do
   (_,_,md) <- parseMetadataBlock t es
   return d { partialBody = addAttachments md (partialBody d) }
@@ -838,7 +842,7 @@ parsePhiArgs relIds t r = loop 1
 
   getId n
     | relIds    = do
-      i   <- field n signed
+      i   <- field n signedWord64
       pos <- getNextId
       return (pos - fromIntegral i)
     | otherwise =
@@ -999,7 +1003,7 @@ parseNewSwitchLabels width r = loop
 
       -- read the chunks of the number in.  each chunk represents one 64-bit
       -- limb of a big num.
-      chunks <- parseSlice r lowStart activeWords signed
+      chunks <- parseSlice r lowStart activeWords signedWord64
 
       -- decode limbs in big-endian order
       let low = foldr (\l acc -> acc `shiftL` 64 + toInteger l) 0 chunks
