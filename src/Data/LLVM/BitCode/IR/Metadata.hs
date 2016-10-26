@@ -512,13 +512,21 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
       (addDebugInfo isDistinct (DebugInfoLexicalBlock DILexicalBlock{..})) pm
 
   23 -> label "METADATA_LEXICAL_BLOCK_FILE" $ do
+    when (length (recordFields r) /= 4)
+      (fail "Invalid record")
     cxt <- getContext
-    isDistinct <- parseField r 0 numeric
-    mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
-    mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
-    parseField r 3 numeric
-    -- TODO
-    fail "not yet implemented"
+    isDistinct <- parseField r 0 nonzero
+    dilbfScope <- do
+      mScope <- mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
+      maybe (fail "Invalid record: scope field not present") return mScope
+    dilbfFile <- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
+    dilbfDiscriminator <- parseField r 3 numeric
+    return $! updateMetadataTable
+      (addDebugInfo
+         isDistinct
+         (DebugInfoLexicalBlockFile DILexicalBlockFile{..}))
+      pm
+
   24 -> label "METADATA_NAMESPACE" $ do
     cxt <- getContext
     isDistinct <- parseField r 0 numeric
