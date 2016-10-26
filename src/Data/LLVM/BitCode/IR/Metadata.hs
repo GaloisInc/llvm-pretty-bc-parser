@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE RecursiveDo #-}
@@ -7,7 +8,10 @@ module Data.LLVM.BitCode.IR.Metadata (
   , parseMetadataKindEntry
   , PartialUnnamedMd(..)
   , finalizePartialUnnamedMd
-  , MetadataAttachments
+  , finalizePValMd
+  , InstrMdAttachments
+  , PFnMdAttachments
+  , PKindMd
   ) where
 
 import Data.LLVM.BitCode.Bitstream
@@ -125,7 +129,8 @@ data PartialMetadata = PartialMetadata
   { pmEntries       :: MetadataTable
   , pmNamedEntries  :: Map.Map String [Int]
   , pmNextName      :: Maybe String
-  , pmAttachments   :: MetadataAttachments
+  , pmInstrAttachments   :: InstrMdAttachments
+  , pmFnAttachments :: PFnMdAttachments
   } deriving (Show)
 
 emptyPartialMetadata :: MdTable -> PartialMetadata
@@ -133,7 +138,8 @@ emptyPartialMetadata es = PartialMetadata
   { pmEntries       = emptyMetadataTable es
   , pmNamedEntries  = Map.empty
   , pmNextName      = Nothing
-  , pmAttachments   = Map.empty
+  , pmInstrAttachments   = Map.empty
+  , pmFnAttachments = Map.empty
   }
 
 updateMetadataTable :: (MetadataTable -> MetadataTable)
@@ -143,9 +149,15 @@ updateMetadataTable f pm = pm { pmEntries = f (pmEntries pm) }
 setNextName :: String -> PartialMetadata -> PartialMetadata
 setNextName name pm = pm { pmNextName = Just name }
 
-addAttachment :: Int -> [(String,PValMd)] -> PartialMetadata -> PartialMetadata
-addAttachment instr md pm =
-  pm { pmAttachments = Map.insert instr md (pmAttachments pm) }
+addFnAttachment :: PFnMdAttachments -> PartialMetadata -> PartialMetadata
+addFnAttachment att pm =
+  -- left-biased union, since the parser overwrites metadata as it encounters it
+  pm { pmFnAttachments = Map.union att (pmFnAttachments pm) }
+
+addInstrAttachment :: Int -> [(KindMd,PValMd)]
+                   -> PartialMetadata -> PartialMetadata
+addInstrAttachment instr md pm =
+  pm { pmInstrAttachments = Map.insert instr md (pmInstrAttachments pm) }
 
 nameMetadata :: [Int] -> PartialMetadata -> Parse PartialMetadata
 nameMetadata val pm = case pmNextName pm of
@@ -170,12 +182,15 @@ finalizePartialUnnamedMd :: PartialUnnamedMd -> Parse UnnamedMd
 finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` fixLabels (pumValues pum)
   where
   -- map through the list and typed PValue to change labels to textual ones
-  fixLabels      = T.mapM (T.mapM (relabel (const requireBbEntryName)))
+  fixLabels      = T.mapM (T.mapM finalizePValMd)
   mkUnnamedMd vs = UnnamedMd
     { umIndex  = pumIndex pum
     , umValues = vs
     , umDistinct = pumDistinct pum
     }
+
+finalizePValMd :: PValMd -> Parse ValMd
+finalizePValMd = relabel (const requireBbEntryName)
 
 unnamedEntries :: PartialMetadata -> ([PartialUnnamedMd],[PartialUnnamedMd])
 unnamedEntries pm = foldl resolveNode ([],[]) (Map.toList (mtNodes mt))
@@ -196,11 +211,25 @@ unnamedEntries pm = foldl resolveNode ([],[]) (Map.toList (mtNodes mt))
       , pumDistinct = d
       }
 
-type MetadataAttachments = Map.Map Int [(String,PValMd)]
-type ParsedMetadata = ([NamedMd],([PartialUnnamedMd],[PartialUnnamedMd]),MetadataAttachments)
+type InstrMdAttachments = Map.Map Int [(KindMd,PValMd)]
+
+type PKindMd = Int
+type PFnMdAttachments = Map.Map PKindMd PValMd
+
+type ParsedMetadata =
+  ( [NamedMd]
+  , ([PartialUnnamedMd],[PartialUnnamedMd])
+  , InstrMdAttachments
+  , PFnMdAttachments
+  )
 
 parsedMetadata :: PartialMetadata -> ParsedMetadata
-parsedMetadata pm = (namedEntries pm, unnamedEntries pm, pmAttachments pm)
+parsedMetadata pm =
+  ( namedEntries pm
+  , unnamedEntries pm
+  , pmInstrAttachments pm
+  , pmFnAttachments pm
+  )
 
 -- Metadata Parsing ------------------------------------------------------------
 
@@ -293,13 +322,16 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
     let recordSize = length (recordFields r)
     when (recordSize == 0)
       (fail "Invalid record")
+    ctx <- getContext
     if (recordSize `mod` 2 == 0)
-      then do
-        fail "not yet implemented"
-      else do
+      then label "function attachment" $ do
+        att <- Map.fromList <$> parseAttachment r 0
+        return $! addFnAttachment att pm
+      else label "instruction attachment" $ do
         inst <- parseField r 0 numeric
-        md   <- parseAttachment r 1
-        return $! addAttachment inst md pm
+        patt <- parseAttachment r 1
+        att <- mapM (\(k,md) -> (,md) <$> getKind k) patt
+        return $! addInstrAttachment inst att pm
 
   12 -> label "METADATA_GENERIC_DEBUG" $ do
     isDistinct <- parseField r 0 numeric
@@ -618,14 +650,13 @@ parseMetadataEntry _ _ pm (abbrevDef -> Just _) =
 parseMetadataEntry _ _ _ r =
   fail ("unexpected: " ++ show r)
 
-
-parseAttachment :: Record -> Int -> Parse [(String,PValMd)]
-parseAttachment r l = loop (length (recordFields r) - l) []
+parseAttachment :: Record -> Int -> Parse [(PKindMd,PValMd)]
+parseAttachment r l = loop (length (recordFields r) - 1) []
   where
-  loop 0 acc = return acc
-  loop n acc = do
-    kind <- getKind     =<< parseField r (n - 1) numeric
-    md   <- getMetadata =<< parseField r  n      numeric
+  loop n acc | n < l = return acc
+             | otherwise = do
+    kind <- parseField r (n - 1) numeric
+    md   <- getMetadata =<< parseField r n numeric
     loop (n - 2) ((kind,typedValue md) : acc)
 
 -- | Parse a metadata node.

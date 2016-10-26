@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -96,6 +97,7 @@ data PartialDefine = PartialDefine
   , partialBlock   :: StmtList
   , partialBlockId :: !Int
   , partialSymtab  :: ValueSymtab
+  , partialMetadata :: Map.Map PKindMd PValMd
   } deriving (Show)
 
 -- | Generate a partial function definition from a function prototype.
@@ -118,6 +120,7 @@ emptyPartialDefine proto = do
     , partialBlock     = Seq.empty
     , partialBlockId   = 0
     , partialSymtab    = symtab
+    , partialMetadata = Map.empty
     }
 
 -- | Set the statement list in a partial define.
@@ -175,6 +178,7 @@ finalizePartialDefine lkp pd =
   -- generate basic blocks.
   withValueSymtab (partialSymtab pd) $ do
     body <- finalizeBody lkp (partialBody pd)
+    md <- finalizeMetadata (partialMetadata pd)
     return Define
       { defAttrs   = partialAttrs pd
       , defRetType = partialRetType pd
@@ -183,7 +187,12 @@ finalizePartialDefine lkp pd =
       , defVarArgs = partialVarArgs pd
       , defBody    = body
       , defSection = partialSection pd
+      , defMetadata = md
       }
+
+finalizeMetadata :: PFnMdAttachments -> Parse FnMdAttachments
+finalizeMetadata patt = Map.fromList <$> mapM f (Map.toList patt)
+  where f (k,md) = (,) <$> getKind k <*> finalizePValMd md
 
 -- | Individual label resolution step.
 resolveBlockLabel :: BlockLookup -> Maybe Symbol -> Int -> Parse BlockLabel
@@ -738,13 +747,11 @@ parseFunctionBlockEntry t d (metadataBlockId -> Just es) = do
   _ <- parseMetadataBlock t es
   return d
 
--- okay, so this is only enough to handle the instruction attachments
--- right now. We need to handle the function attachments as well, and
--- associate them with the definition as a whole, rather than with the
--- blocklist
 parseFunctionBlockEntry t d (metadataAttachmentBlockId -> Just es) = do
-  (_,_,md) <- parseMetadataBlock t es
-  return d { partialBody = addAttachments md (partialBody d) }
+  (_,_,instrAtt,fnAtt) <- parseMetadataBlock t es
+  return d { partialBody     = addInstrAttachments instrAtt (partialBody d)
+           , partialMetadata = Map.union fnAtt (partialMetadata d)
+           }
 
 parseFunctionBlockEntry _ d (abbrevDef -> Just _) =
   -- ignore any abbreviation definitions
@@ -757,8 +764,8 @@ parseFunctionBlockEntry _ d (uselistBlockId -> Just _) = do
 parseFunctionBlockEntry _ _ e = do
   fail ("function block: unexpected: " ++ show e)
 
-addAttachments :: MetadataAttachments -> BlockList -> BlockList
-addAttachments atts blocks = go 0 (Map.toList atts) (Seq.viewl blocks)
+addInstrAttachments :: InstrMdAttachments -> BlockList -> BlockList
+addInstrAttachments atts blocks = go 0 (Map.toList atts) (Seq.viewl blocks)
   where
   go _   []  (b Seq.:< bs) = b Seq.<| bs
   go off mds (b Seq.:< bs) =

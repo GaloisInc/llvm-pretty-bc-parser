@@ -621,4 +621,4 @@ getKind kind = Parse $ do
   let KindTable { .. } = psKinds ps
   case Map.lookup kind ktNames of
     Just name -> return name
-    Nothing   -> fail ("Unknown kind id: " ++ show kind)
+    Nothing   -> fail ("Unknown kind id: " ++ show kind ++ "\nKind table: " ++ show (psKinds ps))
