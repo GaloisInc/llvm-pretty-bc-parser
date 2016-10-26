@@ -80,7 +80,6 @@ getFnValueById ty n = label "getFnValueById" $ case ty of
 
   _ -> do
     mb <- lookupValueAbs (fromIntegral n)
-    -- TODO: lookup in the metadata table
     case mb of
 
       Just tv -> return tv

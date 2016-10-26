@@ -34,6 +34,8 @@ data MetadataTable = MetadataTable
   { mtEntries   :: MdTable
   , mtNextNode  :: !Int
   , mtNodes     :: Map.Map Int (Bool,Bool,Int)
+                   -- ^ The entries in the map are: is the entry function local,
+                   -- is the entry distinct, and the implicit id for the node.
   } deriving (Show)
 
 emptyMetadataTable :: MdTable -> MetadataTable
@@ -192,6 +194,7 @@ finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` fixLabels (pumValues pum)
 finalizePValMd :: PValMd -> Parse ValMd
 finalizePValMd = relabel (const requireBbEntryName)
 
+-- | Partition unnamed entries into global and function local unnamed entries.
 unnamedEntries :: PartialMetadata -> ([PartialUnnamedMd],[PartialUnnamedMd])
 unnamedEntries pm = foldl resolveNode ([],[]) (Map.toList (mtNodes mt))
   where
