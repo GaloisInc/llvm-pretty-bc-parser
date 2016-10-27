@@ -175,19 +175,17 @@ namedEntries  = map (uncurry NamedMd)
               . pmNamedEntries
 
 data PartialUnnamedMd = PartialUnnamedMd
-  { pumIndex  :: Int
-  , pumValues :: [Maybe PValMd]
+  { pumIndex    :: Int
+  , pumValues   :: PValMd
   , pumDistinct :: Bool
   } deriving (Show)
 
 finalizePartialUnnamedMd :: PartialUnnamedMd -> Parse UnnamedMd
-finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` fixLabels (pumValues pum)
+finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` finalizePValMd (pumValues pum)
   where
-  -- map through the list and typed PValue to change labels to textual ones
-  fixLabels      = T.mapM (T.mapM finalizePValMd)
-  mkUnnamedMd vs = UnnamedMd
+  mkUnnamedMd v = UnnamedMd
     { umIndex  = pumIndex pum
-    , umValues = vs
+    , umValues = v
     , umDistinct = pumDistinct pum
     }
 
@@ -204,13 +202,16 @@ unnamedEntries pm = foldl resolveNode ([],[]) (Map.toList (mtNodes mt))
   resolveNode (gs,fs) (ref,(fnLocal,d,ix)) = case lookupNode ref d ix of
     Just pum | fnLocal   -> (gs,pum:fs)
              | otherwise -> (pum:gs,fs)
+
+    -- TODO: is this silently eating errors with metadata that's not in the
+    -- value table?
     Nothing              -> (gs,fs)
 
   lookupNode ref d ix = do
-    Typed { typedValue = ValMd (ValMdNode vs) } <- Map.lookup ref es
+    Typed { typedValue = ValMd v } <- Map.lookup ref es
     return PartialUnnamedMd
       { pumIndex  = ix
-      , pumValues = vs
+      , pumValues = v
       , pumDistinct = d
       }
 
