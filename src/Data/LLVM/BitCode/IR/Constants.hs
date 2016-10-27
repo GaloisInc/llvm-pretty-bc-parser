@@ -281,9 +281,9 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
 
   -- [n x operands]
   12 -> label "CST_CODE_CE_GEP" $ do
-    ty   <- getTy
-    args <- parseCeGep t r
-    return (getTy,Typed ty (ValConstExpr (ConstGEP False args)):cs)
+    ty <- getTy
+    v <- parseCeGep False t r
+    return (getTy,Typed ty v:cs)
 
   -- [opval,opval,opval]
   13 -> label "CST_CODE_CE_SELECT" $ do
@@ -344,9 +344,9 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
 
   -- [n x operands]
   20 -> label "CST_CODE_CE_INBOUNDS_GEP" $ do
-    ty   <- getTy
-    args <- parseCeGep t r
-    return (getTy,Typed ty (ValConstExpr (ConstGEP True args)):cs)
+    ty <- getTy
+    v <- parseCeGep True t r
+    return (getTy,Typed ty v:cs)
 
   -- [funty,fnval,bb#]
   21 -> label "CST_CODE_BLOCKADDRESS" $ do
@@ -417,22 +417,23 @@ parseConstantEntry _ st (abbrevDef -> Just _) =
 parseConstantEntry _ _ e =
   fail ("constant block: unexpected: " ++ show e)
 
-parseCeGep :: ValueTable -> Record -> Parse [Typed PValue]
-parseCeGep t r = loop firstIdx
-  where
-
-  -- TODO: we should check the result type if it exists, but for now we
-  -- ignore it.
-  firstIdx = if odd (length (recordFields r)) then 1 else 0
-
-  field = parseField r
-
-  loop n = do
-    ty   <- getType =<< field  n    numeric
-    elt  <-             field (n+1) numeric
-    rest <- loop (n+2) `mplus` return []
-    cxt  <- getContext
-    return (Typed ty (typedValue (forwardRef cxt elt t)) : rest)
+parseCeGep :: Bool -> ValueTable -> Record -> Parse PValue
+parseCeGep isInbounds t r = do
+  let isExplicit = odd (length (recordFields r))
+      firstIdx = if isExplicit then 1 else 0
+      field = parseField r
+      loop n = do
+        ty   <- getType =<< field  n    numeric
+        elt  <-             field (n+1) numeric
+        rest <- loop (n+2) `mplus` return []
+        cxt  <- getContext
+        return (Typed ty (typedValue (forwardRef cxt elt t)) : rest)
+  mPointeeType <-
+    if isExplicit
+    then Just <$> (getType =<< field 0 numeric)
+    else pure Nothing
+  args <- loop firstIdx
+  return $! ValConstExpr (ConstGEP isInbounds mPointeeType args)
 
 parseWideInteger :: Record -> Parse Integer
 parseWideInteger r = do
