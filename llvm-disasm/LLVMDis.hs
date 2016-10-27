@@ -3,6 +3,7 @@ import Data.LLVM.BitCode (parseBitCode, formatError)
 import Data.LLVM.CFG (buildCFG, CFG(..), blockId)
 import Text.LLVM.AST (defBody, modDefines)
 import Text.LLVM.PP (ppLLVM, ppModule)
+import Text.PrettyPrint (Style(..), renderStyle, style)
 
 import Control.Monad (when)
 import Data.Graph.Inductive.Graph (nmap, emap)
@@ -27,7 +28,7 @@ printUsage  = do
 
 disasm :: Bool -> FilePath -> IO ()
 disasm doCFG file = do
-  putStrLn (replicate 80 '=' ++ "\n")
+  putStrLn (replicate 80 ';' ++ "\n")
   putStrLn ("; " ++ file)
   e <- parseBitCode =<< S.readFile file
   case e of
@@ -37,7 +38,8 @@ disasm doCFG file = do
       exitFailure
 
     Right m  -> do
-      print (ppLLVM (ppModule m))
+      let s = style { lineLength = maxBound, ribbonsPerLine = 1.0 }
+      putStrLn (renderStyle s (ppLLVM (ppModule m)))
       when doCFG $ do
         let cfgs  = map (buildCFG . defBody) $ modDefines m
             fixup = nmap (show . blockId) . emap (const "")
