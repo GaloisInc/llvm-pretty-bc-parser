@@ -256,7 +256,7 @@ reduceDisasm clang opts clangRoot srcFile err = do
         , "    exit 1"
         , "fi"
         , concat [ "llvm-disasm ", baseName <.> "bc", " 2>&1 | "
-                 , "grep '^", fromMaybe "" grepPat, "'"]
+                 , "fgrep ", show (fromMaybe "" grepPat)]
         ]
   when (grepPat /= Nothing) $ do
     -- write out the shell script to drive Creduce and run it
@@ -307,7 +307,7 @@ reduceAs clang opts clangRoot srcFile err = do
         , "fi"
         , concat [ clang, " -I", csmithPath, " -O -g -w -c "
                  , baseName <.> "ll", " -o ", baseName <.> "o", " 2>&1 | "
-                 , "grep '", fromMaybe "" grepPat, "'"]
+                 , "fgrep ", show (fromMaybe "" grepPat)]
         ]
   when (grepPat /= Nothing) $ do
     -- write out the shell script to drive Creduce and run it
