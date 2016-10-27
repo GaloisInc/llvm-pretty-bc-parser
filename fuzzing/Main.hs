@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 module Main where
 
@@ -186,8 +187,10 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
     when (not (null fails)) $ do
       putStrLn $ "[" ++ clang ++ "] " ++
         show (length fails) ++ " failing cases identified:"
-      forM_ fails $ \(TestFail s _ _) ->
-        print s
+      forM_ fails $ \case
+        TestDisasmFail s _ _ -> putStrLn ("[disasm] " ++ show s)
+        TestAsFail     s _ _ -> putStrLn ("[as] " ++ show s)
+        _ -> error "non-fail cases in fails"
   case optSaveTests opts of
     Nothing -> return ()
     Just root -> do
@@ -200,25 +203,31 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
             case result of
               TestPass _ -> return ()
               -- errors arise from bugs in clang, not our code
-              TestError _ -> return ()
-              TestFail _ TestSrc{..} err -> do
+              TestClangError _ -> return ()
+              TestDisasmFail _ TestSrc{..} err -> do
                 copyFile (tmpDir </> srcFile) (clangRoot </> srcFile)
-                writeFile (clangRoot </> srcFile <.> "stderr") err
+                writeFile (clangRoot </> srcFile <.> "disasm_err") err
                 when (optReduce opts) $
-                  reduce clang opts clangRoot srcFile err
+                  reduceDisasm clang opts clangRoot srcFile err
+              TestAsFail _ TestSrc{..} err -> do
+                copyFile (tmpDir </> srcFile) (clangRoot </> srcFile)
+                writeFile (clangRoot </> srcFile <.> "as_err") err
+                when (optReduce opts) $
+                  reduceAs clang opts clangRoot srcFile err
   case optJUnitXml opts of
     Nothing -> return ()
     Just f -> do
       xml <- mkJUnitXml allResults
       writeFile f (ppTopElement xml)
 
--- | Best-effort reduction of test cases using Creduce. Much of the
--- art of using Creduce is in writing a correct interestingness test,
--- which we try to approximate here using the stack trace from
--- @llvm-disasm@. We also do not introduce any parallelism here
--- because Creduce introduces its own parallelism when we invoke it.
-reduce :: Clang -> Options -> FilePath -> FilePath -> String -> IO ()
-reduce clang opts clangRoot srcFile err = do
+-- | Best-effort reduction of disassembler test cases using
+-- Creduce. Much of the art of using Creduce is in writing a correct
+-- interestingness test, which we try to approximate here using the
+-- stack trace from @llvm-disasm@. We also do not introduce any
+-- parallelism here because Creduce introduces its own parallelism
+-- when we invoke it.
+reduceDisasm :: Clang -> Options -> FilePath -> FilePath -> String -> IO ()
+reduceDisasm clang opts clangRoot srcFile err = do
   csmithPath <- getCsmithPath opts
   -- copy a file for the reduction in place
   let baseName   = dropExtension srcFile
@@ -257,31 +266,90 @@ reduce clang opts clangRoot srcFile err = do
     h <- spawnProcess "creduce" [ scriptFile, srcReduced ]
     void $ waitForProcess h
 
+-- | Best-effort reduction of assembler (roundtrip) test cases using
+-- Creduce. Much of the art of using Creduce is in writing a correct
+-- interestingness test, which we try to approximate here using the
+-- error text from @clang@. We also do not introduce any parallelism
+-- here because Creduce introduces its own parallelism when we invoke
+-- it.
+reduceAs :: Clang -> Options -> FilePath -> FilePath -> String -> IO ()
+reduceAs clang opts clangRoot srcFile err = do
+  csmithPath <- getCsmithPath opts
+  -- copy a file for the reduction in place
+  let baseName   = dropExtension srcFile
+      srcReduced = clangRoot </> baseName ++ "-reduced.c"
+      scriptFile = clangRoot </> baseName ++ "-reduce.sh"
+  copyFile (clangRoot </> srcFile) srcReduced
+  -- find the best guess at the grep pattern for the Creduce script by
+  -- checking the first line of stderr output for "error:"
+  let grepPat =
+        case (lines err) of
+          [] -> Nothing
+          first:_ ->
+            case dropWhile (/= "error:") (words first) of
+              [] -> Nothing
+              msg -> Just (unwords msg)
+      script = unlines [
+          "#!/usr/bin/env bash"
+        , "# Consider this script a best guess template for reducing failing"
+        , "# test cases. Not every bug will manifest in the same way and give"
+        , "# the same error message, so modify the grep condition appropriately"
+        , "# if the shrink is unsatisfactory."
+        , ""
+        , concat [ clang, " -I", csmithPath, " -O -g -w -c "
+                 , "-emit-llvm ", baseName ++"-reduced.c", " -o ", baseName <.> "bc" ]
+        , "if [ $? -ne 0 ]; then"
+        , "    exit 1"
+        , "fi"
+        , concat [ "llvm-disasm ", baseName <.> "bc", " > ", baseName <.> "ll" ]
+        , "if [ $? -ne 0 ]; then"
+        , "    exit 1"
+        , "fi"
+        , concat [ clang, " -I", csmithPath, " -O -g -w -c "
+                 , baseName <.> "ll", " -o ", baseName <.> "o", " 2>&1 | "
+                 , "grep '", fromMaybe "" grepPat, "'"]
+        ]
+  when (grepPat /= Nothing) $ do
+    -- write out the shell script to drive Creduce and run it
+    writeFile scriptFile script
+    p <- getPermissions scriptFile
+    setPermissions scriptFile (setOwnerExecutable True p)
+    h <- spawnProcess "creduce" [ scriptFile, srcReduced ]
+    void $ waitForProcess h
+
 collapseResults :: Map Clang [TestResult] -> Map Clang [TestResult]
-collapseResults = Map.map (collapse Map.empty)
+collapseResults = Map.map (collapse (Map.empty, Map.empty))
   where
-    collapse seen [] = Map.elems seen
-    collapse seen (r:results) =
+    collapse (disasm, as) [] = Map.elems disasm ++ Map.elems as
+    collapse (disasm, as) (r:results) =
       case r of
-        TestPass _ -> collapse seen results
+        TestPass _ -> collapse (disasm, as) results
         -- errors arise from bugs in clang, not our code
-        TestError _ -> collapse seen results
-        TestFail _ _ err ->
-          collapse (Map.insertWith f err r seen) results
+        TestClangError _ -> collapse (disasm, as) results
+        TestDisasmFail _ _ err ->
+          collapse ((Map.insertWith f err r disasm), as) results
+        TestAsFail _ _ err ->
+          collapse (disasm, (Map.insertWith f err r as)) results
     -- choose the smallest source file
-    f r1@(TestFail _ src1 _) r2@(TestFail _ src2 _) =
+    f r1@(TestDisasmFail _ src1 _) r2@(TestDisasmFail _ src2 _) =
       case compare (srcSize src1) (srcSize src2) of
         LT -> r1
         EQ -> r1 -- arbitrarily
         GT -> r2
-    f _ _ = error "only TestFails should go in this map"
+    f r1@(TestAsFail _ src1 _) r2@(TestAsFail _ src2 _) =
+      case compare (srcSize src1) (srcSize src2) of
+        LT -> r1
+        EQ -> r1 -- arbitrarily
+        GT -> r2
+    f _ _ = error "only test failures should go in this map"
 
 type Seed = Word64
 
 data TestResult
   = TestPass Seed
-  | TestFail Seed TestSrc String
-  | TestError Seed
+  | TestDisasmFail Seed TestSrc String
+  | TestAsFail Seed TestSrc String
+  | TestClangError Seed
   -- ^ For now, errors are treated the same as passes, since we're not
   -- concerned with clang bugs
   deriving (Eq, Show, Generic, NFData)
@@ -301,6 +369,7 @@ runTest tmpDir clang seed opts = do
   let baseFile = clang ++ "-" ++ show seed
       srcFile  = baseFile <.> "c"
       bcFile   = baseFile <.> "bc"
+      llFile   = baseFile <.> "ll"
   csmithPath <- getCsmithPath opts
   callProcess "csmith" [
       "-o", tmpDir </> srcFile
@@ -314,23 +383,41 @@ runTest tmpDir clang seed opts = do
     ]
   clangErr <- waitForProcess h
   case clangErr of
-    ExitFailure _ -> return (TestError seed)
+    ExitFailure _ -> return (TestClangError seed)
     _ -> do
       (ec, out, err) <-
         readProcessWithExitCode "llvm-disasm" [ tmpDir </> bcFile ] ""
       case ec of
-        ExitSuccess -> do
-          putStrLn "[PASS]"
-          return (TestPass seed)
         ExitFailure c -> do
-          putStrLn "[ERROR]"
+          putStrLn "[DISASM ERROR]"
           putStrLn "[OUT]"
           putStr out
           putStrLn "[ERR]"
           putStr err
           putStrLn ("[ERROR CODE " ++ show c ++ "]")
           srcSize <- getFileSize (tmpDir </> srcFile)
-          return $!! TestFail seed TestSrc{..} err
+          return $!! TestDisasmFail seed TestSrc{..} err
+        ExitSuccess -> do
+          writeFile (tmpDir </> llFile) out
+          (ec', out', err') <- readProcessWithExitCode clang [
+              "-I" ++ csmithPath
+            , "-O", "-g", "-w", "-c"
+            , tmpDir </> llFile
+            , "-o", tmpDir </> baseFile <.> "o"
+            ] ""
+          case ec' of
+            ExitFailure c -> do
+              putStrLn "[AS ERROR]"
+              putStrLn "[OUT]"
+              putStr out'
+              putStrLn "[ERR]"
+              putStr err'
+              putStrLn ("[ERROR CODE " ++ show c ++ "]")
+              srcSize <- getFileSize (tmpDir </> srcFile)
+              return $!! TestAsFail seed TestSrc{..} err'
+            ExitSuccess -> do
+              putStrLn "[PASS]"
+              return (TestPass seed)
 
 getCsmithPath :: Options -> IO FilePath
 getCsmithPath opts =
@@ -375,7 +462,7 @@ mkJUnitXml allResults = do
                   , uattr "classname" (toUnder clang)
                   , uattr "time"      "0.0"
                   ]
-              TestError seed ->
+              TestClangError seed ->
                 unode "testcase" ([
                     uattr "name"      (show seed)
                   , uattr "classname" (toUnder clang)
@@ -383,9 +470,22 @@ mkJUnitXml allResults = do
                   ]
                   , "clang error"
                   )
-              TestFail seed _ err ->
+              TestDisasmFail seed _ err ->
                 unode "testcase" ([
-                    uattr "name"      (show seed)
+                    uattr "name"      (show seed ++ "_disasm")
+                  , uattr "classname" (toUnder clang)
+                  , uattr "time"      "0.0"
+                  ]
+                  , unode "failure" ([
+                        uattr "message" ""
+                      , uattr "type"    ""
+                      ]
+                      , err
+                      )
+                  )
+              TestAsFail seed _ err ->
+                unode "testcase" ([
+                    uattr "name"      (show seed ++ "_as")
                   , uattr "classname" (toUnder clang)
                   , uattr "time"      "0.0"
                   ]
