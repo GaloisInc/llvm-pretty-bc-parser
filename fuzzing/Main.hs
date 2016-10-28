@@ -39,9 +39,9 @@ import Text.XML.Light (Attr(..), Element, ppTopElement, unode, unqual)
 
 -- Option Parsing --------------------------------------------------------------
 
--- | The name of the @clang@ executable for a particular test
--- configuration, e.g., @clang-3.8@
-type Clang = String
+-- | The @clang@ executable and flags for a particular test
+-- configuration, e.g., @("clang-3.8", "-O -w -g")@
+type Clang = (FilePath, String)
 
 data Options = Options {
     optNumTests :: Integer
@@ -50,8 +50,10 @@ data Options = Options {
     -- ^ Specific seeds to use in fuzzing; overrides 'optNumTests'
   , optSaveTests :: Maybe FilePath
     -- ^ Location to save failed tests
-  , optClangs :: [Clang]
+  , optClangs :: [FilePath]
     -- ^ Clangs to use with the fuzzer
+  , optClangFlags :: [String]
+    -- ^ Sets of argument flags to use with each clang configuration
   , optJUnitXml :: Maybe FilePath
     -- ^ Write JUnit test report
   , optCsmithPath :: Maybe FilePath
@@ -69,6 +71,7 @@ defaultOptions  = Options {
   , optSeeds      = Nothing
   , optSaveTests  = Nothing
   , optClangs     = ["clang"]
+  , optClangFlags = ["-O -g -w"]
   , optJUnitXml   = Nothing
   , optCsmithPath = Nothing
   , optCollapse   = False
@@ -86,6 +89,9 @@ options  =
     "directory to save failed tests"
   , Option "c" ["clang"] (ReqArg addClang "CLANG")
     "specify clang executables to use, e.g., `-c clang-3.8 -c clang-3.9'"
+  , Option ""  ["clang-flags"] (ReqArg addClangFlags "ARGS") $
+    "specify a set of flags to use with each clang " ++
+    "e.g., `--clang-flags \"-O\" --clang-flags \"-O -g\"'"
   , Option ""  ["junit-xml"] (ReqArg setJUnitXml "FILEPATH")
     "output JUnit-style XML test report"
   , Option ""  ["csmith-path"] (ReqArg setCsmithPath "DIRECTORY")
@@ -118,9 +124,15 @@ setSaveTests str = Endo (\opt -> opt { optSaveTests = Just str })
 
 addClang :: String -> Endo Options
 addClang str = Endo $ \opt ->
-  case optClangs opt of
-    ["clang"] -> opt { optClangs = [str] }
-    clangs    -> opt { optClangs = str:clangs }
+  if optClangs opt == optClangs defaultOptions
+  then opt { optClangs = [str] }
+  else opt { optClangs = str : optClangs opt }
+
+addClangFlags :: String -> Endo Options
+addClangFlags str = Endo $ \opt ->
+  if optClangFlags opt == optClangFlags defaultOptions
+  then opt { optClangFlags = [str] }
+  else opt { optClangFlags = str : optClangFlags opt }
 
 setJUnitXml :: String -> Endo Options
 setJUnitXml str = Endo (\opt -> opt { optJUnitXml = Just str })
@@ -167,8 +179,10 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   -- parallelize the runs across clang versions as well, but it's
   -- probably not worth the complexity at that level of granularity
   resultMaps <-
-    forM (optClangs opts) $ \clang -> runParIO $ do
-      liftIO $ putStrLn $ "[" ++ clang ++ "]"
+    forM (optClangs opts) $ \clangExe ->
+    forM (optClangFlags opts) $ \flags -> runParIO $ do
+      let clang = (clangExe, flags)
+      liftIO $ putStrLn $ "[" ++ clangExe ++ " " ++ flags ++ "]"
       results' <-
         case optSeeds opts of
           Nothing ->
@@ -182,13 +196,13 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
               runTest tmpDir clang seed opts
       results <- mapM get results'
       return (Map.singleton clang results)
-  let allResults' = Map.unions resultMaps
+  let allResults' = Map.unions (concat resultMaps)
       allResults | optCollapse opts = collapseResults allResults'
                  | otherwise        = allResults'
-  forM_ (Map.toList allResults) $ \(clang, results) -> do
+  forM_ (Map.toList allResults) $ \((clangExe, flags), results) -> do
     let (_passes, fails) = partition isPass results
     when (not (null fails)) $ do
-      putStrLn $ "[" ++ clang ++ "] " ++
+      putStrLn $ "[" ++ clangExe ++ " " ++ flags ++ "] " ++
         show (length fails) ++ " failing cases identified:"
       forM_ fails $ \case
         TestFail st s _ _ -> putStrLn ("[" ++ show st ++ "] " ++ show s)
@@ -197,9 +211,9 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
     Nothing -> return ()
     Just root -> do
       createDirectoryIfMissing False root
-      forM_ (Map.toList allResults) $ \(clang, results) ->
+      forM_ (Map.toList allResults) $ \((clangExe, flags), results) ->
         when (not (null (filter isFail results))) $ do
-          let clangRoot = root </> clang
+          let clangRoot = root </> (clangExe ++ "_" ++ toUnders " " flags)
           createDirectoryIfMissing False clangRoot
           forM_ results $ \result ->
             case result of
@@ -210,7 +224,7 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
                 copyFile (tmpDir </> srcFile) (clangRoot </> srcFile)
                 writeFile (clangRoot </> srcFile <.> show st <.> "err") err
                 when (optReduce opts) $
-                  reduce result clang opts clangRoot
+                  reduce result (clangExe, flags) opts clangRoot
   case optJUnitXml opts of
     Nothing -> return ()
     Just f -> do
@@ -218,14 +232,14 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
       writeFile f (ppTopElement xml)
 
 reduce :: TestResult -> Clang -> Options -> FilePath -> IO ()
-reduce (TestFail st _ TestSrc{..} err) clang opts clangRoot = do
+reduce (TestFail st _ TestSrc{..} err) (clangExe, flags) opts clangRoot = do
   csmithPath <- getCsmithPath opts
   -- copy a file for the reduction in place
   let baseName   = dropExtension srcFile
       srcReduced = clangRoot </> baseName ++ "-reduced.c"
       scriptFile = clangRoot </> baseName ++ "-reduce.sh"
       llvmVersion =
-        case stripPrefix "clang-" clang of
+        case stripPrefix "clang-" clangExe of
           Nothing -> ""
           Just ver -> "--llvm-version=" ++ ver
   copyFile (clangRoot </> srcFile) srcReduced
@@ -258,7 +272,7 @@ reduce (TestFail st _ TestSrc{..} err) clang opts clangRoot = do
         , ""
         ]
       buildBc = unwords [
-          clang, "-I", csmithPath, "-O -g -w -c"
+          clangExe, "-I", csmithPath, flags, "-c"
         , "-emit-llvm", baseName ++ "-reduced.c", "-o", baseName <.> "bc"
         ]
       buildLl = unwords [
@@ -273,7 +287,7 @@ reduce (TestFail st _ TestSrc{..} err) clang opts clangRoot = do
       script AsStage = unlines $ scriptHeader ++ [
           buildBc
         , buildLl
-        , unwords [ clang, "-I", csmithPath, "-O -g -w -c"
+        , unwords [ clangExe, "-I", csmithPath, flags, "-c"
                   , baseName <.> "ll", "-o", baseName <.> "o", "2>&1 |"
                   , "fgrep ", show (fromMaybe "" (grepPat st))
                   ]
@@ -281,10 +295,10 @@ reduce (TestFail st _ TestSrc{..} err) clang opts clangRoot = do
       script ExecStage = unlines $ scriptHeader ++ [
           buildBc
         , buildLl
-        , unwords [ clang, "-I", csmithPath, "-O -g -w"
+        , unwords [ clangExe, "-I", csmithPath, flags
                   , baseName <.> "bc", "-o", "golden"
                   ]
-        , unwords [ clang, "-I", csmithPath, "-O -g -w"
+        , unwords [ clangExe, "-I", csmithPath, flags
                   , baseName <.> "ll", "-o", "ours"
                   ]
         , "[ \"$(./golden)\" != \"$(./ours)\" ]"
@@ -347,13 +361,13 @@ isFail :: TestResult -> Bool
 isFail = not . isPass
 
 runTest :: FilePath -> Clang -> Seed -> Options -> IO TestResult
-runTest tmpDir clang seed opts = X.handle return $ do
-  let baseFile = clang ++ "-" ++ show seed
+runTest tmpDir (clangExe, flags) seed opts = X.handle return $ do
+  let baseFile = show seed
       srcFile  = baseFile <.> "c"
       bcFile   = baseFile <.> "bc"
       llFile   = baseFile <.> "ll"
       llvmVersion =
-        case stripPrefix "clang-" clang of
+        case stripPrefix "clang-" clangExe of
           Nothing -> ""
           Just ver -> "--llvm-version=" ++ ver
   csmithPath <- getCsmithPath opts
@@ -362,12 +376,12 @@ runTest tmpDir clang seed opts = X.handle return $ do
     , "-s", show seed
     ]
   srcSize <- getFileSize (tmpDir </> srcFile)
-  h <- spawnProcess clang [
+  h <- spawnProcess clangExe (words flags ++ [
       "-I" ++ csmithPath
-    , "-O", "-g", "-w", "-c", "-emit-llvm"
+    , "-c", "-emit-llvm"
     , tmpDir </> srcFile
     , "-o", tmpDir </> bcFile
-    ]
+    ])
   clangErr <- waitForProcess h
   unless (clangErr == ExitSuccess) $ X.throw $!! TestClangError seed
   (ec, out, err) <-
@@ -383,12 +397,11 @@ runTest tmpDir clang seed opts = X.handle return $ do
       X.throw $!! TestFail DisasmStage seed TestSrc{..} err
     ExitSuccess -> return ()
   writeFile (tmpDir </> llFile) out
-  (ec, out, err) <- readProcessWithExitCode clang [
+  (ec, out, err) <- readProcessWithExitCode clangExe (words flags ++ [
       "-I" ++ csmithPath
-    , "-O", "-g", "-w"
     , tmpDir </> llFile
     , "-o", tmpDir </> "ours"
-    ] ""
+    ]) ""
   case ec of
     ExitFailure c -> do
       putStrLn "[AS ERROR]"
@@ -399,12 +412,11 @@ runTest tmpDir clang seed opts = X.handle return $ do
       putStrLn ("[ERROR CODE " ++ show c ++ "]")
       X.throw $!! TestFail AsStage seed TestSrc{..} err
     ExitSuccess -> return ()
-  h <- spawnProcess clang [
+  h <- spawnProcess clangExe (words flags ++ [
       "-I" ++ csmithPath
-    , "-O", "-g", "-w"
     , tmpDir </> bcFile
     , "-o", tmpDir </> "golden"
-    ]
+    ])
   clangErr <- waitForProcess h
   unless (clangErr == ExitSuccess) $ X.throw $!! TestClangError seed
   (ec1, out1, err1) <-
@@ -437,7 +449,7 @@ mkJUnitXml allResults = do
       testsuites = map (testsuite hostname nowFmt) (Map.toList allResults)
   return $ unode "testsuites" testsuites
   where
-    toUnder = map (\c -> if c == '.' then '_' else c)
+    fmtClang (clangExe, flags) = toUnders ". " (clangExe ++ "_" ++ flags)
     testsuite hostname nowFmt (clang, results) =
       unode "testsuite" ([
           uattr "name"      "llvm-disasm fuzzer"
@@ -448,7 +460,7 @@ mkJUnitXml allResults = do
         , uattr "timestamp" nowFmt
         , uattr "time"      "0.0" -- irrelevant due to random input
         , uattr "id"        ""
-        , uattr "package"   (toUnder clang)
+        , uattr "package"   (fmtClang clang)
         , uattr "hostname"  hostname
         ]
         , flip map results $ \res ->
@@ -456,13 +468,13 @@ mkJUnitXml allResults = do
               TestPass seed ->
                 unode "testcase" [
                     uattr "name"      (show seed)
-                  , uattr "classname" (toUnder clang)
+                  , uattr "classname" (fmtClang clang)
                   , uattr "time"      "0.0"
                   ]
               TestClangError seed ->
                 unode "testcase" ([
                     uattr "name"      (show seed)
-                  , uattr "classname" (toUnder clang)
+                  , uattr "classname" (fmtClang clang)
                   , uattr "time"      "0.0"
                   ]
                   , "clang error"
@@ -470,7 +482,7 @@ mkJUnitXml allResults = do
               TestFail st seed _ err ->
                 unode "testcase" ([
                     uattr "name"      (show seed ++ "_" ++ show st)
-                  , uattr "classname" (toUnder clang)
+                  , uattr "classname" (fmtClang clang)
                   , uattr "time"      "0.0"
                   ]
                   , unode "failure" ([
@@ -484,3 +496,6 @@ mkJUnitXml allResults = do
 
 uattr :: String -> String -> Attr
 uattr k v = Attr (unqual k) v
+
+toUnders :: String -> String -> String
+toUnders cs = map (\c -> if c `elem` cs then '_' else c)

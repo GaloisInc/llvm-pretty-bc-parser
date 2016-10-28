@@ -297,6 +297,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
 
   -- [distinct, line, col, scope, inlined-at?]
   7 -> label "METADATA_LOCATION" $ do
+    -- TODO: broken in 3.7+; needs to be a DILocation rather than an
+    -- MDLocation, but there appears to be no difference in the
+    -- bitcode. /sigh/
     cxt       <- getContext
     let field = parseField r
     isDistinct <- field 0 nonzero
