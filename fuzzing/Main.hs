@@ -60,23 +60,29 @@ data Options = Options {
     -- ^ Path to Csmith include files
   , optCollapse :: Bool
     -- ^ Whether to collapse failures with the same error message
-  , optReduce :: Bool
-    -- ^ Whether to try reducing the test case with Creduce
+  , optReduceDisasm :: Bool
+    -- ^ Whether to try reducing failures at the disasm stage
+  , optReduceAs :: Bool
+    -- ^ Whether to try reducing failures at the assembly stage
+  , optReduceExec :: Bool
+    -- ^ Whether to try reducing failures at the execution stage
   , optHelp :: Bool
   } deriving (Show)
 
 defaultOptions :: Options
 defaultOptions  = Options {
-    optNumTests   = 100
-  , optSeeds      = Nothing
-  , optSaveTests  = Nothing
-  , optClangs     = ["clang"]
-  , optClangFlags = ["-O -g -w"]
-  , optJUnitXml   = Nothing
-  , optCsmithPath = Nothing
-  , optCollapse   = False
-  , optReduce     = False
-  , optHelp       = False
+    optNumTests     = 100
+  , optSeeds        = Nothing
+  , optSaveTests    = Nothing
+  , optClangs       = ["clang"]
+  , optClangFlags   = ["-O -g -w"]
+  , optJUnitXml     = Nothing
+  , optCsmithPath   = Nothing
+  , optCollapse     = False
+  , optReduceDisasm = False
+  , optReduceAs     = False
+  , optReduceExec   = False
+  , optHelp         = False
   }
 
 options :: [OptDescr (Endo Options)]
@@ -98,8 +104,15 @@ options  =
     "path to Csmith include files; default is $CSMITH_PATH environment variable"
   , Option ""  ["collapse"] (NoArg setCollapse)
     "collapse failing test cases by error message and remove successes"
-  , Option ""  ["reduce"] (NoArg setReduce)
-    "reduce failing test cases with a best-guess Creduce (requires `--output`)"
+  , Option ""  ["reduce-disasm"] (NoArg setReduceDisasm) $
+    "reduce test cases that fail disassembly with a best-guess Creduce " ++
+    "(requires `--output`)"
+  , Option ""  ["reduce-as"] (NoArg setReduceAs) $
+    "reduce test cases that fail reassembly with a best-guess Creduce " ++
+    "(requires `--output`)"
+  , Option ""  ["reduce-exec"] (NoArg setReduceExec) $
+    "reduce test cases that fail on test program execution with a " ++
+    "best-guess Creduce (requires `--output`)"
   , Option "h" ["help"] (NoArg setHelp)
     "display this message"
   ]
@@ -143,8 +156,14 @@ setCsmithPath str = Endo (\opt -> opt { optCsmithPath = Just str })
 setCollapse :: Endo Options
 setCollapse = Endo (\opt -> opt { optCollapse = True })
 
-setReduce :: Endo Options
-setReduce = Endo (\opt -> opt { optReduce = True })
+setReduceDisasm :: Endo Options
+setReduceDisasm = Endo (\opt -> opt { optReduceDisasm = True })
+
+setReduceAs :: Endo Options
+setReduceAs = Endo (\opt -> opt { optReduceAs = True })
+
+setReduceExec :: Endo Options
+setReduceExec = Endo (\opt -> opt { optReduceExec = True })
 
 setHelp :: Endo Options
 setHelp = Endo (\opt -> opt { optHelp = True })
@@ -173,8 +192,9 @@ printUsage errs =
 main :: IO ()
 main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   opts <- getOptions
-  when (optSaveTests opts == Nothing && optReduce opts) $
-    printUsage [ "--reduce requires --output to be set" ]
+  when (optSaveTests opts == Nothing &&
+        or [optReduceDisasm opts, optReduceAs opts, optReduceExec opts]) $
+    printUsage [ "--reduce options require --output to be set" ]
   -- run the tests within each clang version in parallel. We could
   -- parallelize the runs across clang versions as well, but it's
   -- probably not worth the complexity at that level of granularity
@@ -223,7 +243,9 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
               TestFail st _ TestSrc{..} err -> do
                 copyFile (tmpDir </> srcFile) (clangRoot </> srcFile)
                 writeFile (clangRoot </> srcFile <.> show st <.> "err") err
-                when (optReduce opts) $
+                when (or [ st == DisasmStage && optReduceDisasm opts
+                         , st == AsStage     && optReduceAs opts
+                         , st == ExecStage   && optReduceExec opts ]) $
                   reduce result (clangExe, flags) opts clangRoot
   case optJUnitXml opts of
     Nothing -> return ()
@@ -281,7 +303,7 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, flags) opts clangRoot = do
       script DisasmStage = unlines $ scriptHeader ++ [
           buildBc
         , unwords [ "llvm-disasm", llvmVersion, baseName <.> "bc", "2>&1 |"
-                  , "fgrep", show (fromMaybe "" (grepPat st))
+                  , "grep", show (fromMaybe "" (grepPat st))
                   ]
         ]
       script AsStage = unlines $ scriptHeader ++ [
