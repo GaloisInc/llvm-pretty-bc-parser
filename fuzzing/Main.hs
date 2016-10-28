@@ -24,8 +24,8 @@ import GHC.Generics (Generic)
 import System.Console.GetOpt
   (ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo)
 import System.Directory
-  (copyFile, createDirectoryIfMissing, getFileSize, getPermissions,
-   setPermissions, setOwnerExecutable)
+  (copyFile, createDirectoryIfMissing, findExecutable, getFileSize,
+   getPermissions, setPermissions, setOwnerExecutable)
 import System.Environment (getArgs, getProgName, lookupEnv)
 import System.Exit (ExitCode(..), exitFailure, exitSuccess)
 import System.FilePath ((</>), (<.>), dropExtension)
@@ -240,6 +240,8 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
               TestPass _ -> return ()
               -- errors arise from bugs in clang, not our code
               TestClangError _ -> return ()
+              -- if the initial Csmith program doesn't terminate, don't bother
+              TestExecTimeout _ -> return ()
               TestFail st _ TestSrc{..} err -> do
                 copyFile (tmpDir </> srcFile) (clangRoot </> srcFile)
                 writeFile (clangRoot </> srcFile <.> show st <.> "err") err
@@ -323,7 +325,8 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, flags) opts clangRoot = do
         , unwords [ clangExe, "-I", csmithPath, flags
                   , baseName <.> "ll", "-o", "ours"
                   ]
-        , "[ \"$(./golden)\" != \"$(./ours)\" ]"
+        , "GOLDEN=$(timeout 10 ./golden)"
+        , "[ \"$GOLDEN\" != \"$(./ours)\" ]"
         ]
   when (grepPat st /= Nothing) $ do
     -- write out the shell script to drive Creduce and run it
@@ -344,6 +347,7 @@ collapseResults = Map.map (collapse Map.empty)
         TestPass _ -> collapse seen results
         -- errors arise from bugs in clang, not our code
         TestClangError _ -> collapse seen results
+        TestExecTimeout _ -> collapse seen results
         TestFail st _ _ err ->
           collapse (Map.insertWith f (st, err) r seen) results
     -- choose the smallest source file
@@ -362,6 +366,8 @@ data TestResult
   | TestClangError Seed
   -- ^ For now, errors are treated the same as passes, since we're not
   -- concerned with clang bugs
+  | TestExecTimeout Seed
+  -- ^ If the Csmith-generated program fails to terminate quickly
   deriving (Eq, Show, Generic, NFData, Typeable)
 
 instance X.Exception TestResult
@@ -441,10 +447,12 @@ runTest tmpDir (clangExe, flags) seed opts = X.handle return $ do
     ])
   clangErr <- waitForProcess h
   unless (clangErr == ExitSuccess) $ X.throw $!! TestClangError seed
-  (ec1, out1, err1) <-
-    readProcessWithExitCode (tmpDir </> "golden") [] ""
+  timeout <- getTimeoutCmd
+  (ec1, out1, err1) <- do
+    readProcessWithExitCode timeout [ "10", (tmpDir </> "golden") ] ""
+  unless (ec1 == ExitFailure 124) $ X.throw $!! TestExecTimeout seed
   (ec2, out2, err2) <-
-    readProcessWithExitCode (tmpDir </> "ours") [] ""
+    readProcessWithExitCode timeout [ "10", (tmpDir </> "ours") ] ""
   when (ec1 /= ec2 || out1 /= out2 || err1 /= err2) $
     X.throw $!! TestFail ExecStage seed TestSrc{..} err2
   putStrLn "[PASS]"
@@ -459,6 +467,17 @@ getCsmithPath opts =
       case mp of
         Just p -> return p
         Nothing -> error "--csmith-path not given and CSMITH_PATH not set"
+
+getTimeoutCmd :: IO FilePath
+getTimeoutCmd = do
+  mf <- findExecutable "timeout"
+  case mf of
+    Just timeout -> return timeout
+    Nothing -> do
+      mf <- findExecutable "gtimeout"
+      case mf of
+        Just timeout -> return timeout
+        Nothing -> error "could not find `timeout' or `gtimeout' in PATH"
 
 mkJUnitXml :: Map Clang [TestResult] -> IO Element
 mkJUnitXml allResults = do
@@ -500,6 +519,14 @@ mkJUnitXml allResults = do
                   , uattr "time"      "0.0"
                   ]
                   , "clang error"
+                  )
+              TestExecTimeout seed ->
+                unode "testcase" ([
+                    uattr "name"      (show seed)
+                  , uattr "classname" (fmtClang clang)
+                  , uattr "time"      "0.0"
+                  ]
+                  , "Csmith-generated program did not terminate quickly"
                   )
               TestFail st seed _ err ->
                 unode "testcase" ([
