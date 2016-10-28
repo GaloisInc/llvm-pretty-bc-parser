@@ -275,7 +275,8 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, flags) opts clangRoot = do
           -- if we don't have a stack trace, we probably shouldn't
           -- waste our time
           [] -> Nothing
-          first:_ -> Just first
+          -- drop the tab for the pattern
+          first:_ -> Just (tail first)
       grepPat AsStage =
         -- check the first line of the clang error for "error:"
         case (lines err) of
