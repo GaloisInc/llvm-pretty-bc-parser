@@ -104,5 +104,6 @@ Executable fuzz-llvm-disasm
                        deepseq,
                        abstract-par,
                        monad-par,
+                       transformers,
                        llvm-pretty>= 0.5,
                        llvm-pretty-bc-parser
