@@ -15,6 +15,10 @@ Description:
 
 Extra-source-files:  disasm-test/tests/*.ll
 
+Flag fuzz
+  Description:         Enable fuzzing harness
+  Default:             False
+
 Source-repository head
   type:                git
   location:            http://github.com/galoisinc/llvm-pretty-bc-parser
@@ -93,7 +97,7 @@ Executable fuzz-llvm-disasm
   Ghc-options:         -Wall -threaded -O2
   build-depends:       base >= 4 && < 5,
                        process,
-                       directory >= 1.2.7,
+                       directory,
                        bytestring,
                        filepath,
                        temporary,
@@ -107,3 +111,7 @@ Executable fuzz-llvm-disasm
                        transformers,
                        llvm-pretty>= 0.5,
                        llvm-pretty-bc-parser
+  if flag(fuzz)
+      Buildable:       True
+  else
+      Buildable:       False

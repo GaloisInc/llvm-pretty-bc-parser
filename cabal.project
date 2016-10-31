@@ -1,2 +1,3 @@
 packages: .
 optional-packages: llvm-pretty
+constraint: directory >= 1.2.7
