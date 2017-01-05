@@ -23,7 +23,10 @@ import Text.LLVM.Labels
 
 import Control.Exception (throw)
 import Control.Monad (foldM,guard,mplus,unless,when)
+import Data.List (mapAccumL)
 import Data.Maybe (fromMaybe)
+import qualified Data.ByteString as S
+import qualified Data.ByteString.Char8 as Char8 (unpack)
 import qualified Data.Map as Map
 import qualified Data.Traversable as T
 
@@ -64,6 +67,9 @@ nameNode fnLocal isDistinct ix mt = mt
 
 addString :: String -> MetadataTable -> MetadataTable
 addString str = snd . addMetadata (ValMdString str)
+
+addStrings :: [String] -> MetadataTable -> MetadataTable
+addStrings strs mt = foldl (flip addString) mt strs
 
 addLoc :: Bool -> PDebugLoc -> MetadataTable -> MetadataTable
 addLoc isDistinct loc mt = nameNode False isDistinct ix mt'
@@ -650,9 +656,25 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
     mdForwardRefOrNull cxt mt <$> parseField r 4 numeric
     -- TODO
     fail "not yet implemented"
+
   35 -> label "METADATA_STRINGS" $ do
-    -- TODO
-    fail "not yet implemented"
+    when (length (recordFields r) /= 3)
+      (fail "Invalid record: metadata strings layout")
+    count  <- parseField r 0 numeric
+    offset <- parseField r 1 numeric
+    bs     <- parseField r 2 fieldBlob
+    when (count == 0)
+      (fail "Invalid record: metadata strings with no strings")
+    when (offset >= S.length bs)
+      (fail "Invalid record: metadata strings corrupt offset")
+    let (bsLengths, bsStrings) = S.splitAt offset bs
+    lengths <- either fail return $ parseMetadataStringLengths count bsLengths
+    when (sum lengths > S.length bsStrings)
+      (fail "Invalid record: metadata strings truncated")
+    let strings = snd (mapAccumL f bsStrings lengths)
+          where f s i = fmap Char8.unpack (S.splitAt i s)
+    return $! updateMetadataTable (addStrings strings) pm
+
   36 -> label "METADATA_GLOBAL_DECL_ATTACHMENT" $ do
     -- TODO
     fail "not yet implemented"
