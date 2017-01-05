@@ -9,6 +9,7 @@ import Data.Bits (Bits,testBit,shiftR,bit)
 import Data.Char (chr)
 import Data.Int  (Int64)
 import Data.Word (Word64)
+import Data.ByteString (ByteString)
 
 import Control.Monad ((<=<),MonadPlus(..),guard)
 
@@ -74,6 +75,11 @@ fieldChar6 _              = mzero
 fieldArray :: Match Field a -> Match Field [a]
 fieldArray p (FieldArray fs) = mapM p fs
 fieldArray _ _               = mzero
+
+-- | Match a blob field.
+fieldBlob :: Match Field ByteString
+fieldBlob (FieldBlob bs) = return bs
+fieldBlob _              = mzero
 
 type LookupField a = Int -> Match Field a -> Parse a
 
