@@ -412,7 +412,7 @@ data Field
   | FieldVBR     !BitString
   | FieldArray    [Field]
   | FieldChar6   !Char
-  | FieldBlob    !BitString
+  | FieldBlob    !S.ByteString
     deriving Show
 
 getFields :: DefineAbbrev -> GetBits [Field]
@@ -436,7 +436,5 @@ interpAbbrevOp op = label (show op) $ case op of
 
   OpBlob -> do
     len   <- vbrNum 6
-    align32bits
-    bytes <- fixed (len * 8)
-    align32bits
+    bytes <- bytestring len
     return (FieldBlob bytes)
