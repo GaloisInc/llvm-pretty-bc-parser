@@ -679,6 +679,18 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
     -- TODO
     fail "not yet implemented"
 
+  37 -> label "METADATA_GLOBAL_VAR_EXPR" $ do
+    -- TODO
+    fail "not yet implemented"
+
+  38 -> label "METADATA_INDEX_OFFSET" $ do
+    -- TODO
+    fail "not yet implemented"
+
+  39 -> label "METADATA_INDEX" $ do
+    -- TODO
+    fail "not yet implemented"
+
   code -> fail ("unknown record code: " ++ show code)
 
 parseMetadataEntry _ _ pm (abbrevDef -> Just _) =
