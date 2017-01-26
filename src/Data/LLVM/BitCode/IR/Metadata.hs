@@ -189,8 +189,6 @@ data PartialUnnamedMd = PartialUnnamedMd
 finalizePartialUnnamedMd :: PartialUnnamedMd -> Parse UnnamedMd
 finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` finalizePValMd (pumValues pum)
   where
-  -- map through the list and typed PValue to change labels to textual ones
-  fixLabels      = T.mapM (T.mapM finalizePValMd)
   mkUnnamedMd v = UnnamedMd
     { umIndex  = pumIndex pum
     , umValues = v
