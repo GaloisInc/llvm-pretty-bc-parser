@@ -39,6 +39,7 @@ data PartialModule = PartialModule
   , partialNamedMd    :: [NamedMd]
   , partialUnnamedMd  :: [PartialUnnamedMd]
   , partialSections   :: Seq.Seq String
+  , partialSourceName :: !(Maybe String)
   }
 
 emptyPartialModule :: PartialModule
@@ -54,6 +55,7 @@ emptyPartialModule  = PartialModule
   , partialNamedMd    = mempty
   , partialUnnamedMd  = mempty
   , partialSections   = mempty
+  , partialSourceName = mempty
   }
 
 -- | Fixup the global variables and declarations, and return the completed
@@ -224,9 +226,10 @@ parseModuleBlockEntry pm (moduleCodeMDValsUnused -> Just _) = do
   -- MODULE_CODE_METADATA_VALUES_UNUSED
   return pm
 
-parseModuleBlockEntry _ (moduleCodeSourceFilename -> Just _) = do
+parseModuleBlockEntry pm (moduleCodeSourceFilename -> Just r) = do
   -- MODULE_CODE_SOURCE_FILENAME
-  fail "MODULE_CODE_SOURCE_FILENAME"
+  do str <- parseField r 0 cstring
+     return pm { partialSourceName = Just str }
 
 parseModuleBlockEntry _ (moduleCodeHash -> Just _) = do
   -- MODULE_CODE_HASH

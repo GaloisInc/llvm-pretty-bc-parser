@@ -2,6 +2,7 @@ module Data.LLVM.BitCode.GetBits (
     GetBits
   , runGetBits
   , fixed, align32bits
+  , bytestring
   , label
   , isolate
   , try
@@ -12,8 +13,9 @@ import Data.LLVM.BitCode.BitString
 
 import Control.Applicative (Applicative(..),Alternative(..),(<$>))
 import Control.Arrow (first)
-import Control.Monad (MonadPlus(..))
+import Control.Monad (MonadPlus(..),when,replicateM_)
 import Data.Bits (shiftR)
+import Data.ByteString (ByteString)
 import Data.Monoid (mempty,mappend)
 import Data.Word (Word32)
 import qualified Data.Serialize as C
@@ -99,6 +101,19 @@ getBitStringPartial n l w = case splitWord n l w of
     (rest,off) <- getBitString n'
     return (bs `mappend` rest, off)
 
+-- | Skip a byte of input, which must be zero.
+skipZeroByte :: C.Get ()
+skipZeroByte = do
+  x <- C.getWord8
+  when (x /= 0) $ fail "alignment padding was not zeros"
+
+-- | Get a @ByteString@ of @n@ bytes, and then align to 32 bits.
+getByteString :: Int -> C.Get (ByteString,SubWord)
+getByteString n = do
+  bs <- C.getByteString n
+  replicateM_ ((- n) `mod` 4) skipZeroByte
+  return (bs, Aligned)
+
 
 -- Basic Interface -------------------------------------------------------------
 
@@ -114,6 +129,13 @@ fixed :: Int -> GetBits BitString
 fixed n = GetBits $ \ off -> case off of
   Aligned     -> getBitString n
   SubWord l w -> getBitStringPartial n l w
+
+-- | Read out n bytes as a @ByteString@, aligning to a 32-bit boundary before and after.
+bytestring :: Int -> GetBits ByteString
+bytestring n = GetBits $ \ off -> case off of
+  Aligned     -> getByteString n
+  SubWord _ 0 -> getByteString n
+  SubWord _ _ -> fail "alignment padding was not zeros"
 
 -- | Add a label to the error tag stack.
 label :: String -> GetBits a -> GetBits a

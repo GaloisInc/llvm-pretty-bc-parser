@@ -13,6 +13,7 @@ module Data.LLVM.BitCode.Bitstream (
 
   , getBitstream, parseBitstream
   , getBitCodeBitstream, parseBitCodeBitstream, parseBitCodeBitstreamLazy
+  , parseMetadataStringLengths
   ) where
 
 import Data.LLVM.BitCode.BitString as BS
@@ -412,7 +413,7 @@ data Field
   | FieldVBR     !BitString
   | FieldArray    [Field]
   | FieldChar6   !Char
-  | FieldBlob    !BitString
+  | FieldBlob    !S.ByteString
     deriving Show
 
 getFields :: DefineAbbrev -> GetBits [Field]
@@ -436,7 +437,11 @@ interpAbbrevOp op = label (show op) $ case op of
 
   OpBlob -> do
     len   <- vbrNum 6
-    align32bits
-    bytes <- fixed (len * 8)
-    align32bits
+    bytes <- bytestring len
     return (FieldBlob bytes)
+
+
+-- Metadata String Lengths -----------------------------------------------------
+
+parseMetadataStringLengths :: Int -> S.ByteString -> Either String [Int]
+parseMetadataStringLengths n = C.runGet (runGetBits (replicateM n (vbrNum 6)))

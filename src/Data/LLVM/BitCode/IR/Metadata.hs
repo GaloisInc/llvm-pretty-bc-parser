@@ -23,7 +23,10 @@ import Text.LLVM.Labels
 
 import Control.Exception (throw)
 import Control.Monad (foldM,guard,mplus,unless,when)
+import Data.List (mapAccumL)
 import Data.Maybe (fromMaybe)
+import qualified Data.ByteString as S
+import qualified Data.ByteString.Char8 as Char8 (unpack)
 import qualified Data.Map as Map
 import qualified Data.Traversable as T
 
@@ -34,6 +37,8 @@ data MetadataTable = MetadataTable
   { mtEntries   :: MdTable
   , mtNextNode  :: !Int
   , mtNodes     :: Map.Map Int (Bool,Bool,Int)
+                   -- ^ The entries in the map are: is the entry function local,
+                   -- is the entry distinct, and the implicit id for the node.
   } deriving (Show)
 
 emptyMetadataTable :: MdTable -> MetadataTable
@@ -62,6 +67,9 @@ nameNode fnLocal isDistinct ix mt = mt
 
 addString :: String -> MetadataTable -> MetadataTable
 addString str = snd . addMetadata (ValMdString str)
+
+addStrings :: [String] -> MetadataTable -> MetadataTable
+addStrings strs mt = foldl (flip addString) mt strs
 
 addLoc :: Bool -> PDebugLoc -> MetadataTable -> MetadataTable
 addLoc isDistinct loc mt = nameNode False isDistinct ix mt'
@@ -173,25 +181,26 @@ namedEntries  = map (uncurry NamedMd)
               . pmNamedEntries
 
 data PartialUnnamedMd = PartialUnnamedMd
-  { pumIndex  :: Int
-  , pumValues :: [Maybe PValMd]
+  { pumIndex    :: Int
+  , pumValues   :: PValMd
   , pumDistinct :: Bool
   } deriving (Show)
 
 finalizePartialUnnamedMd :: PartialUnnamedMd -> Parse UnnamedMd
-finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` fixLabels (pumValues pum)
+finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` finalizePValMd (pumValues pum)
   where
   -- map through the list and typed PValue to change labels to textual ones
   fixLabels      = T.mapM (T.mapM finalizePValMd)
-  mkUnnamedMd vs = UnnamedMd
+  mkUnnamedMd v = UnnamedMd
     { umIndex  = pumIndex pum
-    , umValues = vs
+    , umValues = v
     , umDistinct = pumDistinct pum
     }
 
 finalizePValMd :: PValMd -> Parse ValMd
 finalizePValMd = relabel (const requireBbEntryName)
 
+-- | Partition unnamed entries into global and function local unnamed entries.
 unnamedEntries :: PartialMetadata -> ([PartialUnnamedMd],[PartialUnnamedMd])
 unnamedEntries pm = foldl resolveNode ([],[]) (Map.toList (mtNodes mt))
   where
@@ -201,13 +210,16 @@ unnamedEntries pm = foldl resolveNode ([],[]) (Map.toList (mtNodes mt))
   resolveNode (gs,fs) (ref,(fnLocal,d,ix)) = case lookupNode ref d ix of
     Just pum | fnLocal   -> (gs,pum:fs)
              | otherwise -> (pum:gs,fs)
+
+    -- TODO: is this silently eating errors with metadata that's not in the
+    -- value table?
     Nothing              -> (gs,fs)
 
   lookupNode ref d ix = do
-    Typed { typedValue = ValMd (ValMdNode vs) } <- Map.lookup ref es
+    Typed { typedValue = ValMd v } <- Map.lookup ref es
     return PartialUnnamedMd
       { pumIndex  = ix
-      , pumValues = vs
+      , pumValues = v
       , pumDistinct = d
       }
 
@@ -293,6 +305,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
 
   -- [distinct, line, col, scope, inlined-at?]
   7 -> label "METADATA_LOCATION" $ do
+    -- TODO: broken in 3.7+; needs to be a DILocation rather than an
+    -- MDLocation, but there appears to be no difference in the
+    -- bitcode. /sigh/
     cxt       <- getContext
     let field = parseField r
     isDistinct <- field 0 nonzero
@@ -643,9 +658,25 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
     mdForwardRefOrNull cxt mt <$> parseField r 4 numeric
     -- TODO
     fail "not yet implemented"
+
   35 -> label "METADATA_STRINGS" $ do
-    -- TODO
-    fail "not yet implemented"
+    when (length (recordFields r) /= 3)
+      (fail "Invalid record: metadata strings layout")
+    count  <- parseField r 0 numeric
+    offset <- parseField r 1 numeric
+    bs     <- parseField r 2 fieldBlob
+    when (count == 0)
+      (fail "Invalid record: metadata strings with no strings")
+    when (offset >= S.length bs)
+      (fail "Invalid record: metadata strings corrupt offset")
+    let (bsLengths, bsStrings) = S.splitAt offset bs
+    lengths <- either fail return $ parseMetadataStringLengths count bsLengths
+    when (sum lengths > S.length bsStrings)
+      (fail "Invalid record: metadata strings truncated")
+    let strings = snd (mapAccumL f bsStrings lengths)
+          where f s i = fmap Char8.unpack (S.splitAt i s)
+    return $! updateMetadataTable (addStrings strings) pm
+
   36 -> label "METADATA_GLOBAL_DECL_ATTACHMENT" $ do
     -- TODO
     fail "not yet implemented"

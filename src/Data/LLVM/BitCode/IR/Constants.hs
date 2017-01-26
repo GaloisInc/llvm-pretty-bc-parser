@@ -78,44 +78,42 @@ binop  = choose <=< numeric
   choose 12 = constant (Bit Xor) (error "invalid xor on floating point")
   choose _  = mzero
 
-fcmpOp :: Match Field (Typed PValue -> PValue -> PInstr)
+fcmpOp :: Match Field FCmpOp
 fcmpOp  = choose <=< numeric
   where
-  op        = return . FCmp
-  choose :: Match Int (Typed PValue -> PValue -> PInstr)
-  choose 0  = op Ffalse
-  choose 1  = op Foeq
-  choose 2  = op Fogt
-  choose 3  = op Foge
-  choose 4  = op Folt
-  choose 5  = op Fole
-  choose 6  = op Fone
-  choose 7  = op Ford
-  choose 8  = op Funo
-  choose 9  = op Fueq
-  choose 10 = op Fugt
-  choose 11 = op Fuge
-  choose 12 = op Fult
-  choose 13 = op Fule
-  choose 14 = op Fune
-  choose 15 = op Ftrue
+  choose :: Match Int FCmpOp
+  choose 0  = return Ffalse
+  choose 1  = return Foeq
+  choose 2  = return Fogt
+  choose 3  = return Foge
+  choose 4  = return Folt
+  choose 5  = return Fole
+  choose 6  = return Fone
+  choose 7  = return Ford
+  choose 8  = return Funo
+  choose 9  = return Fueq
+  choose 10 = return Fugt
+  choose 11 = return Fuge
+  choose 12 = return Fult
+  choose 13 = return Fule
+  choose 14 = return Fune
+  choose 15 = return Ftrue
   choose _  = mzero
 
-icmpOp :: Match Field (Typed PValue -> PValue -> PInstr)
+icmpOp :: Match Field ICmpOp
 icmpOp  = choose <=< numeric
   where
-  op        = return . ICmp
-  choose :: Match Int (Typed PValue -> PValue -> PInstr)
-  choose 32 = op Ieq
-  choose 33 = op Ine
-  choose 34 = op Iugt
-  choose 35 = op Iuge
-  choose 36 = op Iult
-  choose 37 = op Iule
-  choose 38 = op Isgt
-  choose 39 = op Isge
-  choose 40 = op Islt
-  choose 41 = op Isle
+  choose :: Match Int ICmpOp
+  choose 32 = return Ieq
+  choose 33 = return Ine
+  choose 34 = return Iugt
+  choose 35 = return Iuge
+  choose 36 = return Iult
+  choose 37 = return Iule
+  choose 38 = return Isgt
+  choose 39 = return Isge
+  choose 40 = return Islt
+  choose 41 = return Isle
   choose _  = mzero
 
 castOp :: Match Field (Typed PValue -> Type -> PInstr)
@@ -283,9 +281,9 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
 
   -- [n x operands]
   12 -> label "CST_CODE_CE_GEP" $ do
-    ty   <- getTy
-    args <- parseCeGep t r
-    return (getTy,Typed ty (ValConstExpr (ConstGEP False args)):cs)
+    ty <- getTy
+    v <- parseCeGep False t r
+    return (getTy,Typed ty v:cs)
 
   -- [opval,opval,opval]
   13 -> label "CST_CODE_CE_SELECT" $ do
@@ -309,8 +307,22 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   16 -> label "CST_CODE_CE_SHUFFLEVEC" $ do
     notImplemented
 
+  -- [opty, opval, opval, pred]
   17 -> label "CST_CODE_CE_CMP" $ do
-    notImplemented
+    let field = parseField r
+    opty <- getType                  =<< field 0 numeric
+    op0  <- getConstantFwdRef t opty =<< field 1 numeric
+    op1  <- getConstantFwdRef t opty =<< field 2 numeric
+
+    let isFloat = isPrimTypeOf isFloatingPoint
+    cst <- if isFloat opty || isVectorOf isFloat opty
+              then do op <- field 3 fcmpOp
+                      return (ConstFCmp op op0 op1)
+
+              else do op <- field 3 icmpOp
+                      return (ConstICmp op op0 op1)
+
+    return (getTy, Typed (PrimType (Integer 1)) (ValConstExpr cst):cs)
 
   18 -> label "CST_CODE_INLINEASM_OLD" $ do
     let field = parseField r
@@ -332,9 +344,9 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
 
   -- [n x operands]
   20 -> label "CST_CODE_CE_INBOUNDS_GEP" $ do
-    ty   <- getTy
-    args <- parseCeGep t r
-    return (getTy,Typed ty (ValConstExpr (ConstGEP True args)):cs)
+    ty <- getTy
+    v <- parseCeGep True t r
+    return (getTy,Typed ty v:cs)
 
   -- [funty,fnval,bb#]
   21 -> label "CST_CODE_BLOCKADDRESS" $ do
@@ -405,22 +417,23 @@ parseConstantEntry _ st (abbrevDef -> Just _) =
 parseConstantEntry _ _ e =
   fail ("constant block: unexpected: " ++ show e)
 
-parseCeGep :: ValueTable -> Record -> Parse [Typed PValue]
-parseCeGep t r = loop firstIdx
-  where
-
-  -- TODO: we should check the result type if it exists, but for now we
-  -- ignore it.
-  firstIdx = if odd (length (recordFields r)) then 1 else 0
-
-  field = parseField r
-
-  loop n = do
-    ty   <- getType =<< field  n    numeric
-    elt  <-             field (n+1) numeric
-    rest <- loop (n+2) `mplus` return []
-    cxt  <- getContext
-    return (Typed ty (typedValue (forwardRef cxt elt t)) : rest)
+parseCeGep :: Bool -> ValueTable -> Record -> Parse PValue
+parseCeGep isInbounds t r = do
+  let isExplicit = odd (length (recordFields r))
+      firstIdx = if isExplicit then 1 else 0
+      field = parseField r
+      loop n = do
+        ty   <- getType =<< field  n    numeric
+        elt  <-             field (n+1) numeric
+        rest <- loop (n+2) `mplus` return []
+        cxt  <- getContext
+        return (Typed ty (typedValue (forwardRef cxt elt t)) : rest)
+  mPointeeType <-
+    if isExplicit
+    then Just <$> (getType =<< field 0 numeric)
+    else pure Nothing
+  args <- loop firstIdx
+  return $! ValConstExpr (ConstGEP isInbounds mPointeeType args)
 
 parseWideInteger :: Record -> Parse Integer
 parseWideInteger r = do

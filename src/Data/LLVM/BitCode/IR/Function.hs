@@ -26,8 +26,6 @@ import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Traversable as T
 
-import Debug.Trace
-
 
 -- Function Aliases ------------------------------------------------------------
 
@@ -726,8 +724,12 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
 
     let ty = typedType lhs
         parseOp | isPrimTypeOf isFloatingPoint ty ||
-                  isVectorOf (isPrimTypeOf isFloatingPoint) ty = fcmpOp
-                | otherwise                       = icmpOp
+                  isVectorOf (isPrimTypeOf isFloatingPoint) ty =
+                  return . FCmp <=< fcmpOp
+
+                | otherwise =
+                  return . ICmp <=< icmpOp
+
     op <- field (ix+1) parseOp
 
     let boolTy = Integer 1

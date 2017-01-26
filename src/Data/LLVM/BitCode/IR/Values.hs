@@ -2,6 +2,7 @@
 
 module Data.LLVM.BitCode.IR.Values (
     getValueTypePair
+  , getConstantFwdRef
   , getValue
   , getFnValueById
   , parseValueSymbolTableBlock
@@ -20,6 +21,18 @@ import qualified Data.Map as Map
 
 
 -- Value Table -----------------------------------------------------------------
+
+getConstantFwdRef :: ValueTable -> Type -> Int -> Parse (Typed PValue)
+getConstantFwdRef t ty n = label "getConstantFwdRef" $ do
+  mb <- lookupValue n
+  case mb of
+    Just tv -> return tv
+
+    -- forward reference
+    Nothing -> do
+      cxt <- getContext
+      let ref = forwardRef cxt n t
+      return (Typed ty (typedValue ref))
 
 -- | Get either a value from the value table, with its value, or parse a value
 -- and a type.
@@ -67,7 +80,6 @@ getFnValueById ty n = label "getFnValueById" $ case ty of
 
   _ -> do
     mb <- lookupValueAbs (fromIntegral n)
-    -- TODO: lookup in the metadata table
     case mb of
 
       Just tv -> return tv
