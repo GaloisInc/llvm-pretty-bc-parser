@@ -30,4 +30,8 @@ linkage  = choose <=< numeric
     13 -> return LinkerPrivate
     14 -> return LinkerPrivateWeak
     15 -> return LinkerPrivateWeakDefAuto
+    16 -> return Weak
+    17 -> return WeakODR
+    18 -> return Linkonce
+    19 -> return LinkonceODR
     _  -> mzero
