@@ -1,5 +1,6 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE CPP #-}
 
 module Data.LLVM.BitCode.IR.Constants where
@@ -116,11 +117,10 @@ icmpOp  = choose <=< numeric
   choose 41 = return Isle
   choose _  = mzero
 
-castOp :: Match Field (Typed PValue -> Type -> PInstr)
-castOp  = choose <=< numeric
+castOpGeneric :: forall c. (ConvOp -> Maybe c) -> Match Field c
+castOpGeneric op = choose <=< numeric
   where
-  op        = return . Conv
-  choose :: Match Int (Typed PValue -> Type -> PInstr)
+  choose :: Match Int c
   choose 0  = op Trunc
   choose 1  = op ZExt
   choose 2  = op SExt
@@ -135,24 +135,13 @@ castOp  = choose <=< numeric
   choose 11 = op BitCast
   choose _  = mzero
 
+castOp :: Match Field (Typed PValue -> Type -> PInstr)
+castOp = castOpGeneric (return . Conv)
+
 castOpCE :: Match Field (Typed PValue -> Type -> PValue)
-castOpCE  = choose <=< numeric
+castOpCE = castOpGeneric op
   where
-  op c      = return (\ tv t -> ValConstExpr (ConstConv c tv t))
-  choose :: Match Int (Typed PValue -> Type -> PValue)
-  choose 0  = op Trunc
-  choose 1  = op ZExt
-  choose 2  = op SExt
-  choose 3  = op FpToUi
-  choose 4  = op FpToSi
-  choose 5  = op UiToFp
-  choose 6  = op SiToFp
-  choose 7  = op FpTrunc
-  choose 8  = op FpExt
-  choose 9  = op PtrToInt
-  choose 10 = op IntToPtr
-  choose 11 = op BitCast
-  choose _  = mzero
+  op c = return (\ tv t -> ValConstExpr (ConstConv c tv t))
 
 -- Constants Block -------------------------------------------------------------
 
