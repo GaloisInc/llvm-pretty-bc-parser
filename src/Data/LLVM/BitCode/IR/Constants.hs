@@ -31,8 +31,11 @@ import Data.Array.ST (castSTUArray)
 -- Instruction Field Parsing ---------------------------------------------------
 
 -- | Parse a binop from a field, returning its constructor in the AST.
-binop :: Match Field (Maybe Int -> Typed PValue -> PValue -> PInstr)
-binop  = choose <=< numeric
+binopGeneric :: forall a.
+                (ArithOp -> Typed PValue -> PValue -> a)
+             -> (BitOp -> Typed PValue -> PValue -> a)
+             -> Match Field (Maybe Int -> Typed PValue -> PValue -> a)
+binopGeneric aop bop = choose <=< numeric
   where
 
   constant k kf = return $ \_mb x y ->
@@ -63,21 +66,30 @@ binop  = choose <=< numeric
           Nothing -> i (k  False)    x y
           Just w  -> i (k (exact w)) x y
 
-  choose :: Match Int (Maybe Int -> Typed PValue -> PValue -> PInstr)
-  choose 0  = wrapFlags Arith Add   FAdd
-  choose 1  = wrapFlags Arith Sub   FSub
-  choose 2  = wrapFlags Arith Mul   FMul
-  choose 3  = exactFlag Arith UDiv  FDiv
-  choose 4  = exactFlag Arith SDiv  FDiv
-  choose 5  = constant (Arith URem) (Arith FRem)
-  choose 6  = constant (Arith SRem) (Arith FRem)
-  choose 7  = wrapFlags Bit Shl  (error "invalid shl on floating point")
-  choose 8  = exactFlag Bit Lshr (error "invalid lshr on floating point")
-  choose 9  = exactFlag Bit Ashr (error "invalid ashr on floating point")
-  choose 10 = constant (Bit And) (error "invalid and on floating point")
-  choose 11 = constant (Bit Or)  (error "invalid or on floating point")
-  choose 12 = constant (Bit Xor) (error "invalid xor on floating point")
+  choose :: Match Int (Maybe Int -> Typed PValue -> PValue -> a)
+  choose 0  = wrapFlags aop Add   FAdd
+  choose 1  = wrapFlags aop Sub   FSub
+  choose 2  = wrapFlags aop Mul   FMul
+  choose 3  = exactFlag aop UDiv  FDiv
+  choose 4  = exactFlag aop SDiv  FDiv
+  choose 5  = constant (aop URem) (aop FRem)
+  choose 6  = constant (aop SRem) (aop FRem)
+  choose 7  = wrapFlags bop Shl  (error "invalid shl on floating point")
+  choose 8  = exactFlag bop Lshr (error "invalid lshr on floating point")
+  choose 9  = exactFlag bop Ashr (error "invalid ashr on floating point")
+  choose 10 = constant (bop And) (error "invalid and on floating point")
+  choose 11 = constant (bop Or)  (error "invalid or on floating point")
+  choose 12 = constant (bop Xor) (error "invalid xor on floating point")
   choose _  = mzero
+
+binop :: Match Field (Maybe Int -> Typed PValue -> PValue -> PInstr)
+binop = binopGeneric Arith Bit
+
+binopCE :: Match Field (Maybe Int -> Typed PValue -> PValue -> PValue)
+binopCE = binopGeneric aop bop
+  where
+  aop op tv v = ValConstExpr (ConstArith op tv v)
+  bop op tv v = ValConstExpr (ConstBit op tv v)
 
 fcmpOp :: Match Field FCmpOp
 fcmpOp  = choose <=< numeric
@@ -255,7 +267,16 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
 
   -- [opcode,opval,opval]
   10 -> label "CST_CODE_CE_BINOP" $ do
-    notImplemented
+    let field = parseField r
+    ty      <- getTy
+    mkInstr <- field 0 binopCE
+    lopval  <- field 1 numeric
+    ropval  <- field 2 numeric
+    cxt     <- getContext
+    let lv = forwardRef cxt lopval t
+        rv = forwardRef cxt ropval t
+    let mbWord = numeric =<< fieldAt 3 r
+    return (getTy, Typed ty (mkInstr mbWord lv (typedValue rv)) : cs)
 
   -- [opcode, opty, opval]
   11 -> label "CST_CODE_CE_CAST" $ do
