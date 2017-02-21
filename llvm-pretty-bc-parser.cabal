@@ -1,5 +1,5 @@
 Name:                llvm-pretty-bc-parser
-Version:             0.3.0.0
+Version:             0.3.0.1
 License:             BSD3
 License-file:        LICENSE
 Author:              Trevor Elliott <trevor@galois.com>
@@ -57,7 +57,7 @@ Library
                        fgl        >= 5.5,
                        cereal     >= 0.3.5.2,
                        bytestring >= 0.9.1,
-                       llvm-pretty>= 0.5
+                       llvm-pretty>= 0.6
 
 Executable llvm-disasm
   Main-is:             LLVMDis.hs
