@@ -483,7 +483,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
     let recordSize = length (recordFields r)
         adj i | recordSize == 19 = i + 1
               | otherwise        = i
-    when (recordSize /= 18 && recordSize /= 19)
+        hasThisAdjustment = recordSize >= 20
+    unless (18 <= recordSize && recordSize <= 20)
       (fail "Invalid record")
 
     ctx <- getContext
@@ -500,6 +501,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
     dispContainingType <- mdForwardRefOrNull ctx mt <$> parseField r 10 numeric
     dispVirtuality     <- parseField r 11 numeric
     dispVirtualIndex   <- parseField r 12 numeric
+    dispThisAdjustment <- if hasThisAdjustment
+                            then parseField r 19 numeric
+                            else return 0
     dispFlags          <- parseField r 13 numeric
     dispIsOptimized    <- parseField r 14 nonzero
     dispTemplateParams <-
