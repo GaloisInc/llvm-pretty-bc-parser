@@ -361,12 +361,14 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
     return $! updateMetadataTable
       (addDebugInfo isDistinct (DebugInfoSubrange DISubrange{..})) pm
 
+  -- [distinct, value, name]
   14 -> label "METADATA_ENUMERATOR" $ do
-    isDistinct <- parseField r 0 numeric
-    parseField r 1 signedInt64
-    parseField r 2 string
-    -- TODO
-    fail "not yet implemented"
+    ctx        <- getContext
+    isDistinct <- parseField r 0 nonzero
+    value      <- parseField r 1 signedInt64
+    name       <- mdString ctx mt <$> parseField r 2 numeric
+    return $! updateMetadataTable
+      (addDebugInfo isDistinct (DebugInfoEnumerator name value)) pm
 
   15 -> label "METADATA_BASIC_TYPE" $ do
     ctx <- getContext
