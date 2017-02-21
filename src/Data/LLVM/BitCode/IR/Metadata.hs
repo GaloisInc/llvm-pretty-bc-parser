@@ -678,7 +678,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
     when (sum lengths > S.length bsStrings)
       (fail "Invalid record: metadata strings truncated")
     let strings = snd (mapAccumL f bsStrings lengths)
-          where f s i = fmap Char8.unpack (S.splitAt i s)
+          where f s i = case S.splitAt i s of
+                          (str,rest) -> (rest, Char8.unpack str)
     return $! updateMetadataTable (addStrings strings) pm
 
   36 -> label "METADATA_GLOBAL_DECL_ATTACHMENT" $ do
