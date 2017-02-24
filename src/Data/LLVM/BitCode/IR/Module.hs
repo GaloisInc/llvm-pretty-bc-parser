@@ -68,7 +68,7 @@ finalizeModule pm = do
   unnamed  <- T.mapM finalizePartialUnnamedMd (partialUnnamedMd pm)
   types    <- resolveTypeDecls
   let lkp = lookupBlockName (partialDefines pm)
-  defines  <- T.mapM (finalizePartialDefine lkp) (partialDefines pm)
+  defines <- T.mapM (finalizePartialDefine lkp) (partialDefines pm)
   return emptyModule
     { modDataLayout = partialDataLayout pm
     , modNamedMd    = partialNamedMd pm
@@ -130,8 +130,12 @@ parseModuleBlockEntry pm (moduleCodeFunction -> Just r) = do
 
 parseModuleBlockEntry pm (functionBlockId -> Just es) = do
   -- FUNCTION_BLOCK_ID
-  def <- parseFunctionBlock es
-  return pm { partialDefines = partialDefines pm Seq.|> def }
+  let unnamedGlobalsCount = length (partialUnnamedMd pm)
+  def <- parseFunctionBlock unnamedGlobalsCount es
+  let def' = def { partialGlobalMd = [] }
+  return pm { partialDefines = partialDefines pm Seq.|> def'
+            , partialUnnamedMd = partialGlobalMd def ++ partialUnnamedMd pm
+            }
 
 parseModuleBlockEntry pm (paramattrBlockId -> Just _) = do
   -- PARAMATTR_BLOCK_ID
@@ -146,7 +150,8 @@ parseModuleBlockEntry pm (paramattrGroupBlockId -> Just _) = do
 parseModuleBlockEntry pm (metadataBlockId -> Just es) = do
   -- METADATA_BLOCK_ID
   vt <- getValueTable
-  (ns,(gs,_),_,_) <- parseMetadataBlock vt es
+  let globalsSoFar = length (partialUnnamedMd pm)
+  (ns,(gs,_),_,_) <- parseMetadataBlock globalsSoFar vt es
   return pm
     { partialNamedMd   = partialNamedMd   pm ++ ns
     , partialUnnamedMd = partialUnnamedMd pm ++ gs

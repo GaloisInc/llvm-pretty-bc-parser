@@ -96,6 +96,7 @@ data PartialDefine = PartialDefine
   , partialBlockId  :: !Int
   , partialSymtab   :: ValueSymtab
   , partialMetadata :: Map.Map PKindMd PValMd
+  , partialGlobalMd :: [PartialUnnamedMd]
   } deriving (Show)
 
 -- | Generate a partial function definition from a function prototype.
@@ -119,6 +120,7 @@ emptyPartialDefine proto = do
     , partialBlockId  = 0
     , partialSymtab   = symtab
     , partialMetadata = Map.empty
+    , partialGlobalMd = []
     }
 
 -- | Set the statement list in a partial define.
@@ -281,8 +283,11 @@ finalizeStmt lkp = relabel (resolveBlockLabel lkp)
 -- Function Block Parsing ------------------------------------------------------
 
 -- | Parse the function block.
-parseFunctionBlock :: [Entry] -> Parse PartialDefine
-parseFunctionBlock ents = label "FUNCTION_BLOCK" $ enterFunctionDef $ do
+parseFunctionBlock ::
+  Int {- ^ unnamed globals so far -} ->
+  [Entry] -> Parse PartialDefine
+parseFunctionBlock unnamedGlobals ents =
+  label "FUNCTION_BLOCK" $ enterFunctionDef $ do
 
   -- parse the value symtab block first, so that names are present during the
   -- rest of the parse
@@ -299,22 +304,24 @@ parseFunctionBlock ents = label "FUNCTION_BLOCK" $ enterFunctionDef $ do
 
     -- generate the initial partial definition
     pd  <- emptyPartialDefine proto
-    rec pd' <- foldM (parseFunctionBlockEntry vt) pd ents
+    rec pd' <- foldM (parseFunctionBlockEntry unnamedGlobals vt) pd ents
         vt  <- getValueTable
 
     -- merge the symbol table with the anonymous symbol table
     return pd' { partialSymtab = partialSymtab pd' `Map.union` symtab }
 
 -- | Parse the members of the function block
-parseFunctionBlockEntry :: ValueTable -> PartialDefine -> Entry
-                        -> Parse PartialDefine
+parseFunctionBlockEntry ::
+  Int {- ^ unnamed globals so far -} ->
+  ValueTable -> PartialDefine -> Entry ->
+  Parse PartialDefine
 
-parseFunctionBlockEntry _ d (constantsBlockId -> Just es) = do
+parseFunctionBlockEntry _ _ d (constantsBlockId -> Just es) = do
   -- CONSTANTS_BLOCK
   parseConstantsBlock es
   return d
 
-parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
+parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [n]
   1 -> label "FUNC_CODE_DECLARE_BLOCKS" (return d)
@@ -741,29 +748,36 @@ parseFunctionBlockEntry t d (fromEntry -> Just r) = case recordCode r of
   -- unknown
    | otherwise -> fail ("instruction code " ++ show code ++ " is unknown")
 
-parseFunctionBlockEntry _ d (valueSymtabBlockId -> Just _) = do
+parseFunctionBlockEntry _ _ d (valueSymtabBlockId -> Just _) = do
   -- this is parsed before any of the function block
   return d
 
-parseFunctionBlockEntry t d (metadataBlockId -> Just es) = do
-  _ <- parseMetadataBlock t es
-  return d
+parseFunctionBlockEntry globals t d (metadataBlockId -> Just es) = do
+  (_, (globalUnnamedMds, localUnnamedMds), _, _) <- parseMetadataBlock globals t es
+  unless (null localUnnamedMds)
+     (fail "parseFunctionBlockEntry PANIC: unexpected local unnamed metadata")
+  return d { partialGlobalMd = globalUnnamedMds ++ partialGlobalMd d }
 
-parseFunctionBlockEntry t d (metadataAttachmentBlockId -> Just es) = do
-  (_,_,instrAtt,fnAtt) <- parseMetadataBlock t es
+parseFunctionBlockEntry globals t d (metadataAttachmentBlockId -> Just es) = do
+  (_,(globalUnnamedMds, localUnnamedMds),instrAtt,fnAtt)
+     <- parseMetadataBlock globals t es
+  unless (null localUnnamedMds)
+     (fail "parseFunctionBlockEntry PANIC: unexpected local unnamed metadata")
+  unless (null globalUnnamedMds)
+     (fail "parseFunctionBlockEntry PANIC: unexpected global unnamed metadata")
   return d { partialBody     = addInstrAttachments instrAtt (partialBody d)
            , partialMetadata = Map.union fnAtt (partialMetadata d)
            }
 
-parseFunctionBlockEntry _ d (abbrevDef -> Just _) =
+parseFunctionBlockEntry _ _ d (abbrevDef -> Just _) =
   -- ignore any abbreviation definitions
   return d
 
-parseFunctionBlockEntry _ d (uselistBlockId -> Just _) = do
+parseFunctionBlockEntry _ _ d (uselistBlockId -> Just _) = do
   -- ignore the uselist block
   return d
 
-parseFunctionBlockEntry _ _ e = do
+parseFunctionBlockEntry _ _ _ e = do
   fail ("function block: unexpected: " ++ show e)
 
 addInstrAttachments :: InstrMdAttachments -> BlockList -> BlockList

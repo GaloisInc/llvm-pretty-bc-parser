@@ -30,7 +30,6 @@ import qualified Data.ByteString.Char8 as Char8 (unpack)
 import qualified Data.Map as Map
 import qualified Data.Traversable as T
 
-
 -- Parsing State ---------------------------------------------------------------
 
 data MetadataTable = MetadataTable
@@ -41,10 +40,12 @@ data MetadataTable = MetadataTable
                    -- is the entry distinct, and the implicit id for the node.
   } deriving (Show)
 
-emptyMetadataTable :: MdTable -> MetadataTable
-emptyMetadataTable es = MetadataTable
+emptyMetadataTable ::
+  Int {- ^ globals seen so far -} ->
+  MdTable -> MetadataTable
+emptyMetadataTable globals es = MetadataTable
   { mtEntries   = es
-  , mtNextNode  = 0
+  , mtNextNode  = globals
   , mtNodes     = Map.empty
   }
 
@@ -141,9 +142,11 @@ data PartialMetadata = PartialMetadata
   , pmFnAttachments    :: PFnMdAttachments
   } deriving (Show)
 
-emptyPartialMetadata :: MdTable -> PartialMetadata
-emptyPartialMetadata es = PartialMetadata
-  { pmEntries          = emptyMetadataTable es
+emptyPartialMetadata ::
+  Int {- ^ globals seen so far -} ->
+  MdTable -> PartialMetadata
+emptyPartialMetadata globals es = PartialMetadata
+  { pmEntries          = emptyMetadataTable globals es
   , pmNamedEntries     = Map.empty
   , pmNextName         = Nothing
   , pmInstrAttachments = Map.empty
@@ -243,10 +246,12 @@ parsedMetadata pm =
 
 -- Metadata Parsing ------------------------------------------------------------
 
-parseMetadataBlock :: ValueTable -> [Entry] -> Parse ParsedMetadata
-parseMetadataBlock vt es = label "METADATA_BLOCK" $ do
+parseMetadataBlock ::
+  Int {- ^ globals seen so far -} ->
+  ValueTable -> [Entry] -> Parse ParsedMetadata
+parseMetadataBlock globals vt es = label "METADATA_BLOCK" $ do
   ms <- getMdTable
-  let pm0 = emptyPartialMetadata ms
+  let pm0 = emptyPartialMetadata globals ms
   rec pm <- foldM (parseMetadataEntry vt (pmEntries pm)) pm0 es
   let entries = pmEntries pm
   setMdTable (mtEntries entries)
@@ -260,7 +265,8 @@ parseMetadataBlock vt es = label "METADATA_BLOCK" $ do
 -- to not have to rely on it.
 parseMetadataEntry :: ValueTable -> MetadataTable -> PartialMetadata -> Entry
                    -> Parse PartialMetadata
-parseMetadataEntry vt mt pm (fromEntry -> Just r) = case recordCode r of
+parseMetadataEntry vt mt pm (fromEntry -> Just r) =
+ case recordCode r of
   -- [values]
   1 -> label "METADATA_STRING" $ do
     str <- parseFields r 0 char `mplus` parseField r 0 string
