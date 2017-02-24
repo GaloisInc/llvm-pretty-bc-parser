@@ -25,7 +25,7 @@ import System.Console.GetOpt
   (ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo)
 import System.Directory
   (copyFile, createDirectoryIfMissing, findExecutable, getFileSize,
-   getPermissions, setPermissions, setOwnerExecutable)
+   getPermissions, setPermissions, setOwnerExecutable, makeAbsolute)
 import System.Environment (getArgs, getProgName, lookupEnv)
 import System.Exit (ExitCode(..), exitFailure, exitSuccess)
 import System.FilePath ((</>), (<.>), dropExtension)
@@ -245,6 +245,8 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
               TestFail st _ TestSrc{..} err -> do
                 copyFile (tmpDir </> srcFile) (clangRoot </> srcFile)
                 writeFile (clangRoot </> srcFile <.> show st <.> "err") err
+                let bcFile = dropExtension srcFile <.> "bc"
+                copyFile (tmpDir </> bcFile) (clangRoot </> bcFile)
                 when (or [ st == DisasmStage && optReduceDisasm opts
                          , st == AsStage     && optReduceAs opts
                          , st == ExecStage   && optReduceExec opts ]) $
@@ -267,6 +269,7 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, flags) opts clangRoot = do
           Nothing -> ""
           Just ver -> "--llvm-version=" ++ ver
   copyFile (clangRoot </> srcFile) srcReduced
+  absClangRoot <- makeAbsolute clangRoot
   let grepPat DisasmStage =
         -- look for the first line of the error starting with a
         -- tab; this should be the top of the llvm-disasm stack
@@ -286,6 +289,8 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, flags) opts clangRoot = do
               [] -> Nothing
               msg -> Just (unwords msg)
       grepPat ExecStage = error "no grep pattern for exec reduction"
+      bcFile = baseName <.> "bc"
+      llFile = baseName <.> "ll"
       scriptHeader = [
           "#!/usr/bin/env bash"
         , "# Consider this script a best guess template for reducing failing"
@@ -298,33 +303,39 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, flags) opts clangRoot = do
         ]
       buildBc = unwords [
           clangExe, "-I", csmithPath, flags, "-c"
-        , "-emit-llvm", baseName ++ "-reduced.c", "-o", baseName <.> "bc"
+        , "-emit-llvm", baseName ++ "-reduced.c", "-o", bcFile
         ]
       buildLl = unwords [
-          "llvm-disasm", llvmVersion, baseName <.> "bc", ">", baseName <.> "ll"
+          "llvm-disasm", llvmVersion, bcFile, ">", llFile
+        ]
+      copyBc = unwords [
+          "cp", bcFile, absClangRoot </> bcFile
         ]
       script DisasmStage = unlines $ scriptHeader ++ [
           buildBc
-        , unwords [ "llvm-disasm", llvmVersion, baseName <.> "bc", "2>&1 |"
+        , copyBc
+        , unwords [ "llvm-disasm", llvmVersion, bcFile, "2>&1 |"
                   , "grep", show (fromMaybe "" (grepPat st))
                   ]
         ]
       script AsStage = unlines $ scriptHeader ++ [
           buildBc
+        , copyBc
         , buildLl
         , unwords [ clangExe, "-I", csmithPath, flags, "-c"
-                  , baseName <.> "ll", "-o", baseName <.> "o", "2>&1 |"
+                  , llFile, "-o", baseName <.> "o", "2>&1 |"
                   , "fgrep ", show (fromMaybe "" (grepPat st))
                   ]
         ]
       script ExecStage = unlines $ scriptHeader ++ [
           buildBc
+        , copyBc
         , buildLl
         , unwords [ clangExe, "-I", csmithPath, flags
-                  , baseName <.> "bc", "-o", "golden"
+                  , bcFile, "-o", "golden"
                   ]
         , unwords [ clangExe, "-I", csmithPath, flags
-                  , baseName <.> "ll", "-o", "ours"
+                  , llFile, "-o", "ours"
                   ]
         , "GOLDEN=$(timeout 10 ./golden)"
         , "[ \"$GOLDEN\" != \"$(./ours)\" ]"
