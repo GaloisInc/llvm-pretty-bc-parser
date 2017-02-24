@@ -25,6 +25,7 @@ import Control.Exception (throw)
 import Control.Monad (foldM,guard,mplus,unless,when)
 import Data.List (mapAccumL)
 import Data.Maybe (fromMaybe)
+import Data.Bits (shiftR, testBit)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as Char8 (unpack)
 import qualified Data.Map as Map
@@ -447,7 +448,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
   20 -> label "METADATA_COMPILE_UNIT" $ do
     let recordSize = length (recordFields r)
-    when (recordSize < 14 || recordSize > 16)
+    when (recordSize < 14 || recordSize > 17)
       (fail "Invalid record")
 
     ctx <- getContext
@@ -479,6 +480,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       if recordSize <= 14
       then pure 0
       else parseField r 14 numeric
+    dicuSplitDebugInlining <-
+      if recordSize <= 16
+      then pure True
+      else parseField r 16 nonzero
     return $! updateMetadataTable
       (addDebugInfo isDistinct (DebugInfoCompileUnit DICompileUnit {..})) pm
 
@@ -578,11 +583,15 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     fail "not yet implemented"
 
   27 -> label "METADATA_GLOBAL_VAR" $ do
-    when (length (recordFields r) /= 11)
-      (fail "Invalid record")
+    let len = length (recordFields r)
+    unless (11 <= len && len <= 12)
+      (fail "Unexpected number of record fields")
 
-    ctx <- getContext
-    isDistinct <- parseField r 0 nonzero
+    ctx        <- getContext
+    field0     <- parseField r 0 numeric
+    let isDistinct = testBit field0 0
+        _version   = shiftR  field0 1 :: Int
+
     digvScope  <- mdForwardRefOrNull ctx mt <$> parseField r 1 numeric
     digvName   <- mdStringOrNull ctx mt <$> parseField r 2 numeric
     digvLinkageName <- mdStringOrNull ctx mt <$> parseField r 3 numeric
@@ -593,6 +602,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     digvIsDefinition <- parseField r 8 nonzero
     digvVariable <- mdForwardRefOrNull ctx mt <$> parseField r 9 numeric
     digvDeclaration <- mdForwardRefOrNull ctx mt <$> parseField r 10 numeric
+    digvAlignment   <- if len > 11 then Just <$> parseField r 11 numeric
+                                   else return Nothing
     return $! updateMetadataTable
       (addDebugInfo
          isDistinct
@@ -693,8 +704,14 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     fail "not yet implemented"
 
   37 -> label "METADATA_GLOBAL_VAR_EXPR" $ do
-    -- TODO
-    fail "not yet implemented"
+    when (length (recordFields r) /= 3)
+      (fail "Invalid record: unsupported layout")
+    cxt <- getContext
+    isDistinct      <- parseField r 0 nonzero
+    digveVariable   <- mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
+    digveExpression <- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
+    return $! updateMetadataTable
+      (addDebugInfo isDistinct (DebugInfoGlobalVariableExpression DIGlobalVariableExpression{..})) pm
 
   38 -> label "METADATA_INDEX_OFFSET" $ do
     -- TODO
