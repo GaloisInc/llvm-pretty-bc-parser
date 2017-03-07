@@ -50,7 +50,7 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
            else elimPtrTo ptrty `mplus` fail "Invalid type for value"
 
   name    <- entryName n
-  _       <- pushValue (Typed ptrty (ValSymbol (Symbol name)))
+  thing   <- pushValue (Typed (PtrTo ty) (ValSymbol (Symbol name)))
   let valid | initid == 0 = Nothing
             | otherwise   = Just (initid - 1)
       attrs = GlobalAttrs
