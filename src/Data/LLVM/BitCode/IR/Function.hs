@@ -74,6 +74,7 @@ finalizeDeclare fp = case protoType fp of
     , decName    = Symbol (protoName fp)
     , decArgs    = args
     , decVarArgs = va
+    , decAttrs   = []
     }
   _ -> fail "invalid type on function prototype"
 
@@ -85,7 +86,8 @@ type DefineList = Seq.Seq PartialDefine
 -- | A define with a list of statements for a body, instead of a list of basic
 -- bocks.
 data PartialDefine = PartialDefine
-  { partialAttrs    :: FunAttrs
+  { partialLinkage  :: Maybe Linkage
+  , partialGC       :: Maybe GC
   , partialSection  :: Maybe String
   , partialRetType  :: Type
   , partialName     :: Symbol
@@ -109,7 +111,8 @@ emptyPartialDefine proto = do
   symtab <- initialPartialSymtab
 
   return PartialDefine
-    { partialAttrs    = protoAttrs proto
+    { partialLinkage  = protoLinkage proto
+    , partialGC       = protoGC proto
     , partialSection  = protoSect proto
     , partialRetType  = rty
     , partialName     = Symbol (protoName proto)
@@ -180,7 +183,9 @@ finalizePartialDefine lkp pd =
     body <- finalizeBody lkp (partialBody pd)
     md <- finalizeMetadata (partialMetadata pd)
     return Define
-      { defAttrs    = partialAttrs pd
+      { defLinkage  = partialLinkage pd
+      , defGC       = partialGC pd
+      , defAttrs    = []
       , defRetType  = partialRetType pd
       , defName     = partialName pd
       , defArgs     = partialArgs pd

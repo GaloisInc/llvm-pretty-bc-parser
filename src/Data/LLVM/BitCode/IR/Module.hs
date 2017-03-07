@@ -304,13 +304,12 @@ parseFunProto r pm = label "FUNCTION" $ do
 
   let proto = FunProto
         { protoType  = ty
-        , protoAttrs = emptyFunAttrs
-          { funLinkage = do
-            -- we emit a Nothing here to maintain output compatibility with
-            -- llvm-dis when linkage is External
-            guard (link /= External)
-            return link
-          }
+        , protoLinkage =
+          do -- we emit a Nothing here to maintain output compatibility with
+             -- llvm-dis when linkage is External
+             guard (link /= External)
+             return link
+        , protoGC    = Nothing
         , protoName  = name
         , protoIndex = ix
         , protoSect  = section

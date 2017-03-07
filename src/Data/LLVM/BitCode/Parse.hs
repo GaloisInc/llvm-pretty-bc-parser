@@ -389,7 +389,8 @@ setMdRefs refs = Parse $ do
 
 data FunProto = FunProto
   { protoType  :: Type
-  , protoAttrs :: FunAttrs
+  , protoLinkage :: Maybe Linkage
+  , protoGC    :: Maybe GC
   , protoName  :: String
   , protoIndex :: Int
   , protoSect  :: Maybe String
