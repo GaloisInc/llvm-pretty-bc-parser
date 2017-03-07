@@ -1,5 +1,5 @@
 Name:                llvm-pretty-bc-parser
-Version:             0.3.0.1
+Version:             0.3.1.0
 License:             BSD3
 License-file:        LICENSE
 Author:              Trevor Elliott <trevor@galois.com>
@@ -57,7 +57,7 @@ Library
                        fgl        >= 5.5,
                        cereal     >= 0.3.5.2,
                        bytestring >= 0.9.1,
-                       llvm-pretty>= 0.6
+                       llvm-pretty>= 0.7
 
 Executable llvm-disasm
   Main-is:             LLVMDis.hs
@@ -73,7 +73,7 @@ Executable llvm-disasm
                        fgl        >= 5.5,
                        fgl-visualize >= 0.1,
                        cereal     >= 0.3.5.2,
-                       llvm-pretty>= 0.5,
+                       llvm-pretty>= 0.7,
                        llvm-pretty-bc-parser
 
 Test-suite disasm-test
@@ -87,7 +87,7 @@ Test-suite disasm-test
                        directory,
                        bytestring,
                        filepath,
-                       llvm-pretty>= 0.5,
+                       llvm-pretty>= 0.7,
                        llvm-pretty-bc-parser
 
 Executable fuzz-llvm-disasm
@@ -109,7 +109,7 @@ Executable fuzz-llvm-disasm
                        abstract-par,
                        monad-par,
                        transformers,
-                       llvm-pretty>= 0.5,
+                       llvm-pretty>= 0.7,
                        llvm-pretty-bc-parser
   if flag(fuzz)
       Buildable:       True
