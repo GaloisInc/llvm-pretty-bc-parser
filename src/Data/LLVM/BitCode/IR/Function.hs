@@ -758,13 +758,13 @@ parseFunctionBlockEntry _ _ d (valueSymtabBlockId -> Just _) = do
   return d
 
 parseFunctionBlockEntry globals t d (metadataBlockId -> Just es) = do
-  (_, (globalUnnamedMds, localUnnamedMds), _, _) <- parseMetadataBlock globals t es
+  (_, (globalUnnamedMds, localUnnamedMds), _, _, _) <- parseMetadataBlock globals t es
   unless (null localUnnamedMds)
      (fail "parseFunctionBlockEntry PANIC: unexpected local unnamed metadata")
   return d { partialGlobalMd = globalUnnamedMds ++ partialGlobalMd d }
 
 parseFunctionBlockEntry globals t d (metadataAttachmentBlockId -> Just es) = do
-  (_,(globalUnnamedMds, localUnnamedMds),instrAtt,fnAtt)
+  (_,(globalUnnamedMds, localUnnamedMds),instrAtt,fnAtt,_)
      <- parseMetadataBlock globals t es
   unless (null localUnnamedMds)
      (fail "parseFunctionBlockEntry PANIC: unexpected local unnamed metadata")

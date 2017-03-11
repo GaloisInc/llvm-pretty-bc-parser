@@ -11,6 +11,7 @@ import Text.LLVM.Labels
 
 import Control.Monad (guard,mplus)
 import Data.Bits (bit,shiftR,testBit)
+import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import Data.Word (Word32)
 
@@ -25,6 +26,7 @@ data PartialGlobal = PartialGlobal
   , pgType    :: Type
   , pgValueIx :: Maybe Int
   , pgAlign   :: Maybe Align
+  , pgMd      :: Map.Map KindMd PValMd
   } deriving Show
 
 -- [ pointer type, isconst, initid
@@ -70,19 +72,28 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
         let aval = bit b `shiftR` 1
         guard (aval > 0)
         return aval
+    , pgMd      = Map.empty
     }
 
 finalizeGlobal :: PartialGlobal -> Parse Global
 finalizeGlobal pg = case pgValueIx pg of
-  Nothing -> return (mkGlobal ValNull)
+  Nothing -> mkGlobal ValNull
   Just ix -> do
     tv <- getFnValueById (pgType pg) (fromIntegral ix)
-    mkGlobal `fmap` relabel (const requireBbEntryName) (typedValue tv)
+    mkGlobal =<< relabel (const requireBbEntryName) (typedValue tv)
   where
-  mkGlobal val = Global
-    { globalSym   = pgSym pg
-    , globalAttrs = pgAttrs pg
-    , globalType  = pgType pg
-    , globalValue = Just val
-    , globalAlign = pgAlign pg
-    }
+  mkGlobal val =
+    do md <- mapM (relabel (const requireBbEntryName)) (pgMd pg)
+       return Global { globalSym   = pgSym pg
+                     , globalAttrs = pgAttrs pg
+                     , globalType  = pgType pg
+                     , globalValue = Just val
+                     , globalAlign = pgAlign pg
+                     , globalMetadata = md
+                     }
+
+
+setGlobalMetadataAttachment ::
+  Map.Map KindMd PValMd ->
+  (PartialGlobal -> PartialGlobal)
+setGlobalMetadataAttachment pmd pg = pg { pgMd = pmd }

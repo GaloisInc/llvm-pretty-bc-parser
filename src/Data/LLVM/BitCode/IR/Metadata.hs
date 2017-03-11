@@ -12,6 +12,7 @@ module Data.LLVM.BitCode.IR.Metadata (
   , InstrMdAttachments
   , PFnMdAttachments
   , PKindMd
+  , PGlobalAttachments
   ) where
 
 import Data.LLVM.BitCode.Bitstream
@@ -29,7 +30,7 @@ import Data.Bits (shiftR, testBit)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as Char8 (unpack)
 import qualified Data.Map as Map
-import qualified Data.Traversable as T
+
 
 -- Parsing State ---------------------------------------------------------------
 
@@ -141,6 +142,7 @@ data PartialMetadata = PartialMetadata
   , pmNextName         :: Maybe String
   , pmInstrAttachments :: InstrMdAttachments
   , pmFnAttachments    :: PFnMdAttachments
+  , pmGlobalAttachments:: PGlobalAttachments
   } deriving (Show)
 
 emptyPartialMetadata ::
@@ -152,11 +154,20 @@ emptyPartialMetadata globals es = PartialMetadata
   , pmNextName         = Nothing
   , pmInstrAttachments = Map.empty
   , pmFnAttachments    = Map.empty
+  , pmGlobalAttachments= Map.empty
   }
 
 updateMetadataTable :: (MetadataTable -> MetadataTable)
                     -> (PartialMetadata -> PartialMetadata)
 updateMetadataTable f pm = pm { pmEntries = f (pmEntries pm) }
+
+addGlobalAttachments ::
+  Symbol {- ^ name of the global to attach to ^ -} ->
+  (Map.Map KindMd PValMd) {- ^ metadata references to attach ^ -} ->
+  (PartialMetadata -> PartialMetadata)
+addGlobalAttachments sym mds pm =
+  pm { pmGlobalAttachments = Map.insert sym mds (pmGlobalAttachments pm)
+     }
 
 setNextName :: String -> PartialMetadata -> PartialMetadata
 setNextName name pm = pm { pmNextName = Just name }
@@ -229,12 +240,14 @@ type InstrMdAttachments = Map.Map Int [(KindMd,PValMd)]
 
 type PKindMd = Int
 type PFnMdAttachments = Map.Map PKindMd PValMd
+type PGlobalAttachments = Map.Map Symbol (Map.Map KindMd PValMd)
 
 type ParsedMetadata =
   ( [NamedMd]
   , ([PartialUnnamedMd],[PartialUnnamedMd])
   , InstrMdAttachments
   , PFnMdAttachments
+  , PGlobalAttachments
   )
 
 parsedMetadata :: PartialMetadata -> ParsedMetadata
@@ -243,6 +256,7 @@ parsedMetadata pm =
   , unnamedEntries pm
   , pmInstrAttachments pm
   , pmFnAttachments pm
+  , pmGlobalAttachments pm
   )
 
 -- Metadata Parsing ------------------------------------------------------------
@@ -448,7 +462,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
   20 -> label "METADATA_COMPILE_UNIT" $ do
     let recordSize = length (recordFields r)
-    when (recordSize < 14 || recordSize > 17)
+
+    -- TODO: update this for llvm-4.0, which bumped the upper bound to 18
+    when (recordSize < 14 || recordSize > 18)
       (fail "Invalid record")
 
     ctx <- getContext
@@ -699,9 +715,21 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
                           (str,rest) -> (rest, Char8.unpack str)
     return $! updateMetadataTable (addStrings strings) pm
 
+  -- [ valueid, n x [id, mdnode] ]
   36 -> label "METADATA_GLOBAL_DECL_ATTACHMENT" $ do
-    -- TODO
-    fail "not yet implemented"
+
+    -- the record will always be of odd length
+    when (mod (length (recordFields r)) 2 == 0)
+         (fail "Invalid record")
+
+    valueId <- parseField r 0 numeric
+    sym     <- case lookupValueTableAbs valueId vt of
+                 Just (Typed { typedValue = ValSymbol sym }) -> return sym
+                 _ -> fail "Non-global referenced"
+
+    refs <- parseGlobalObjectAttachment mt r
+
+    return $! addGlobalAttachments sym refs pm
 
   37 -> label "METADATA_GLOBAL_VAR_EXPR" $ do
     when (length (recordFields r) /= 3)
@@ -737,6 +765,25 @@ parseAttachment r l = loop (length (recordFields r) - 1) []
     kind <- parseField r (n - 1) numeric
     md   <- getMetadata =<< parseField r n numeric
     loop (n - 2) ((kind,typedValue md) : acc)
+
+
+-- | This is a named version of the metadata list that can show up at the end of
+-- a global declaration. It will be of the form @!dbg !2 [!dbg !n, ...]@.
+parseGlobalObjectAttachment :: MetadataTable -> Record -> Parse (Map.Map KindMd PValMd)
+parseGlobalObjectAttachment mt r = label "parseGlobalObjectAttachment" $
+  do cxt <- getContext
+     go cxt Map.empty 1
+  where
+  len = length (recordFields r)
+
+  go cxt acc n | n < len =
+    do kind <- getKind =<< parseField r n numeric
+       i    <- parseField r (n + 1) numeric
+       go cxt (Map.insert kind (mdForwardRef cxt mt i) acc) (n + 2)
+
+  go _ acc _ =
+       return acc
+
 
 -- | Parse a metadata node.
 parseMetadataNode :: Bool -> MetadataTable -> Record -> PartialMetadata

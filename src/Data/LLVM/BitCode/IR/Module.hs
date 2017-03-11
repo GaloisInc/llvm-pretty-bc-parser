@@ -21,6 +21,7 @@ import Data.List (sortBy)
 import Data.Monoid (mempty)
 import Data.Ord (comparing)
 import qualified Data.Foldable as F
+import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Traversable as T
 
@@ -151,8 +152,8 @@ parseModuleBlockEntry pm (metadataBlockId -> Just es) = do
   -- METADATA_BLOCK_ID
   vt <- getValueTable
   let globalsSoFar = length (partialUnnamedMd pm)
-  (ns,(gs,_),_,_) <- parseMetadataBlock globalsSoFar vt es
-  return pm
+  (ns,(gs,_),_,_,atts) <- parseMetadataBlock globalsSoFar vt es
+  return $ addGlobalAttachments atts pm
     { partialNamedMd   = partialNamedMd   pm ++ ns
     , partialUnnamedMd = partialUnnamedMd pm ++ gs
     }
@@ -318,3 +319,20 @@ parseFunProto r pm = label "FUNCTION" $ do
   if isProto == (0 :: Int)
      then pushFunProto proto >> return pm
      else return pm { partialDeclares = partialDeclares pm Seq.|> proto }
+
+
+addGlobalAttachments :: PGlobalAttachments -> (PartialModule -> PartialModule)
+addGlobalAttachments gs pm = pm { partialGlobals = go (partialGlobals pm) gs }
+  where
+
+  go gs atts | Map.null atts = gs
+
+  go gs atts =
+    case Seq.viewl gs of
+      Seq.EmptyL -> Seq.empty
+
+      g Seq.:< gs' ->
+        let (mb,atts') = Map.updateLookupWithKey (\_ _ -> Nothing) (pgSym g) atts
+         in case mb of
+              Just md -> g { pgMd = md } Seq.<| go gs' atts'
+              Nothing -> g               Seq.<| go gs' atts'
