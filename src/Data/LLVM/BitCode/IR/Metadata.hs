@@ -26,7 +26,8 @@ import Control.Exception (throw)
 import Control.Monad (foldM,guard,mplus,unless,when)
 import Data.List (mapAccumL)
 import Data.Maybe (fromMaybe)
-import Data.Bits (shiftR, testBit)
+import Data.Bits (shiftR, testBit, shiftL)
+import Data.Word (Word32,Word64)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as Char8 (unpack)
 import qualified Data.Map as Map
@@ -629,18 +630,34 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     -- this one is a bit funky:
     -- https://github.com/llvm-mirror/llvm/blob/release_38/lib/Bitcode/Reader/BitcodeReader.cpp#L2308
     let recordSize = length (recordFields r)
-        adj i | recordSize > 8 = i + 1
-              | otherwise      = i
     when (recordSize < 8 || recordSize > 10)
       (fail "Invalid record")
 
     ctx <- getContext
-    isDistinct <- parseField r 0 nonzero
-    dilvScope  <- mdForwardRefOrNull ctx mt <$> parseField r (adj 1) numeric
-    dilvName   <- mdStringOrNull ctx mt <$> parseField r (adj 2) numeric
-    dilvFile   <- mdForwardRefOrNull ctx mt <$> parseField r (adj 3) numeric
+
+    field0 <- parseField r 0 numeric
+    let isDistinct   = testBit (field0 :: Word32) 0
+        hasAlignment = testBit (field0 :: Word32) 1
+
+        hasTag | not hasAlignment && recordSize > 8 = 1
+               | otherwise                          = 0
+
+        adj i = i + hasTag
+
+    _alignInBits <-
+      if hasAlignment
+         then do n <- parseField r (adj 8) numeric
+                 when ((n :: Word64) > fromIntegral (maxBound :: Word32))
+                      (fail "Alignment value is too large")
+                 return (fromIntegral n :: Word32)
+
+         else return 0
+
+    dilvScope  <- mdForwardRefOrNull ("dilvScope":ctx) mt <$> parseField r (adj 1) numeric
+    dilvName   <- mdStringOrNull     ("dilvName" :ctx) mt <$> parseField r (adj 2) numeric
+    dilvFile   <- mdForwardRefOrNull ("dilvFile" :ctx) mt <$> parseField r (adj 3) numeric
     dilvLine   <- parseField r (adj 4) numeric
-    dilvType   <- mdForwardRefOrNull ctx mt <$> parseField r (adj 5) numeric
+    dilvType   <- mdForwardRefOrNull ("dilvType" :ctx) mt <$> parseField r (adj 5) numeric
     dilvArg    <- parseField r (adj 6) numeric
     dilvFlags  <- parseField r (adj 7) numeric
     return $! updateMetadataTable
@@ -742,12 +759,23 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       (addDebugInfo isDistinct (DebugInfoGlobalVariableExpression DIGlobalVariableExpression{..})) pm
 
   38 -> label "METADATA_INDEX_OFFSET" $ do
-    -- TODO
-    fail "not yet implemented"
 
+    when (length (recordFields r) /= 2)
+         (fail "Invalid record")
+
+    a <- parseField r 0 numeric
+    b <- parseField r 1 numeric
+    let _offset = a + (b `shiftL` 32) :: Word64
+
+    -- TODO: is it OK to skip this if we always parse everything?
+    return pm
+
+
+  -- In the llvm source, this node is processed when the INDEX_OFFSET record is
+  -- found.
   39 -> label "METADATA_INDEX" $ do
-    -- TODO
-    fail "not yet implemented"
+    -- TODO: is it OK to skip this if we always parse everything?
+    return pm
 
   code -> fail ("unknown record code: " ++ show code)
 
