@@ -62,8 +62,12 @@ data Options = Options {
     -- ^ Whether to collapse failures with the same error message
   , optReduceDisasm :: Bool
     -- ^ Whether to try reducing failures at the disasm stage
+  , optRunAs :: Bool
+    -- ^ Whether to run the assembly stage
   , optReduceAs :: Bool
     -- ^ Whether to try reducing failures at the assembly stage
+  , optRunExec :: Bool
+    -- ^ Whether to run re-execution stage
   , optReduceExec :: Bool
     -- ^ Whether to try reducing failures at the execution stage
   , optHelp :: Bool
@@ -80,7 +84,9 @@ defaultOptions  = Options {
   , optCsmithPath   = Nothing
   , optCollapse     = False
   , optReduceDisasm = False
+  , optRunAs        = False
   , optReduceAs     = False
+  , optRunExec      = False
   , optReduceExec   = False
   , optHelp         = False
   }
@@ -107,12 +113,16 @@ options  =
   , Option ""  ["reduce-disasm"] (NoArg setReduceDisasm) $
     "reduce test cases that fail disassembly with a best-guess Creduce " ++
     "(requires `--output`)"
+  , Option ""  ["run-as"] (NoArg setRunAs) $
+    "run the re-assembly phase"
   , Option ""  ["reduce-as"] (NoArg setReduceAs) $
     "reduce test cases that fail reassembly with a best-guess Creduce " ++
     "(requires `--output`)"
+  , Option ""  ["run-exec"] (NoArg setRunExec) $
+    "try to execute the re-assembled program"
   , Option ""  ["reduce-exec"] (NoArg setReduceExec) $
-    "reduce test cases that fail on test program execution with a " ++
-    "best-guess Creduce (requires `--output`)"
+    "reduce test cases that fail on re-assembled program execution with " ++
+    "a best-guess Creduce (requires `--output`)"
   , Option "h" ["help"] (NoArg setHelp)
     "display this message"
   ]
@@ -159,8 +169,14 @@ setCollapse = Endo (\opt -> opt { optCollapse = True })
 setReduceDisasm :: Endo Options
 setReduceDisasm = Endo (\opt -> opt { optReduceDisasm = True })
 
+setRunAs :: Endo Options
+setRunAs = Endo (\opt -> opt { optRunAs = True })
+
 setReduceAs :: Endo Options
 setReduceAs = Endo (\opt -> opt { optReduceAs = True })
+
+setRunExec :: Endo Options
+setRunExec = Endo (\opt -> opt { optRunExec = True })
 
 setReduceExec :: Endo Options
 setReduceExec = Endo (\opt -> opt { optReduceExec = True })
@@ -410,12 +426,15 @@ runTest tmpDir (clangExe, flags) seed opts = X.handle return $ do
         case stripPrefix "clang-" clangExe of
           Nothing -> ""
           Just ver -> "--llvm-version=" ++ ver
+  ---- Run csmith ----
   csmithPath <- getCsmithPath opts
   callProcess "csmith" [
       "-o", tmpDir </> srcFile
     , "-s", show seed
     ]
   srcSize <- getFileSize (tmpDir </> srcFile)
+
+  ---- Run clang ----
   h <- spawnProcess clangExe (words flags ++ [
       "-I" ++ csmithPath
     , "-c", "-emit-llvm"
@@ -424,6 +443,8 @@ runTest tmpDir (clangExe, flags) seed opts = X.handle return $ do
     ])
   clangErr <- waitForProcess h
   unless (clangErr == ExitSuccess) $ X.throw $!! TestClangError seed
+
+  ---- Disassemble ----
   (ec, out, err) <-
     readProcessWithExitCode "llvm-disasm" [ llvmVersion, tmpDir </> bcFile ] ""
   case ec of
@@ -437,36 +458,44 @@ runTest tmpDir (clangExe, flags) seed opts = X.handle return $ do
       X.throw $!! TestFail DisasmStage seed TestSrc{..} err
     ExitSuccess -> return ()
   writeFile (tmpDir </> llFile) out
-  (ec, out, err) <- readProcessWithExitCode clangExe (words flags ++ [
-      "-I" ++ csmithPath
-    , tmpDir </> llFile
-    , "-o", tmpDir </> "ours"
-    ]) ""
-  case ec of
-    ExitFailure c -> do
-      putStrLn "[AS ERROR]"
-      putStrLn "[OUT]"
-      putStr out
-      putStrLn "[ERR]"
-      putStr err
-      putStrLn ("[ERROR CODE " ++ show c ++ "]")
-      X.throw $!! TestFail AsStage seed TestSrc{..} err
-    ExitSuccess -> return ()
-  h <- spawnProcess clangExe (words flags ++ [
-      "-I" ++ csmithPath
-    , tmpDir </> bcFile
-    , "-o", tmpDir </> "golden"
-    ])
-  clangErr <- waitForProcess h
-  unless (clangErr == ExitSuccess) $ X.throw $!! TestClangError seed
-  timeout <- getTimeoutCmd
-  (ec1, out1, err1) <- do
-    readProcessWithExitCode timeout [ "10", (tmpDir </> "golden") ] ""
-  unless (ec1 == ExitFailure 124) $ X.throw $!! TestExecTimeout seed
-  (ec2, out2, err2) <-
-    readProcessWithExitCode timeout [ "10", (tmpDir </> "ours") ] ""
-  when (ec1 /= ec2 || out1 /= out2 || err1 /= err2) $
-    X.throw $!! TestFail ExecStage seed TestSrc{..} err2
+
+  ---- Assemble ----
+  when (optRunAs opts) $ do
+    (ec, out, err) <- readProcessWithExitCode clangExe (words flags ++ [
+        "-I" ++ csmithPath
+      , tmpDir </> llFile
+      , "-o", tmpDir </> "ours"
+      ]) ""
+    case ec of
+      ExitFailure c -> do
+        putStrLn "[AS ERROR]"
+        putStrLn "[OUT]"
+        putStr out
+        putStrLn "[ERR]"
+        putStr err
+        putStrLn ("[ERROR CODE " ++ show c ++ "]")
+        X.throw $!! TestFail AsStage seed TestSrc{..} err
+      ExitSuccess -> return ()
+
+  ---- Re-run Clang ----
+  when (optRunExec opts) $ do
+    h <- spawnProcess clangExe (words flags ++ [
+        "-I" ++ csmithPath
+      , tmpDir </> bcFile
+      , "-o", tmpDir </> "golden"
+      ])
+    clangErr <- waitForProcess h
+    unless (clangErr == ExitSuccess) $ X.throw $!! TestClangError seed
+    timeout <- getTimeoutCmd
+    (ec1, out1, err1) <- do
+      readProcessWithExitCode timeout [ "10", (tmpDir </> "golden") ] ""
+    unless (ec1 == ExitFailure 124) $ X.throw $!! TestExecTimeout seed
+    (ec2, out2, err2) <-
+      readProcessWithExitCode timeout [ "10", (tmpDir </> "ours") ] ""
+    when (ec1 /= ec2 || out1 /= out2 || err1 /= err2) $
+      X.throw $!! TestFail ExecStage seed TestSrc{..} err2
+
+  ---- Succeed! ----
   putStrLn "[PASS]"
   return (TestPass seed)
 
