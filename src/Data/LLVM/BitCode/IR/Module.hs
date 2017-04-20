@@ -322,7 +322,7 @@ parseFunProto r pm = label "FUNCTION" $ do
 
 
 addGlobalAttachments :: PGlobalAttachments -> (PartialModule -> PartialModule)
-addGlobalAttachments gs pm = pm { partialGlobals = go (partialGlobals pm) gs }
+addGlobalAttachments gs0 pm = pm { partialGlobals = go (partialGlobals pm) gs0 }
   where
 
   go gs atts | Map.null atts = gs

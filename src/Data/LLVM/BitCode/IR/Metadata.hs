@@ -357,7 +357,6 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     let recordSize = length (recordFields r)
     when (recordSize == 0)
       (fail "Invalid record")
-    ctx <- getContext
     if (recordSize `mod` 2 == 0)
       then label "function attachment" $ do
         att <- Map.fromList <$> parseAttachment r 0
@@ -369,10 +368,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         return $! addInstrAttachment inst att pm
 
   12 -> label "METADATA_GENERIC_DEBUG" $ do
-    isDistinct <- parseField r 0 numeric
-    tag <- parseField r 1 numeric
-    version <- parseField r 2 numeric
-    header <- parseField r 3 string
+    --isDistinct <- parseField r 0 numeric
+    --tag <- parseField r 1 numeric
+    --version <- parseField r 2 numeric
+    --header <- parseField r 3 string
     -- TODO: parse all remaining fields
     fail "not yet implemented"
 
@@ -575,27 +574,27 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       pm
 
   24 -> label "METADATA_NAMESPACE" $ do
-    cxt <- getContext
-    isDistinct <- parseField r 0 numeric
-    mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
-    mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
-    parseField r 3 string
-    parseField r 4 numeric
+    -- cxt <- getContext
+    -- isDistinct <- parseField r 0 numeric
+    -- mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
+    -- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
+    -- parseField r 3 string
+    -- parseField r 4 numeric
     -- TODO
     fail "not yet implemented"
   25 -> label "METADATA_TEMPLATE_TYPE" $ do
-    isDistinct <- parseField r 0 numeric
-    parseField r 1 string
+    -- isDistinct <- parseField r 0 numeric
+    -- parseField r 1 string
     -- getDITypeRefOrNull <$> parseField r 2 numeric
     -- TODO
     fail "not yet implemented"
   26 -> label "METADATA_TEMPLATE_VALUE" $ do
-    cxt <- getContext
-    isDistinct <- parseField r 0 numeric
-    parseField r 1 numeric
-    parseField r 2 string
+    -- cxt <- getContext
+    -- isDistinct <- parseField r 0 numeric
+    -- parseField r 1 numeric
+    -- parseField r 2 string
     -- getDITypeRefOrNull cxt mt <$> parseField r 3 numeric
-    mdForwardRefOrNull cxt mt <$> parseField r 4 numeric
+    -- mdForwardRefOrNull cxt mt <$> parseField r 4 numeric
     -- TODO
     fail "not yet implemented"
 
@@ -676,40 +675,40 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     -- TODO
     fail "not yet implemented"
   31 -> label "METADATA_IMPORTED_ENTITY" $ do
-    cxt <- getContext
-    isDistinct <- parseField r 0 numeric
-    parseField r 1 numeric
-    mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
+    -- cxt <- getContext
+    -- isDistinct <- parseField r 0 numeric
+    -- parseField r 1 numeric
+    -- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
     -- getDITypeRefOrNull cxt mt <$> parseField r 3 numeric
-    parseField r 4 numeric
-    parseField r 5 string
+    -- parseField r 4 numeric
+    -- parseField r 5 string
     -- TODO
     fail "not yet implemented"
   32 -> label "METADATA_MODULE" $ do
-    cxt <- getContext
-    isDistinct <- parseField r 0 numeric
-    mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
-    parseField r 2 string
-    parseField r 3 string
-    parseField r 4 string
-    parseField r 5 string
+    -- cxt <- getContext
+    -- isDistinct <- parseField r 0 numeric
+    -- mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
+    -- parseField r 2 string
+    -- parseField r 3 string
+    -- parseField r 4 string
+    -- parseField r 5 string
     -- TODO
     fail "not yet implemented"
   33 -> label "METADATA_MACRO" $ do
-    isDistinct <- parseField r 0 numeric
-    parseField r 1 numeric
-    parseField r 2 numeric
-    parseField r 3 string
-    parseField r 4 string
+    -- isDistinct <- parseField r 0 numeric
+    -- parseField r 1 numeric
+    -- parseField r 2 numeric
+    -- parseField r 3 string
+    -- parseField r 4 string
     -- TODO
     fail "not yet implemented"
   34 -> label "METADATA_MACRO_FILE" $ do
-    cxt <- getContext
-    isDistinct <- parseField r 0 numeric
-    parseField r 1 numeric
-    parseField r 2 numeric
-    mdForwardRefOrNull cxt mt <$> parseField r 3 numeric
-    mdForwardRefOrNull cxt mt <$> parseField r 4 numeric
+    -- cxt <- getContext
+    -- isDistinct <- parseField r 0 numeric
+    -- parseField r 1 numeric
+    -- parseField r 2 numeric
+    -- mdForwardRefOrNull cxt mt <$> parseField r 3 numeric
+    -- mdForwardRefOrNull cxt mt <$> parseField r 4 numeric
     -- TODO
     fail "not yet implemented"
 
