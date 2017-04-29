@@ -61,7 +61,12 @@ addMetadata val mt = (ix, mt { mtEntries = es' })
   (ix,es') = addValue' (metadata val) (mtEntries mt)
 
 addMdValue :: Typed PValue -> MetadataTable -> MetadataTable
-addMdValue tv mt = mt { mtEntries = addValue tv (mtEntries mt) }
+addMdValue tv mt = mt { mtEntries = addValue tv' (mtEntries mt) }
+  where
+  -- explicitly make a metadata value out of a normal value
+  tv' = Typed { typedType  = PrimType Metadata
+              , typedValue = ValMd (ValMdValue tv)
+              }
 
 nameNode :: Bool -> Bool -> Int -> MetadataTable -> MetadataTable
 nameNode fnLocal isDistinct ix mt = mt
