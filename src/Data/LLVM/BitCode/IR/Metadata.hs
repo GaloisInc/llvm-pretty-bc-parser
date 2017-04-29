@@ -479,7 +479,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       mdForwardRefOrNull ctx mt <$> parseField r 2 numeric
     dicuProducer           <- mdStringOrNull ctx mt <$> parseField r 3 numeric
     dicuIsOptimized        <- parseField r 4 nonzero
-    dicuFlags              <- parseField r 5 numeric
+    dicuFlags              <- mdString ctx mt <$> parseField r 5 numeric
     dicuRuntimeVersion     <- parseField r 6 numeric
     dicuSplitDebugFilename <- mdStringOrNull ctx mt <$> parseField r 7 numeric
     dicuEmissionKind       <- parseField r 8 numeric
