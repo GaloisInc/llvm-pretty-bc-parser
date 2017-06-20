@@ -103,7 +103,9 @@ parseTypeBlockEntry (fromEntry -> Just r) = case recordCode r of
 
   5 -> label "TYPE_CODE_LABEL" (addType (PrimType Label))
 
-  6 -> label "TYPE_CODE_OPAQUE" (addType Opaque)
+  6 -> label "TYPE_CODE_OPAQUE" $ do
+    do ident    <- getTypeName
+       addTypeWithAlias Opaque ident
 
   7 -> label "TYPE_CODE_INTEGER" $ do
     let field = parseField r
