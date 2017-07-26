@@ -579,29 +579,38 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       pm
 
   24 -> label "METADATA_NAMESPACE" $ do
-    -- cxt <- getContext
-    -- isDistinct <- parseField r 0 numeric
-    -- mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
-    -- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
-    -- parseField r 3 string
-    -- parseField r 4 numeric
-    -- TODO
-    fail "not yet implemented"
+    cxt <- getContext
+    isDistinct <- parseField r 0 nonzero
+    dinsScope <- mdForwardRef cxt mt <$> parseField r 1 numeric
+    dinsFile <- mdForwardRef cxt mt <$> parseField r 2 numeric
+    dinsName <- mdString cxt mt <$> parseField r 3 numeric
+    dinsLine <- parseField r 4 numeric
+    return $! updateMetadataTable
+        (addDebugInfo
+            isDistinct
+            (DebugInfoNameSpace (DINameSpace {..})))
+        pm
   25 -> label "METADATA_TEMPLATE_TYPE" $ do
-    -- isDistinct <- parseField r 0 numeric
-    -- parseField r 1 string
-    -- getDITypeRefOrNull <$> parseField r 2 numeric
-    -- TODO
-    fail "not yet implemented"
+    cxt <- getContext
+    isDistinct <- parseField r 0 nonzero
+    dittpName <- mdString cxt mt <$> parseField r 1 numeric
+    dittpType <- mdForwardRef cxt mt <$> parseField r 2 numeric
+    return $! updateMetadataTable
+            (addDebugInfo
+                isDistinct
+                (DebugInfoTemplateTypeParameter (DITemplateTypeParameter {..})))
+            pm
   26 -> label "METADATA_TEMPLATE_VALUE" $ do
-    -- cxt <- getContext
-    -- isDistinct <- parseField r 0 numeric
-    -- parseField r 1 numeric
-    -- parseField r 2 string
-    -- getDITypeRefOrNull cxt mt <$> parseField r 3 numeric
-    -- mdForwardRefOrNull cxt mt <$> parseField r 4 numeric
-    -- TODO
-    fail "not yet implemented"
+    cxt <- getContext
+    isDistinct <- parseField r 0 nonzero
+    ditvpName  <- mdString cxt mt <$> parseField r 1 numeric
+    ditvpType  <- mdForwardRef cxt mt <$> parseField r 2 numeric
+    ditvpValue <- mdForwardRef cxt mt <$> parseField r 3 numeric
+    return $! updateMetadataTable
+            (addDebugInfo
+                isDistinct
+                (DebugInfoTemplateValueParameter (DITemplateValueParameter {..})))
+            pm
 
   27 -> label "METADATA_GLOBAL_VAR" $ do
     let len = length (recordFields r)
@@ -680,15 +689,17 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     -- TODO
     fail "not yet implemented"
   31 -> label "METADATA_IMPORTED_ENTITY" $ do
-    -- cxt <- getContext
-    -- isDistinct <- parseField r 0 numeric
-    -- parseField r 1 numeric
-    -- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
-    -- getDITypeRefOrNull cxt mt <$> parseField r 3 numeric
-    -- parseField r 4 numeric
-    -- parseField r 5 string
-    -- TODO
-    fail "not yet implemented"
+    cxt <- getContext
+    isDistinct <- parseField r 0 nonzero
+    diieTag <- parseField r 1 numeric
+    diieScope <- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
+    diieEntity <- mdForwardRefOrNull cxt mt <$> parseField r 3 numeric
+    diieLine <- parseField r 4 numeric
+    return $! updateMetadataTable
+        (addDebugInfo
+            isDistinct
+            (DebugInfoImportedEntity (DIImportedEntity {..})))
+        pm
   32 -> label "METADATA_MODULE" $ do
     -- cxt <- getContext
     -- isDistinct <- parseField r 0 numeric

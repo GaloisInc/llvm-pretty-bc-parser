@@ -35,6 +35,7 @@ data PartialModule = PartialModule
   , partialDeclares   :: DeclareList
   , partialDataLayout :: DataLayout
   , partialInlineAsm  :: InlineAsm
+  , partialComdat     :: Seq.Seq (String,SelectionKind)
   , partialAliasIx    :: !Int
   , partialAliases    :: AliasList
   , partialNamedMd    :: [NamedMd]
@@ -80,6 +81,7 @@ finalizeModule pm = do
     , modDeclares   = F.toList declares
     , modInlineAsm  = partialInlineAsm pm
     , modAliases    = F.toList aliases
+    , modComdat     = Map.fromList (F.toList (partialComdat pm))
     }
 
 -- | Parse an LLVM Module out of the top-level block in a Bitstream.
@@ -192,7 +194,7 @@ parseModuleBlockEntry pm (moduleCodeGlobalvar -> Just r) = do
 
 parseModuleBlockEntry pm (moduleCodeAlias -> Just r) = do
   -- MODULE_CODE_ALIAS_OLD
-  pa <- parseAlias (partialAliasIx pm) r
+  pa <- parseAliasOld (partialAliasIx pm) r
   return pm
     { partialAliasIx = succ (partialAliasIx pm)
     , partialAliases = partialAliases pm Seq.|> pa
@@ -215,18 +217,32 @@ parseModuleBlockEntry pm (moduleCodeSectionname -> Just r) = do
   name <- parseFields r 0 char
   return pm { partialSections = partialSections pm Seq.|> name }
 
-parseModuleBlockEntry _ (moduleCodeComdat -> Just _) = do
+parseModuleBlockEntry pm (moduleCodeComdat -> Just r) = do
   -- MODULE_CODE_COMDAT
-  fail "MODULE_CODE_COMDAT"
+  when (length (recordFields r) < 2) (fail "Invalid record (MODULE_CODE_COMDAT)")
+  kindVal <- parseField r 0 numeric
+  name <- parseFields r 2 char
+  kind <- case kindVal :: Int of
+            1  -> pure ComdatAny
+            2  -> pure ComdatExactMatch
+            3  -> pure ComdatLargest
+            4  -> pure ComdatNoDuplicates
+            5  -> pure ComdatSameSize
+            _  -> fail "ComdatSelectionKindCodes"
+  return pm { partialComdat = partialComdat pm Seq.|> (name,kind) }
 
 parseModuleBlockEntry pm (moduleCodeVSTOffset -> Just _) = do
   -- MODULE_CODE_VSTOFFSET
   -- TODO: should we handle this?
   return pm
 
-parseModuleBlockEntry _ (moduleCodeAliasNew -> Just _) = do
+parseModuleBlockEntry pm (moduleCodeAliasNew -> Just r) = do
   -- MODULE_CODE_ALIAS
-  fail "MODULE_CODE_ALIAS"
+  pa <- parseAlias (partialAliasIx pm) r
+  return pm
+    { partialAliasIx = succ (partialAliasIx pm)
+    , partialAliases = partialAliases pm Seq.|> pa
+    }
 
 parseModuleBlockEntry pm (moduleCodeMDValsUnused -> Just _) = do
   -- MODULE_CODE_METADATA_VALUES_UNUSED
@@ -245,9 +261,10 @@ parseModuleBlockEntry _ (moduleCodeIFunc -> Just _) = do
   -- MODULE_CODE_IFUNC
   fail "MODULE_CODE_IFUNC"
 
-parseModuleBlockEntry _ (uselistBlockId -> Just _) = do
+parseModuleBlockEntry pm (uselistBlockId -> Just _) = do
   -- USELIST_BLOCK_ID
-  fail "USELIST_BLOCK_ID"
+  -- XXX ?? fail "USELIST_BLOCK_ID"
+  return pm
 
 parseModuleBlockEntry _ (moduleStrtabBlockId -> Just _) = do
   -- MODULE_STRTAB_BLOCK_ID
@@ -302,7 +319,10 @@ parseFunProto r pm = label "FUNCTION" $ do
   ix   <- nextValueId
   name <- entryName ix
   _    <- pushValue (Typed ty (ValSymbol (Symbol name)))
-
+  comdat <- if length (recordFields r) >= 12
+               then do comdatID <- field 12 numeric
+                       pure (fst <$> partialComdat pm Seq.!? comdatID)
+               else pure Nothing
   let proto = FunProto
         { protoType  = ty
         , protoLinkage =
@@ -314,6 +334,7 @@ parseFunProto r pm = label "FUNCTION" $ do
         , protoName  = name
         , protoIndex = ix
         , protoSect  = section
+        , protoComdat = comdat
         }
 
   if isProto == (0 :: Int)

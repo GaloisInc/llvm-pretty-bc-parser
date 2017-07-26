@@ -37,11 +37,27 @@ data PartialAlias = PartialAlias
   , paTarget :: !Int
   } deriving Show
 
-parseAlias :: Int -> Record -> Parse PartialAlias
-parseAlias n r = do
+parseAliasOld :: Int -> Record -> Parse PartialAlias
+parseAliasOld n r = do
   let field = parseField r
   ty  <- getType   =<< field 0 numeric
   tgt <-               field 1 numeric
+  sym <- entryName n
+  let name = Symbol sym
+  _   <- pushValue (Typed ty (ValSymbol name))
+  return PartialAlias
+    { paName   = name
+    , paType   = ty
+    , paTarget = tgt
+    }
+
+parseAlias :: Int -> Record -> Parse PartialAlias
+parseAlias n r = do
+  let field = parseField r
+  ty      <- getType =<< field 0 numeric
+  tgt     <-             field 1 numeric
+  _val     <-             field 2 numeric
+  _linkage <-             field 3 numeric
   sym <- entryName n
   let name = Symbol sym
   _   <- pushValue (Typed ty (ValSymbol name))
@@ -75,6 +91,7 @@ finalizeDeclare fp = case protoType fp of
     , decArgs    = args
     , decVarArgs = va
     , decAttrs   = []
+    , decComdat  = protoComdat fp
     }
   _ -> fail "invalid type on function prototype"
 
@@ -99,6 +116,7 @@ data PartialDefine = PartialDefine
   , partialSymtab   :: ValueSymtab
   , partialMetadata :: Map.Map PKindMd PValMd
   , partialGlobalMd :: [PartialUnnamedMd]
+  , partialComdatName   :: Maybe String
   } deriving (Show)
 
 -- | Generate a partial function definition from a function prototype.
@@ -124,6 +142,7 @@ emptyPartialDefine proto = do
     , partialSymtab   = symtab
     , partialMetadata = Map.empty
     , partialGlobalMd = []
+    , partialComdatName   = protoComdat proto
     }
 
 -- | Set the statement list in a partial define.
@@ -193,6 +212,7 @@ finalizePartialDefine lkp pd =
       , defBody     = body
       , defSection  = partialSection pd
       , defMetadata = md
+      , defComdat   = partialComdatName pd
       }
 
 finalizeMetadata :: PFnMdAttachments -> Parse FnMdAttachments
