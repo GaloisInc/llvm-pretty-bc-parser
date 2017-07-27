@@ -58,6 +58,7 @@ emptyPartialModule  = PartialModule
   , partialUnnamedMd  = mempty
   , partialSections   = mempty
   , partialSourceName = mempty
+  , partialComdat     = mempty
   }
 
 -- | Fixup the global variables and declarations, and return the completed
