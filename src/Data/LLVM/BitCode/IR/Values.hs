@@ -39,18 +39,18 @@ getConstantFwdRef t ty n = label "getConstantFwdRef" $ do
 getValueTypePair :: ValueTable -> Record -> Int -> Parse (Typed PValue, Int)
 getValueTypePair t r ix = do
   let field = parseField r
-  n  <- field ix numeric
-  mb <- lookupValue n
+  n  <- adjustId =<< field ix numeric
+  mb <- lookupValueAbs n
   case mb of
-    -- value
+
+    -- value is already present in the incremental table
     Just tv -> return (tv, ix+1)
 
-    -- forward reference
+    -- forward reference to the entry in the final table
     Nothing -> do
       ty  <- getType =<< field (ix+1) numeric
-      n'  <- adjustId n
       cxt <- getContext
-      let ref = forwardRef cxt n' t
+      let ref = forwardRef cxt n t
 
       -- generate the forward reference to the value only, as we already know
       -- what the type should be.
