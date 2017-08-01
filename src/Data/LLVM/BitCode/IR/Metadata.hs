@@ -691,10 +691,11 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
   31 -> label "METADATA_IMPORTED_ENTITY" $ do
     cxt <- getContext
     isDistinct <- parseField r 0 nonzero
-    diieTag <- parseField r 1 numeric
-    diieScope <- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
+    diieTag    <- parseField r 1 numeric
+    diieScope  <- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
     diieEntity <- mdForwardRefOrNull cxt mt <$> parseField r 3 numeric
-    diieLine <- parseField r 4 numeric
+    diieLine   <- parseField r 4 numeric
+    diieName   <- mdString cxt mt <$> parseField r 5 numeric
     return $! updateMetadataTable
         (addDebugInfo
             isDistinct
