@@ -478,13 +478,33 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   -- [attrs,cc,normBB,unwindBB,fnty,op0,op1..]
   13 -> label "FUNC_CODE_INST_INVOKE" $ do
     let field = parseField r
+    ccinfo      <- field 1 unsigned
     normal      <- field 2 numeric
     unwind      <- field 3 numeric
-    (f,ix)      <- getValueTypePair t r 4
-    (ret,as,va) <- elimFunPtr (typedType f)
+
+    -- explicit function type?
+    (mbFTy,ix)    <-
+      if testBit ccinfo 13
+         then do ty <- getType =<< field 4 numeric
+                 return (Just ty, 5)
+         else return (Nothing, 4)
+
+    (f,ix')      <- getValueTypePair t r ix
+
+    -- NOTE: mbFTy should be the same as the type of f
+    calleeTy <- elimPtrTo (typedType f)
+                `mplus` fail "Callee is not a pointer"
+
+    fty <- case mbFTy of
+             Just ty | calleeTy == ty -> return ty
+                     | otherwise      -> fail "Explicit invoke type does not match callee"
+             Nothing                  -> return calleeTy
+
+    (ret,as,va) <- elimFunTy fty
         `mplus` fail "invalid INVOKE record"
-    args        <- parseInvokeArgs t va r ix as
-    result ret (Invoke (typedType f) (typedValue f) args normal unwind) d
+
+    args        <- parseInvokeArgs t va r ix' as
+    result ret (Invoke fty (typedValue f) args normal unwind) d
 
   14 -> label "FUNC_CODE_INST_UNWIND" (effect Unwind d)
 
