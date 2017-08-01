@@ -54,21 +54,22 @@ parseAlias :: Record -> Parse PartialAlias
 parseAlias r = do
   let field = parseField r
   ty       <- getType =<< field 0 numeric
-  _addrSp  <-             field 1 numeric'
+  _addrSp  <-             field 1 unsigned
   tgt      <-             field 2 numeric
-  _linkage <-             field 3 numeric'
+  _linkage <-             field 3 unsigned
   sym      <- entryName =<< nextValueId
   let name = Symbol sym
-  _   <- pushValue (Typed ty (ValSymbol name))
+
+  -- XXX: is it the case that the alias type will always be a pointer to the
+  -- aliasee?
+  _   <- pushValue (Typed (PtrTo ty) (ValSymbol name))
+
+  val <- lookupValue (fromIntegral tgt)
   return PartialAlias
     { paName   = name
     , paType   = ty
     , paTarget = tgt
     }
-
-  where
-  numeric' :: Match Field Word32
-  numeric'  = numeric
 
 finalizePartialAlias :: PartialAlias -> Parse GlobalAlias
 finalizePartialAlias pa = label "finalizePartialAlias" $ do
