@@ -58,7 +58,7 @@ parseAlias n r = do
   _addrSp  <-             field 1 numeric
   tgt      <-             field 2 numeric
   _linkage <-             field 3 numeric
-  sym      <- entryName n
+  sym      <- entryName =<< nextValueId
   let name = Symbol sym
   _   <- pushValue (Typed ty (ValSymbol name))
   return PartialAlias
