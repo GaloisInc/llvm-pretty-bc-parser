@@ -64,7 +64,7 @@ emptyPartialModule  = PartialModule
 -- | Fixup the global variables and declarations, and return the completed
 -- module.
 finalizeModule :: PartialModule -> Parse Module
-finalizeModule pm = do
+finalizeModule pm = label "finalizeModule" $ do
   globals  <- T.mapM finalizeGlobal       (partialGlobals pm)
   declares <- T.mapM finalizeDeclare      (partialDeclares pm)
   aliases  <- T.mapM finalizePartialAlias (partialAliases pm)
@@ -132,8 +132,7 @@ parseModuleBlockEntry pm (moduleCodeFunction -> Just r) = do
   -- MODULE_CODE_FUNCTION
   parseFunProto r pm
 
-parseModuleBlockEntry pm (functionBlockId -> Just es) = do
-  -- FUNCTION_BLOCK_ID
+parseModuleBlockEntry pm (functionBlockId -> Just es) = label "FUNCTION_BLOCK_ID" $ do
   let unnamedGlobalsCount = length (partialUnnamedMd pm)
   def <- parseFunctionBlock unnamedGlobalsCount es
   let def' = def { partialGlobalMd = [] }
@@ -151,8 +150,7 @@ parseModuleBlockEntry pm (paramattrGroupBlockId -> Just _) = do
   -- TODO: skip for now
   return pm
 
-parseModuleBlockEntry pm (metadataBlockId -> Just es) = do
-  -- METADATA_BLOCK_ID
+parseModuleBlockEntry pm (metadataBlockId -> Just es) = label "METADATA_BLOCK_ID" $ do
   vt <- getValueTable
   let globalsSoFar = length (partialUnnamedMd pm)
   (ns,(gs,_),_,_,atts) <- parseMetadataBlock globalsSoFar vt es
@@ -195,8 +193,7 @@ parseModuleBlockEntry pm (moduleCodeGlobalvar -> Just r) = do
     , partialGlobals  = partialGlobals pm Seq.|> pg
     }
 
-parseModuleBlockEntry pm (moduleCodeAlias -> Just r) = do
-  -- MODULE_CODE_ALIAS_OLD
+parseModuleBlockEntry pm (moduleCodeAlias -> Just r) = label "MODULE_CODE_ALIAS_OLD" $ do
   pa <- parseAliasOld (partialAliasIx pm) r
   return pm
     { partialAliasIx = succ (partialAliasIx pm)
@@ -239,8 +236,7 @@ parseModuleBlockEntry pm (moduleCodeVSTOffset -> Just _) = do
   -- TODO: should we handle this?
   return pm
 
-parseModuleBlockEntry pm (moduleCodeAliasNew -> Just r) = do
-  -- MODULE_CODE_ALIAS
+parseModuleBlockEntry pm (moduleCodeAliasNew -> Just r) = label "MODULE_CODE_ALIAS" $ do
   pa <- parseAlias (partialAliasIx pm) r
   return pm
     { partialAliasIx = succ (partialAliasIx pm)
@@ -282,8 +278,7 @@ parseModuleBlockEntry pm (operandBundleTagsBlockId -> Just _) = do
   -- fail "OPERAND_BUNDLE_TAGS_BLOCK_ID"
   return pm
 
-parseModuleBlockEntry pm (metadataKindBlockId -> Just es) = do
-  -- METADATA_KIND_BLOCK_ID
+parseModuleBlockEntry pm (metadataKindBlockId -> Just es) = label "METADATA_KIND_BLOCK_ID" $ do
   forM_ es $ \e ->
     case fromEntry e of
       Just r -> parseMetadataKindEntry r

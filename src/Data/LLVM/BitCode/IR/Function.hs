@@ -197,6 +197,7 @@ lookupBlockName dl = lkp
 -- | Finalize a partial definition.
 finalizePartialDefine :: BlockLookup -> PartialDefine -> Parse Define
 finalizePartialDefine lkp pd =
+  label "finalizePartialDefine" $
   -- augment the symbol table with implicitly named anonymous blocks, and
   -- generate basic blocks.
   withValueSymtab (partialSymtab pd) $ do
