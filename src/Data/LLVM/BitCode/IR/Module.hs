@@ -18,7 +18,6 @@ import Text.LLVM.AST
 
 import Control.Monad (foldM,guard,when,forM_)
 import Data.List (sortBy)
-import Data.Monoid (mempty)
 import Data.Ord (comparing)
 import qualified Data.Foldable as F
 import qualified Data.Map as Map
@@ -159,7 +158,7 @@ parseModuleBlockEntry pm (metadataBlockId -> Just es) = label "METADATA_BLOCK_ID
     , partialUnnamedMd = partialUnnamedMd pm ++ gs
     }
 
-parseModuleBlockEntry pm (valueSymtabBlockId -> Just es) = do
+parseModuleBlockEntry pm (valueSymtabBlockId -> Just _es) = do
   -- VALUE_SYMTAB_BLOCK_ID
   -- NOTE: we parse the value symbol table eagerly at the beginning of the
   -- MODULE_BLOCK

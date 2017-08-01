@@ -16,7 +16,6 @@ import Text.LLVM.AST
 import Text.LLVM.Labels
 import Text.LLVM.PP
 
-import Control.Applicative ((<$>),(<*>))
 import Control.Monad (unless,mplus,mzero,foldM,(<=<))
 import Data.Bits (shiftR,bit,shiftL,testBit,(.&.),(.|.),complement)
 import Data.Int (Int32)
@@ -731,7 +730,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   47 -> label "FUNC_CODE_LANDINGPAD" $ do
     let field = parseField r
     ty         <- getType =<< field 0 numeric
-    isCleanup  <- (/=0) <$> field 1 numeric
+    isCleanup  <- (/=(0::Int)) <$> field 1 numeric
     len        <- field 2 numeric
     clauses    <- parseClauses t r len 3
     result ty (LandingPad ty Nothing isCleanup clauses) d
