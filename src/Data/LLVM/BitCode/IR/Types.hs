@@ -14,7 +14,6 @@ import Text.LLVM.AST
 import Control.Monad (when,unless,mplus,(<=<))
 import Data.List (sortBy)
 import Data.Maybe (catMaybes)
-import Data.Monoid (mempty)
 import Data.Ord (comparing)
 import qualified Data.Map as Map
 
