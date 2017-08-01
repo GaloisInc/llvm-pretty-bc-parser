@@ -237,7 +237,7 @@ parseModuleBlockEntry pm (moduleCodeVSTOffset -> Just _) = do
   return pm
 
 parseModuleBlockEntry pm (moduleCodeAliasNew -> Just r) = label "MODULE_CODE_ALIAS" $ do
-  pa <- parseAlias (partialAliasIx pm) r
+  pa <- parseAlias r
   return pm
     { partialAliasIx = succ (partialAliasIx pm)
     , partialAliases = partialAliases pm Seq.|> pa

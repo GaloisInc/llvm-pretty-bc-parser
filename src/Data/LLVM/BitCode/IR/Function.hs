@@ -51,8 +51,8 @@ parseAliasOld n r = do
     , paTarget = tgt
     }
 
-parseAlias :: Int -> Record -> Parse PartialAlias
-parseAlias n r = do
+parseAlias :: Record -> Parse PartialAlias
+parseAlias r = do
   let field = parseField r
   ty       <- getType =<< field 0 numeric
   _addrSp  <-             field 1 numeric'
