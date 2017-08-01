@@ -700,7 +700,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     let isCleanup = val /= (0 :: Int)
     len         <- field (ix + 1) numeric
     clauses     <- parseClauses t r len (ix + 2)
-    result ty (LandingPad ty persFn isCleanup clauses) d
+    result ty (LandingPad ty (Just persFn) isCleanup clauses) d
 
   -- [opty, op, align, vol,
   --  ordering, synchscope]
@@ -729,7 +729,12 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     notImplemented
 
   47 -> label "FUNC_CODE_LANDINGPAD" $ do
-    notImplemented
+    let field = parseField r
+    ty         <- getType =<< field 0 numeric
+    isCleanup  <- (/=0) <$> field 1 numeric
+    len        <- field 2 numeric
+    clauses    <- parseClauses t r len 3
+    result ty (LandingPad ty Nothing isCleanup clauses) d
 
   48 -> label "FUNC_CODE_CLEANUPRET" $ do
     notImplemented
