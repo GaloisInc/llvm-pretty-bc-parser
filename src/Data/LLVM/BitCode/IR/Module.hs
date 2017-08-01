@@ -161,8 +161,10 @@ parseModuleBlockEntry pm (metadataBlockId -> Just es) = do
     , partialUnnamedMd = partialUnnamedMd pm ++ gs
     }
 
-parseModuleBlockEntry pm (valueSymtabBlockId -> Just _) = do
+parseModuleBlockEntry pm (valueSymtabBlockId -> Just es) = do
   -- VALUE_SYMTAB_BLOCK_ID
+  -- NOTE: we parse the value symbol table eagerly at the beginning of the
+  -- MODULE_BLOCK
   return pm
 
 parseModuleBlockEntry pm (moduleCodeTriple -> Just _) = do

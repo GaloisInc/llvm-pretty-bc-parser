@@ -34,7 +34,7 @@ type AliasList = Seq.Seq PartialAlias
 data PartialAlias = PartialAlias
   { paName   :: Symbol
   , paType   :: Type
-  , paTarget :: !Int
+  , paTarget :: !Word32
   } deriving Show
 
 parseAliasOld :: Int -> Record -> Parse PartialAlias
@@ -54,11 +54,11 @@ parseAliasOld n r = do
 parseAlias :: Int -> Record -> Parse PartialAlias
 parseAlias n r = do
   let field = parseField r
-  ty      <- getType =<< field 0 numeric
-  tgt     <-             field 1 numeric
-  _val     <-             field 2 numeric
+  ty       <- getType =<< field 0 numeric
+  _addrSp  <-             field 1 numeric
+  tgt      <-             field 2 numeric
   _linkage <-             field 3 numeric
-  sym <- entryName n
+  sym      <- entryName n
   let name = Symbol sym
   _   <- pushValue (Typed ty (ValSymbol name))
   return PartialAlias
@@ -68,8 +68,9 @@ parseAlias n r = do
     }
 
 finalizePartialAlias :: PartialAlias -> Parse GlobalAlias
-finalizePartialAlias pa = do
-  tv  <- getValue (paType pa) (paTarget pa)
+finalizePartialAlias pa = label "finalizePartialAlias" $ do
+  -- aliases refer to absolute offsets
+  tv  <- getFnValueById (paType pa) (paTarget pa)
   tgt <- relabel (const requireBbEntryName) (typedValue tv)
   return GlobalAlias
     { aliasName   = paName pa
