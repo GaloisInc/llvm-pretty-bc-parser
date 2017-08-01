@@ -11,10 +11,9 @@ module Data.LLVM.BitCode.Parse where
 import Text.LLVM.AST
 import Text.LLVM.PP
 
-import Control.Applicative (Applicative(..),Alternative(..),(<$>))
+import Control.Applicative (Alternative(..))
 import Control.Monad.Fix (MonadFix)
 import Data.Maybe (fromMaybe)
-import Data.Monoid (Monoid(..))
 import Data.Typeable (Typeable)
 import Data.Word ( Word32 )
 import MonadLib
