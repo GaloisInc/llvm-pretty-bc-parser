@@ -64,7 +64,6 @@ parseAlias r = do
   -- aliasee?
   _   <- pushValue (Typed (PtrTo ty) (ValSymbol name))
 
-  val <- lookupValue (fromIntegral tgt)
   return PartialAlias
     { paName   = name
     , paType   = ty
