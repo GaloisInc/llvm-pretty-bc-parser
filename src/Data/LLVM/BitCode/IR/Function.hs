@@ -55,9 +55,9 @@ parseAlias :: Int -> Record -> Parse PartialAlias
 parseAlias n r = do
   let field = parseField r
   ty       <- getType =<< field 0 numeric
-  _addrSp  <-             field 1 numeric
+  _addrSp  <-             field 1 numeric'
   tgt      <-             field 2 numeric
-  _linkage <-             field 3 numeric
+  _linkage <-             field 3 numeric'
   sym      <- entryName =<< nextValueId
   let name = Symbol sym
   _   <- pushValue (Typed ty (ValSymbol name))
@@ -66,6 +66,10 @@ parseAlias n r = do
     , paType   = ty
     , paTarget = tgt
     }
+
+  where
+  numeric' :: Match Field Word32
+  numeric'  = numeric
 
 finalizePartialAlias :: PartialAlias -> Parse GlobalAlias
 finalizePartialAlias pa = label "finalizePartialAlias" $ do
