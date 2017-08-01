@@ -16,7 +16,7 @@ import Text.LLVM.AST
 import Text.LLVM.Labels
 import Text.LLVM.PP
 
-import Control.Monad (unless,mplus,mzero,foldM,(<=<))
+import Control.Monad (when,unless,mplus,mzero,foldM,(<=<))
 import Data.Bits (shiftR,bit,shiftL,testBit,(.&.),(.|.),complement)
 import Data.Int (Int32)
 import Data.Word (Word32)
@@ -569,7 +569,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     aval    <- parseField r ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
-    result ret (Load (tv { typedType = PtrTo ret }) align) d
+    result ret (Load (tv { typedType = PtrTo ret }) Nothing align) d
 
   -- 21 is unused
   -- 22 is unused
@@ -721,10 +721,32 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     clauses     <- parseClauses t r len (ix + 2)
     result ty (LandingPad ty (Just persFn) isCleanup clauses) d
 
-  -- [opty, op, align, vol,
-  --  ordering, synchscope]
+  -- [opty, op, align, vol, ordering, synchscope]
   41 -> label "FUNC_CODE_LOADATOMIC" $ do
-    notImplemented
+    (tv,ix) <- getValueTypePair t r 0
+
+    (ret,ix') <-
+      if length (recordFields r) == ix + 5
+         then do ty <- getType =<< parseField r ix numeric
+                 return (ty, ix + 1)
+
+         else do ty <- elimPtrTo (typedType tv)
+                           `mplus` fail "invalid type to INST_LOADATOMIC"
+                 return (ty, ix)
+
+    ordval <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
+    when (ordval `elem` [ Nothing, Just Release, Just AcqRel ])
+         (fail "Invalid record")
+
+    aval    <- parseField r ix' numeric
+    let align | aval > 0  = Just (bit aval `shiftR` 1)
+              | otherwise = Nothing
+
+    when (ordval /= Nothing && align == Nothing)
+         (fail "Invalid record")
+
+    result ret (Load (tv { typedType = PtrTo ret }) ordval align) d
+
 
   -- [ptrty, ptr, val, align, vol, ordering, synchscope]
   42 -> label "FUNC_CODE_INST_STOREATOMIC_OLD" $ do
@@ -1113,3 +1135,14 @@ parseClauses t r = loop
         0 -> return (Catch  val : cs)
         1 -> return (Filter val : cs)
         _ -> fail ("Invalid clause type: " ++ show cty)
+
+
+getDecodedOrdering :: Word32 -> Parse (Maybe AtomicOrdering)
+getDecodedOrdering 0 = return Nothing
+getDecodedOrdering 1 = return (Just Unordered)
+getDecodedOrdering 2 = return (Just Monotonic)
+getDecodedOrdering 3 = return (Just Acquire)
+getDecodedOrdering 4 = return (Just Release)
+getDecodedOrdering 5 = return (Just AcqRel)
+getDecodedOrdering 6 = return (Just SeqCst)
+getDecodedOrdering i = fail ("Unknown atomic ordering: " ++ show i)
