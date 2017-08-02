@@ -278,6 +278,8 @@ adjustId n = do
   return (translateValueId vt n)
 
 -- | Translate an id, relative to the value table it references.
+-- NOTE: The relative conversion has to be done on a Word32 to handle overflow
+-- when n is large the same way BitcodeReaderMDValueList::getValue does.
 translateValueId :: ValueTable -> Int -> Int
 translateValueId vt n | valueRelIds vt = fromIntegral adjusted
                       | otherwise      = n
