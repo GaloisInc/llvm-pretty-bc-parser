@@ -16,9 +16,10 @@ import Text.LLVM.AST
 import Text.LLVM.Labels
 import Text.LLVM.PP
 
-import Control.Monad (when,unless,mplus,mzero,foldM,(<=<))
+import Control.Monad (when,unless,mplus,mzero,foldM,(<=<),msum)
 import Data.Bits (shiftR,bit,shiftL,testBit,(.&.),(.|.),complement)
 import Data.Int (Int32)
+import Data.Maybe (isJust)
 import Data.Word (Word32)
 import qualified Data.Foldable as F
 import qualified Data.Map as Map
@@ -360,7 +361,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   2 -> label "FUNC_CODE_INST_BINOP" $ do
     let field = parseField r
     (lhs,ix) <- getValueTypePair t r 0
-    rhs      <- getValue (typedType lhs) =<< field ix numeric
+    rhs      <- getConstantFwdRef t (typedType lhs) =<< field ix numeric
     mkInstr  <- field (ix + 1) binop
     -- if there's an extra field on the end of the record, it's for designating
     -- the value of the nuw and nsw flags.  the constructor returned from binop
@@ -804,7 +805,26 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
    || code == 28 -> label "FUNC_CODE_INST_CMP2" $ do
     let field = parseField r
     (lhs,ix) <- getValueTypePair t r 0
-    rhs      <- getValue (typedType lhs) =<< field ix numeric
+                `mplus` (do i   <- adjustId =<< field 0 numeric
+                            cxt <- getContext
+                            return (forwardRef cxt i t, 1))
+
+    predval  <- field ix unsigned
+    let isfp = isJust $ msum [ do pty <- elimPrimType (typedType lhs)
+                                  _   <- elimFloatType pty
+                                  return ()
+
+                             , do (_,vty) <- elimVector (typedType lhs)
+                                  pty     <- elimPrimType vty
+                                  _       <- elimFloatType pty
+                                  return () ]
+
+    -- XXX: we're ignoring the fast math flags
+    let ix' | isfp && length (recordFields r) > ix + 1 = ix + 1
+            | otherwise                                = ix
+
+    rhs <- getConstantFwdRef t (typedType lhs) =<< field ix' numeric
+    -- rhs <- getValue (typedType lhs) =<< field ix' numeric
 
     let ty = typedType lhs
         parseOp | isPrimTypeOf isFloatingPoint ty ||
@@ -967,7 +987,7 @@ parseCallArgs :: ValueTable -> Bool -> Record -> Int -> [Type] -> Parse [Typed P
 parseCallArgs t = parseArgs t $ \ ty i ->
   case ty of
     PrimType Label -> return (Typed ty (ValLabel i))
-    _              -> getValue ty i
+    _              -> getConstantFwdRef t ty i
 
 -- | Parse the arguments for an invoke record.
 parseInvokeArgs :: ValueTable -> Bool -> Record -> Int -> [Type] -> Parse [Typed PValue]

@@ -22,16 +22,18 @@ import qualified Data.Map as Map
 
 -- Value Table -----------------------------------------------------------------
 
+-- | Return a forward reference if the value is not in the incremental table.
 getConstantFwdRef :: ValueTable -> Type -> Int -> Parse (Typed PValue)
 getConstantFwdRef t ty n = label "getConstantFwdRef" $ do
-  mb <- lookupValue n
+  n' <- adjustId n
+  mb <- lookupValue n'
   case mb of
     Just tv -> return tv
 
     -- forward reference
     Nothing -> do
       cxt <- getContext
-      let ref = forwardRef cxt n t
+      let ref = forwardRef cxt n' t
       return (Typed ty (typedValue ref))
 
 -- | Get either a value from the value table, with its value, or parse a value
@@ -67,6 +69,7 @@ getValue ty n = label "getValue" $ do
   let i :: Word32
       i | useRelIds = fromIntegral cur - fromIntegral n
         | otherwise = fromIntegral n
+
   getFnValueById ty i
 
 -- | Lookup a value by its absolute id, or perhaps some metadata.
