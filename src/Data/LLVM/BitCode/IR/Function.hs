@@ -633,19 +633,19 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     loc <- getLastLoc
     updateLastStmt (extendMetadata ("dbg", ValMdLoc loc)) d
 
-  -- [paramattrs, cc, fnty, fnid, arg0 .. arg n]
+  -- [paramattrs, cc, mb fmf, mb fnty, fnid, arg0 .. arg n, varargs]
   34 -> label "FUNC_CODE_INST_CALL" $ do
     let field = parseField r
 
-    -- pal <- field 0 numeric
+    -- pal <- field 0 numeric -- N.B. skipping param attributes
     ccinfo <- field 1 numeric
+    let ix0 = if testBit ccinfo 17 then 3 else 2 -- N.B. skipping fast math flags
+    (mbFnTy, ix1) <- if testBit (ccinfo :: Word32) 15
+                       then do fnTy <- getType =<< field ix0 numeric
+                               return (Just fnTy, ix0+1)
+                       else    return (Nothing,   ix0)
 
-    (mbFnTy, ix) <- if testBit (ccinfo :: Word32) 15
-                       then do fnTy <- getType =<< field 2 numeric
-                               return (Just fnTy, 3)
-                       else    return (Nothing,   2)
-
-    (Typed opTy fn, ix') <- getValueTypePair t r ix
+    (Typed opTy fn, ix2) <- getValueTypePair t r ix1
                                 `mplus` fail "Invalid record"
 
     op <- elimPtrTo opTy `mplus` fail "Callee is not a pointer type"
@@ -663,7 +663,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
     label (show fn) $ do
       (ret,as,va) <- elimFunTy fnty `mplus` fail "invalid CALL record"
-      args <- parseCallArgs t va r ix' as
+      args <- parseCallArgs t va r ix2 as
       result ret (Call False opTy fn args) d
 
   -- [Line,Col,ScopeVal, IAVal]
