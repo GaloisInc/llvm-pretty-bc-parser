@@ -983,10 +983,12 @@ parsePhiArgs relIds t r = loop 1
 
 -- | Parse the arguments for a call record.
 parseCallArgs :: ValueTable -> Bool -> Record -> Int -> [Type] -> Parse [Typed PValue]
-parseCallArgs t = parseArgs t $ \ ty i ->
+parseCallArgs t b r = parseArgs t op b r
+ where
+ op ty i =
   case ty of
     PrimType Label -> return (Typed ty (ValLabel i))
-    _              -> getConstantFwdRef t ty i
+    _              -> getValue ty i -- XXX getConstantFwdRef t ty i
 
 -- | Parse the arguments for an invoke record.
 parseInvokeArgs :: ValueTable -> Bool -> Record -> Int -> [Type] -> Parse [Typed PValue]
