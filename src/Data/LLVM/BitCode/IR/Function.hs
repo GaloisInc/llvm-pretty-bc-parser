@@ -361,7 +361,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   2 -> label "FUNC_CODE_INST_BINOP" $ do
     let field = parseField r
     (lhs,ix) <- getValueTypePair t r 0
-    rhs      <- getConstantFwdRef t (typedType lhs) =<< field ix numeric
+    rhs      <- getValue (typedType lhs) =<< field ix numeric
     mkInstr  <- field (ix + 1) binop
     -- if there's an extra field on the end of the record, it's for designating
     -- the value of the nuw and nsw flags.  the constructor returned from binop
@@ -804,12 +804,12 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
    |  code == 9
    || code == 28 -> label "FUNC_CODE_INST_CMP2" $ do
     let field = parseField r
-    (lhs,ix) <- getValueTypePair t r 0
+    (lhs,ix0) <- getValueTypePair t r 0
                 `mplus` (do i   <- adjustId =<< field 0 numeric
                             cxt <- getContext
                             return (forwardRef cxt i t, 1))
 
-    predval  <- field ix unsigned
+    _predval  <- field ix0 unsigned
     let isfp = isJust $ msum [ do pty <- elimPrimType (typedType lhs)
                                   _   <- elimFloatType pty
                                   return ()
@@ -820,11 +820,10 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
                                   return () ]
 
     -- XXX: we're ignoring the fast math flags
-    let ix' | isfp && length (recordFields r) > ix + 1 = ix + 1
-            | otherwise                                = ix
+    let ix1 | isfp && length (recordFields r) > ix0 + 1 = ix0 + 1
+            | otherwise                                 = ix0
 
-    rhs <- getConstantFwdRef t (typedType lhs) =<< field ix' numeric
-    -- rhs <- getValue (typedType lhs) =<< field ix' numeric
+    rhs <- getValue (typedType lhs) =<< field ix1 numeric
 
     let ty = typedType lhs
         parseOp | isPrimTypeOf isFloatingPoint ty ||
@@ -834,7 +833,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
                 | otherwise =
                   return . ICmp <=< icmpOp
 
-    op <- field (ix+1) parseOp
+    op <- field (ix1 + 1) parseOp
 
     let boolTy = Integer 1
     let rty = case ty of
