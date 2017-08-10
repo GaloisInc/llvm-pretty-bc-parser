@@ -316,9 +316,12 @@ parseFunProto r pm = label "FUNCTION" $ do
   ix   <- nextValueId
   name <- entryName ix
   _    <- pushValue (Typed ty (ValSymbol (Symbol name)))
+  let lkMb t x
+       | Seq.length t > x = Just (Seq.index t x)
+       | otherwise        = Nothing
   comdat <- if length (recordFields r) >= 12
                then do comdatID <- field 12 numeric
-                       pure (fst <$> partialComdat pm Seq.!? comdatID)
+                       pure (fst <$> partialComdat pm `lkMb` comdatID)
                else pure Nothing
   let proto = FunProto
         { protoType  = ty
