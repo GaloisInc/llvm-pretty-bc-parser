@@ -16,10 +16,10 @@ import Text.LLVM.AST
 import Text.LLVM.Labels
 import Text.LLVM.PP
 
-import Control.Applicative ((<$>),(<*>))
-import Control.Monad (unless,mplus,mzero,foldM,(<=<))
+import Control.Monad (when,unless,mplus,mzero,foldM,(<=<),msum)
 import Data.Bits (shiftR,bit,shiftL,testBit,(.&.),(.|.),complement)
 import Data.Int (Int32)
+import Data.Maybe (isJust)
 import Data.Word (Word32)
 import qualified Data.Foldable as F
 import qualified Data.Map as Map
@@ -34,11 +34,11 @@ type AliasList = Seq.Seq PartialAlias
 data PartialAlias = PartialAlias
   { paName   :: Symbol
   , paType   :: Type
-  , paTarget :: !Int
+  , paTarget :: !Word32
   } deriving Show
 
-parseAlias :: Int -> Record -> Parse PartialAlias
-parseAlias n r = do
+parseAliasOld :: Int -> Record -> Parse PartialAlias
+parseAliasOld n r = do
   let field = parseField r
   ty  <- getType   =<< field 0 numeric
   tgt <-               field 1 numeric
@@ -51,9 +51,30 @@ parseAlias n r = do
     , paTarget = tgt
     }
 
+parseAlias :: Record -> Parse PartialAlias
+parseAlias r = do
+  let field = parseField r
+  ty       <- getType =<< field 0 numeric
+  _addrSp  <-             field 1 unsigned
+  tgt      <-             field 2 numeric
+  _linkage <-             field 3 unsigned
+  sym      <- entryName =<< nextValueId
+  let name = Symbol sym
+
+  -- XXX: is it the case that the alias type will always be a pointer to the
+  -- aliasee?
+  _   <- pushValue (Typed (PtrTo ty) (ValSymbol name))
+
+  return PartialAlias
+    { paName   = name
+    , paType   = ty
+    , paTarget = tgt
+    }
+
 finalizePartialAlias :: PartialAlias -> Parse GlobalAlias
-finalizePartialAlias pa = do
-  tv  <- getValue (paType pa) (paTarget pa)
+finalizePartialAlias pa = label "finalizePartialAlias" $ do
+  -- aliases refer to absolute offsets
+  tv  <- getFnValueById (paType pa) (fromIntegral (paTarget pa))
   tgt <- relabel (const requireBbEntryName) (typedValue tv)
   return GlobalAlias
     { aliasName   = paName pa
@@ -75,6 +96,7 @@ finalizeDeclare fp = case protoType fp of
     , decArgs    = args
     , decVarArgs = va
     , decAttrs   = []
+    , decComdat  = protoComdat fp
     }
   _ -> fail "invalid type on function prototype"
 
@@ -99,6 +121,7 @@ data PartialDefine = PartialDefine
   , partialSymtab   :: ValueSymtab
   , partialMetadata :: Map.Map PKindMd PValMd
   , partialGlobalMd :: [PartialUnnamedMd]
+  , partialComdatName   :: Maybe String
   } deriving (Show)
 
 -- | Generate a partial function definition from a function prototype.
@@ -124,6 +147,7 @@ emptyPartialDefine proto = do
     , partialSymtab   = symtab
     , partialMetadata = Map.empty
     , partialGlobalMd = []
+    , partialComdatName   = protoComdat proto
     }
 
 -- | Set the statement list in a partial define.
@@ -177,6 +201,7 @@ lookupBlockName dl = lkp
 -- | Finalize a partial definition.
 finalizePartialDefine :: BlockLookup -> PartialDefine -> Parse Define
 finalizePartialDefine lkp pd =
+  label "finalizePartialDefine" $
   -- augment the symbol table with implicitly named anonymous blocks, and
   -- generate basic blocks.
   withValueSymtab (partialSymtab pd) $ do
@@ -193,6 +218,7 @@ finalizePartialDefine lkp pd =
       , defBody     = body
       , defSection  = partialSection pd
       , defMetadata = md
+      , defComdat   = partialComdatName pd
       }
 
 finalizeMetadata :: PFnMdAttachments -> Parse FnMdAttachments
@@ -335,7 +361,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   2 -> label "FUNC_CODE_INST_BINOP" $ do
     let field = parseField r
     (lhs,ix) <- getValueTypePair t r 0
-    rhs      <- getValue (typedType lhs) =<< field ix numeric
+    rhs      <- getValue' t (typedType lhs) =<< field ix numeric
     mkInstr  <- field (ix + 1) binop
     -- if there's an extra field on the end of the record, it's for designating
     -- the value of the nuw and nsw flags.  the constructor returned from binop
@@ -453,13 +479,33 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   -- [attrs,cc,normBB,unwindBB,fnty,op0,op1..]
   13 -> label "FUNC_CODE_INST_INVOKE" $ do
     let field = parseField r
+    ccinfo      <- field 1 unsigned
     normal      <- field 2 numeric
     unwind      <- field 3 numeric
-    (f,ix)      <- getValueTypePair t r 4
-    (ret,as,va) <- elimFunPtr (typedType f)
+
+    -- explicit function type?
+    (mbFTy,ix)    <-
+      if testBit ccinfo 13
+         then do ty <- getType =<< field 4 numeric
+                 return (Just ty, 5)
+         else return (Nothing, 4)
+
+    (f,ix')      <- getValueTypePair t r ix
+
+    -- NOTE: mbFTy should be the same as the type of f
+    calleeTy <- elimPtrTo (typedType f)
+                `mplus` fail "Callee is not a pointer"
+
+    fty <- case mbFTy of
+             Just ty | calleeTy == ty -> return ty
+                     | otherwise      -> fail "Explicit invoke type does not match callee"
+             Nothing                  -> return calleeTy
+
+    (ret,as,va) <- elimFunTy fty
         `mplus` fail "invalid INVOKE record"
-    args        <- parseInvokeArgs t va r ix as
-    result ret (Invoke (typedType f) (typedValue f) args normal unwind) d
+
+    args        <- parseInvokeArgs t va r ix' as
+    result ret (Invoke fty (typedValue f) args normal unwind) d
 
   14 -> label "FUNC_CODE_INST_UNWIND" (effect Unwind d)
 
@@ -524,7 +570,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     aval    <- parseField r ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
-    result ret (Load (tv { typedType = PtrTo ret }) align) d
+    result ret (Load (tv { typedType = PtrTo ret }) Nothing align) d
 
   -- 21 is unused
   -- 22 is unused
@@ -587,19 +633,19 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     loc <- getLastLoc
     updateLastStmt (extendMetadata ("dbg", ValMdLoc loc)) d
 
-  -- [paramattrs, cc, fnty, fnid, arg0 .. arg n]
+  -- [paramattrs, cc, mb fmf, mb fnty, fnid, arg0 .. arg n, varargs]
   34 -> label "FUNC_CODE_INST_CALL" $ do
     let field = parseField r
 
-    -- pal <- field 0 numeric
+    -- pal <- field 0 numeric -- N.B. skipping param attributes
     ccinfo <- field 1 numeric
+    let ix0 = if testBit ccinfo 17 then 3 else 2 -- N.B. skipping fast math flags
+    (mbFnTy, ix1) <- if testBit (ccinfo :: Word32) 15
+                       then do fnTy <- getType =<< field ix0 numeric
+                               return (Just fnTy, ix0+1)
+                       else    return (Nothing,   ix0)
 
-    (mbFnTy, ix) <- if testBit (ccinfo :: Word32) 15
-                       then do fnTy <- getType =<< field 2 numeric
-                               return (Just fnTy, 3)
-                       else    return (Nothing,   2)
-
-    (Typed opTy fn, ix') <- getValueTypePair t r ix
+    (Typed opTy fn, ix2) <- getValueTypePair t r ix1
                                 `mplus` fail "Invalid record"
 
     op <- elimPtrTo opTy `mplus` fail "Callee is not a pointer type"
@@ -617,7 +663,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
     label (show fn) $ do
       (ret,as,va) <- elimFunTy fnty `mplus` fail "invalid CALL record"
-      args <- parseCallArgs t va r ix' as
+      args <- parseCallArgs t va r ix2 as
       result ret (Call False opTy fn args) d
 
   -- [Line,Col,ScopeVal, IAVal]
@@ -674,12 +720,34 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     let isCleanup = val /= (0 :: Int)
     len         <- field (ix + 1) numeric
     clauses     <- parseClauses t r len (ix + 2)
-    result ty (LandingPad ty persFn isCleanup clauses) d
+    result ty (LandingPad ty (Just persFn) isCleanup clauses) d
 
-  -- [opty, op, align, vol,
-  --  ordering, synchscope]
+  -- [opty, op, align, vol, ordering, synchscope]
   41 -> label "FUNC_CODE_LOADATOMIC" $ do
-    notImplemented
+    (tv,ix) <- getValueTypePair t r 0
+
+    (ret,ix') <-
+      if length (recordFields r) == ix + 5
+         then do ty <- getType =<< parseField r ix numeric
+                 return (ty, ix + 1)
+
+         else do ty <- elimPtrTo (typedType tv)
+                           `mplus` fail "invalid type to INST_LOADATOMIC"
+                 return (ty, ix)
+
+    ordval <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
+    when (ordval `elem` [ Nothing, Just Release, Just AcqRel ])
+         (fail "Invalid record")
+
+    aval    <- parseField r ix' numeric
+    let align | aval > 0  = Just (bit aval `shiftR` 1)
+              | otherwise = Nothing
+
+    when (ordval /= Nothing && align == Nothing)
+         (fail "Invalid record")
+
+    result ret (Load (tv { typedType = PtrTo ret }) ordval align) d
+
 
   -- [ptrty, ptr, val, align, vol, ordering, synchscope]
   42 -> label "FUNC_CODE_INST_STOREATOMIC_OLD" $ do
@@ -703,7 +771,12 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     notImplemented
 
   47 -> label "FUNC_CODE_LANDINGPAD" $ do
-    notImplemented
+    let field = parseField r
+    ty         <- getType =<< field 0 numeric
+    isCleanup  <- (/=(0::Int)) <$> field 1 numeric
+    len        <- field 2 numeric
+    clauses    <- parseClauses t r len 3
+    result ty (LandingPad ty Nothing isCleanup clauses) d
 
   48 -> label "FUNC_CODE_CLEANUPRET" $ do
     notImplemented
@@ -731,8 +804,26 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
    |  code == 9
    || code == 28 -> label "FUNC_CODE_INST_CMP2" $ do
     let field = parseField r
-    (lhs,ix) <- getValueTypePair t r 0
-    rhs      <- getValue (typedType lhs) =<< field ix numeric
+    (lhs,ix0) <- getValueTypePair t r 0
+                `mplus` (do i   <- adjustId =<< field 0 numeric
+                            cxt <- getContext
+                            return (forwardRef cxt i t, 1))
+
+    _predval  <- field ix0 unsigned
+    let isfp = isJust $ msum [ do pty <- elimPrimType (typedType lhs)
+                                  _   <- elimFloatType pty
+                                  return ()
+
+                             , do (_,vty) <- elimVector (typedType lhs)
+                                  pty     <- elimPrimType vty
+                                  _       <- elimFloatType pty
+                                  return () ]
+
+    -- XXX: we're ignoring the fast math flags
+    let ix1 | isfp && length (recordFields r) > ix0 + 1 = ix0 + 1
+            | otherwise                                 = ix0
+
+    rhs <- getValue' t (typedType lhs) =<< field ix1 numeric
 
     let ty = typedType lhs
         parseOp | isPrimTypeOf isFloatingPoint ty ||
@@ -742,7 +833,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
                 | otherwise =
                   return . ICmp <=< icmpOp
 
-    op <- field (ix+1) parseOp
+    op <- field (ix1 + 1) parseOp
 
     let boolTy = Integer 1
     let rty = case ty of
@@ -892,10 +983,12 @@ parsePhiArgs relIds t r = loop 1
 
 -- | Parse the arguments for a call record.
 parseCallArgs :: ValueTable -> Bool -> Record -> Int -> [Type] -> Parse [Typed PValue]
-parseCallArgs t = parseArgs t $ \ ty i ->
+parseCallArgs t b r = parseArgs t op b r
+ where
+ op ty i =
   case ty of
     PrimType Label -> return (Typed ty (ValLabel i))
-    _              -> getValue ty i
+    _              -> getValue' t ty i
 
 -- | Parse the arguments for an invoke record.
 parseInvokeArgs :: ValueTable -> Bool -> Record -> Int -> [Type] -> Parse [Typed PValue]
@@ -1063,3 +1156,14 @@ parseClauses t r = loop
         0 -> return (Catch  val : cs)
         1 -> return (Filter val : cs)
         _ -> fail ("Invalid clause type: " ++ show cty)
+
+
+getDecodedOrdering :: Word32 -> Parse (Maybe AtomicOrdering)
+getDecodedOrdering 0 = return Nothing
+getDecodedOrdering 1 = return (Just Unordered)
+getDecodedOrdering 2 = return (Just Monotonic)
+getDecodedOrdering 3 = return (Just Acquire)
+getDecodedOrdering 4 = return (Just Release)
+getDecodedOrdering 5 = return (Just AcqRel)
+getDecodedOrdering 6 = return (Just SeqCst)
+getDecodedOrdering i = fail ("Unknown atomic ordering: " ++ show i)

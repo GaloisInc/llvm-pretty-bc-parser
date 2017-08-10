@@ -8,7 +8,7 @@ import Data.LLVM.BitCode.Parse
 import Data.Bits (Bits,testBit,shiftR,bit)
 import Data.Char (chr)
 import Data.Int  (Int64)
-import Data.Word (Word64)
+import Data.Word (Word64,Word32)
 import Data.ByteString (ByteString)
 
 import Control.Monad ((<=<),MonadPlus(..),guard)
@@ -134,6 +134,10 @@ signedWord64 = signedImpl
 -- | Parse a @Field@ as a sign-encoded number.
 signedInt64 :: Match Field Int64
 signedInt64 = signedImpl
+
+-- | Parse a @Field@ as a Word32.
+unsigned :: Match Field Word32
+unsigned  = numeric
 
 boolean :: Match Field Bool
 boolean  = decode <=< (fieldFixed ||| fieldLiteral ||| fieldVbr)

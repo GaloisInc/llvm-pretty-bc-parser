@@ -11,10 +11,9 @@ module Data.LLVM.BitCode.Parse where
 import Text.LLVM.AST
 import Text.LLVM.PP
 
-import Control.Applicative (Applicative(..),Alternative(..),(<$>))
+import Control.Applicative (Alternative(..))
 import Control.Monad.Fix (MonadFix)
 import Data.Maybe (fromMaybe)
-import Data.Monoid (Monoid(..))
 import Data.Typeable (Typeable)
 import Data.Word ( Word32 )
 import MonadLib
@@ -279,6 +278,8 @@ adjustId n = do
   return (translateValueId vt n)
 
 -- | Translate an id, relative to the value table it references.
+-- NOTE: The relative conversion has to be done on a Word32 to handle overflow
+-- when n is large the same way BitcodeReaderMDValueList::getValue does.
 translateValueId :: ValueTable -> Int -> Int
 translateValueId vt n | valueRelIds vt = fromIntegral adjusted
                       | otherwise      = n
@@ -394,6 +395,7 @@ data FunProto = FunProto
   , protoName  :: String
   , protoIndex :: Int
   , protoSect  :: Maybe String
+  , protoComdat :: Maybe String
   } deriving (Show)
 
 -- | Push a function prototype on to the prototype stack.
@@ -542,16 +544,23 @@ addFNEntry :: Int -> Int -> String -> ValueSymtab -> ValueSymtab
 -- TODO: do we ever need to be able to look up the offset?
 addFNEntry i _o n = Map.insert (SymTabFNEntry i) (Left n)
 
+-- | Lookup the name of an entry. Returns @Nothing@ when it's not present.
+entryNameMb :: Int -> Parse (Maybe String)
+entryNameMb n = do
+  symtab <- getValueSymtab
+  return $! fmap renderName
+         $  Map.lookup (SymTabEntry n) symtab `mplus`
+            Map.lookup (SymTabFNEntry n) symtab
+
 -- | Lookup the name of an entry.
 entryName :: Int -> Parse String
 entryName n = do
-  symtab <- getValueSymtab
-  let mentry = Map.lookup (SymTabEntry n) symtab `mplus`
-               Map.lookup (SymTabFNEntry n) symtab
+  mentry <- entryNameMb n
   case mentry of
-    Just i  -> return (renderName i)
-    Nothing ->
-      do isRel <- getRelIds
+    Just name -> return name
+    Nothing   ->
+      do isRel  <- getRelIds
+         symtab <- getValueSymtab
          fail $ unlines
            [ "entry " ++ show n ++ (if isRel then " (relative)" else "")
               ++ " is missing from the symbol table"

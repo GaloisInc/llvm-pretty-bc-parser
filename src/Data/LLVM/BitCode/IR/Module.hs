@@ -18,7 +18,6 @@ import Text.LLVM.AST
 
 import Control.Monad (foldM,guard,when,forM_)
 import Data.List (sortBy)
-import Data.Monoid (mempty)
 import Data.Ord (comparing)
 import qualified Data.Foldable as F
 import qualified Data.Map as Map
@@ -35,6 +34,7 @@ data PartialModule = PartialModule
   , partialDeclares   :: DeclareList
   , partialDataLayout :: DataLayout
   , partialInlineAsm  :: InlineAsm
+  , partialComdat     :: Seq.Seq (String,SelectionKind)
   , partialAliasIx    :: !Int
   , partialAliases    :: AliasList
   , partialNamedMd    :: [NamedMd]
@@ -57,12 +57,13 @@ emptyPartialModule  = PartialModule
   , partialUnnamedMd  = mempty
   , partialSections   = mempty
   , partialSourceName = mempty
+  , partialComdat     = mempty
   }
 
 -- | Fixup the global variables and declarations, and return the completed
 -- module.
 finalizeModule :: PartialModule -> Parse Module
-finalizeModule pm = do
+finalizeModule pm = label "finalizeModule" $ do
   globals  <- T.mapM finalizeGlobal       (partialGlobals pm)
   declares <- T.mapM finalizeDeclare      (partialDeclares pm)
   aliases  <- T.mapM finalizePartialAlias (partialAliases pm)
@@ -80,6 +81,7 @@ finalizeModule pm = do
     , modDeclares   = F.toList declares
     , modInlineAsm  = partialInlineAsm pm
     , modAliases    = F.toList aliases
+    , modComdat     = Map.fromList (F.toList (partialComdat pm))
     }
 
 -- | Parse an LLVM Module out of the top-level block in a Bitstream.
@@ -129,8 +131,7 @@ parseModuleBlockEntry pm (moduleCodeFunction -> Just r) = do
   -- MODULE_CODE_FUNCTION
   parseFunProto r pm
 
-parseModuleBlockEntry pm (functionBlockId -> Just es) = do
-  -- FUNCTION_BLOCK_ID
+parseModuleBlockEntry pm (functionBlockId -> Just es) = label "FUNCTION_BLOCK_ID" $ do
   let unnamedGlobalsCount = length (partialUnnamedMd pm)
   def <- parseFunctionBlock unnamedGlobalsCount es
   let def' = def { partialGlobalMd = [] }
@@ -148,8 +149,7 @@ parseModuleBlockEntry pm (paramattrGroupBlockId -> Just _) = do
   -- TODO: skip for now
   return pm
 
-parseModuleBlockEntry pm (metadataBlockId -> Just es) = do
-  -- METADATA_BLOCK_ID
+parseModuleBlockEntry pm (metadataBlockId -> Just es) = label "METADATA_BLOCK_ID" $ do
   vt <- getValueTable
   let globalsSoFar = length (partialUnnamedMd pm)
   (ns,(gs,_),_,_,atts) <- parseMetadataBlock globalsSoFar vt es
@@ -158,8 +158,10 @@ parseModuleBlockEntry pm (metadataBlockId -> Just es) = do
     , partialUnnamedMd = partialUnnamedMd pm ++ gs
     }
 
-parseModuleBlockEntry pm (valueSymtabBlockId -> Just _) = do
+parseModuleBlockEntry pm (valueSymtabBlockId -> Just _es) = do
   -- VALUE_SYMTAB_BLOCK_ID
+  -- NOTE: we parse the value symbol table eagerly at the beginning of the
+  -- MODULE_BLOCK
   return pm
 
 parseModuleBlockEntry pm (moduleCodeTriple -> Just _) = do
@@ -190,9 +192,8 @@ parseModuleBlockEntry pm (moduleCodeGlobalvar -> Just r) = do
     , partialGlobals  = partialGlobals pm Seq.|> pg
     }
 
-parseModuleBlockEntry pm (moduleCodeAlias -> Just r) = do
-  -- MODULE_CODE_ALIAS_OLD
-  pa <- parseAlias (partialAliasIx pm) r
+parseModuleBlockEntry pm (moduleCodeAlias -> Just r) = label "MODULE_CODE_ALIAS_OLD" $ do
+  pa <- parseAliasOld (partialAliasIx pm) r
   return pm
     { partialAliasIx = succ (partialAliasIx pm)
     , partialAliases = partialAliases pm Seq.|> pa
@@ -215,18 +216,31 @@ parseModuleBlockEntry pm (moduleCodeSectionname -> Just r) = do
   name <- parseFields r 0 char
   return pm { partialSections = partialSections pm Seq.|> name }
 
-parseModuleBlockEntry _ (moduleCodeComdat -> Just _) = do
+parseModuleBlockEntry pm (moduleCodeComdat -> Just r) = do
   -- MODULE_CODE_COMDAT
-  fail "MODULE_CODE_COMDAT"
+  when (length (recordFields r) < 2) (fail "Invalid record (MODULE_CODE_COMDAT)")
+  kindVal <- parseField r 0 numeric
+  name <- parseFields r 2 char
+  kind <- case kindVal :: Int of
+            1  -> pure ComdatAny
+            2  -> pure ComdatExactMatch
+            3  -> pure ComdatLargest
+            4  -> pure ComdatNoDuplicates
+            5  -> pure ComdatSameSize
+            _  -> fail "ComdatSelectionKindCodes"
+  return pm { partialComdat = partialComdat pm Seq.|> (name,kind) }
 
 parseModuleBlockEntry pm (moduleCodeVSTOffset -> Just _) = do
   -- MODULE_CODE_VSTOFFSET
   -- TODO: should we handle this?
   return pm
 
-parseModuleBlockEntry _ (moduleCodeAliasNew -> Just _) = do
-  -- MODULE_CODE_ALIAS
-  fail "MODULE_CODE_ALIAS"
+parseModuleBlockEntry pm (moduleCodeAliasNew -> Just r) = label "MODULE_CODE_ALIAS" $ do
+  pa <- parseAlias r
+  return pm
+    { partialAliasIx = succ (partialAliasIx pm)
+    , partialAliases = partialAliases pm Seq.|> pa
+    }
 
 parseModuleBlockEntry pm (moduleCodeMDValsUnused -> Just _) = do
   -- MODULE_CODE_METADATA_VALUES_UNUSED
@@ -245,9 +259,10 @@ parseModuleBlockEntry _ (moduleCodeIFunc -> Just _) = do
   -- MODULE_CODE_IFUNC
   fail "MODULE_CODE_IFUNC"
 
-parseModuleBlockEntry _ (uselistBlockId -> Just _) = do
+parseModuleBlockEntry pm (uselistBlockId -> Just _) = do
   -- USELIST_BLOCK_ID
-  fail "USELIST_BLOCK_ID"
+  -- XXX ?? fail "USELIST_BLOCK_ID"
+  return pm
 
 parseModuleBlockEntry _ (moduleStrtabBlockId -> Just _) = do
   -- MODULE_STRTAB_BLOCK_ID
@@ -262,8 +277,7 @@ parseModuleBlockEntry pm (operandBundleTagsBlockId -> Just _) = do
   -- fail "OPERAND_BUNDLE_TAGS_BLOCK_ID"
   return pm
 
-parseModuleBlockEntry pm (metadataKindBlockId -> Just es) = do
-  -- METADATA_KIND_BLOCK_ID
+parseModuleBlockEntry pm (metadataKindBlockId -> Just es) = label "METADATA_KIND_BLOCK_ID" $ do
   forM_ es $ \e ->
     case fromEntry e of
       Just r -> parseMetadataKindEntry r
@@ -302,7 +316,13 @@ parseFunProto r pm = label "FUNCTION" $ do
   ix   <- nextValueId
   name <- entryName ix
   _    <- pushValue (Typed ty (ValSymbol (Symbol name)))
-
+  let lkMb t x
+       | Seq.length t > x = Just (Seq.index t x)
+       | otherwise        = Nothing
+  comdat <- if length (recordFields r) >= 12
+               then do comdatID <- field 12 numeric
+                       pure (fst <$> partialComdat pm `lkMb` comdatID)
+               else pure Nothing
   let proto = FunProto
         { protoType  = ty
         , protoLinkage =
@@ -314,6 +334,7 @@ parseFunProto r pm = label "FUNCTION" $ do
         , protoName  = name
         , protoIndex = ix
         , protoSect  = section
+        , protoComdat = comdat
         }
 
   if isProto == (0 :: Int)
