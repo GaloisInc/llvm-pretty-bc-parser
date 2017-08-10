@@ -74,7 +74,7 @@ parseAlias r = do
 finalizePartialAlias :: PartialAlias -> Parse GlobalAlias
 finalizePartialAlias pa = label "finalizePartialAlias" $ do
   -- aliases refer to absolute offsets
-  tv  <- getFnValueById (paType pa) (paTarget pa)
+  tv  <- getFnValueById (paType pa) (fromIntegral (paTarget pa))
   tgt <- relabel (const requireBbEntryName) (typedValue tv)
   return GlobalAlias
     { aliasName   = paName pa
@@ -361,7 +361,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   2 -> label "FUNC_CODE_INST_BINOP" $ do
     let field = parseField r
     (lhs,ix) <- getValueTypePair t r 0
-    rhs      <- getValue (typedType lhs) =<< field ix numeric
+    rhs      <- getValue' t (typedType lhs) =<< field ix numeric
     mkInstr  <- field (ix + 1) binop
     -- if there's an extra field on the end of the record, it's for designating
     -- the value of the nuw and nsw flags.  the constructor returned from binop
@@ -823,7 +823,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     let ix1 | isfp && length (recordFields r) > ix0 + 1 = ix0 + 1
             | otherwise                                 = ix0
 
-    rhs <- getValue (typedType lhs) =<< field ix1 numeric
+    rhs <- getValue' t (typedType lhs) =<< field ix1 numeric
 
     let ty = typedType lhs
         parseOp | isPrimTypeOf isFloatingPoint ty ||
@@ -988,7 +988,7 @@ parseCallArgs t b r = parseArgs t op b r
  op ty i =
   case ty of
     PrimType Label -> return (Typed ty (ValLabel i))
-    _              -> getValue ty i -- XXX getConstantFwdRef t ty i
+    _              -> getValue' t ty i
 
 -- | Parse the arguments for an invoke record.
 parseInvokeArgs :: ValueTable -> Bool -> Record -> Int -> [Type] -> Parse [Typed PValue]

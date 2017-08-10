@@ -544,16 +544,23 @@ addFNEntry :: Int -> Int -> String -> ValueSymtab -> ValueSymtab
 -- TODO: do we ever need to be able to look up the offset?
 addFNEntry i _o n = Map.insert (SymTabFNEntry i) (Left n)
 
+-- | Lookup the name of an entry. Returns @Nothing@ when it's not present.
+entryNameMb :: Int -> Parse (Maybe String)
+entryNameMb n = do
+  symtab <- getValueSymtab
+  return $! fmap renderName
+         $  Map.lookup (SymTabEntry n) symtab `mplus`
+            Map.lookup (SymTabFNEntry n) symtab
+
 -- | Lookup the name of an entry.
 entryName :: Int -> Parse String
 entryName n = do
-  symtab <- getValueSymtab
-  let mentry = Map.lookup (SymTabEntry n) symtab `mplus`
-               Map.lookup (SymTabFNEntry n) symtab
+  mentry <- entryNameMb n
   case mentry of
-    Just i  -> return (renderName i)
-    Nothing ->
-      do isRel <- getRelIds
+    Just name -> return name
+    Nothing   ->
+      do isRel  <- getRelIds
+         symtab <- getValueSymtab
          fail $ unlines
            [ "entry " ++ show n ++ (if isRel then " (relative)" else "")
               ++ " is missing from the symbol table"

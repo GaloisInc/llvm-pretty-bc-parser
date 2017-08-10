@@ -3,8 +3,8 @@
 module Data.LLVM.BitCode.IR.Values (
     getValueTypePair
   , getConstantFwdRef
-  , getValue
-  , getFnValueById
+  , getValue, getValue'
+  , getFnValueById, getFnValueById'
   , parseValueSymbolTableBlock
   ) where
 
@@ -60,39 +60,42 @@ getValueTypePair t r ix = do
 
 -- | Get a single value from the value table.
 getValue :: Type -> Int -> Parse (Typed PValue)
-getValue ty n = label "getValue" $ do
+getValue ty n = label "getValue" (getFnValueById ty =<< adjustId n)
 
-  useRelIds <- getRelIds
-  cur       <- getNextId
-  -- The relative conversion has to be done on a Word32 to handle overflow
-  -- when n is large the same way BitcodeReaderMDValueList::getValue does.
-  let i :: Word32
-      i | useRelIds = fromIntegral cur - fromIntegral n
-        | otherwise = fromIntegral n
+getFnValueById :: Type -> Int -> Parse (Typed PValue)
+getFnValueById  = getFnValueById' Nothing
 
-  getFnValueById ty i
+getValue' :: ValueTable -> Type -> Int -> Parse (Typed PValue)
+getValue' vt ty n = label "getValue'" (getFnValueById' (Just vt) ty =<< adjustId n)
 
 -- | Lookup a value by its absolute id, or perhaps some metadata.
-getFnValueById :: Type -> Word32 -> Parse (Typed PValue)
-getFnValueById ty n = label "getFnValueById" $ case ty of
+getFnValueById' :: Maybe ValueTable -> Type -> Int -> Parse (Typed PValue)
+getFnValueById' mbVt ty n = label "getFnValueById'" $ case ty of
 
   PrimType Metadata -> do
     cxt <- getContext
     md  <- getMdTable
-    return (forwardRef cxt (fromIntegral n) md)
+    return (forwardRef cxt n md)
 
   _ -> do
-    mb <- lookupValueAbs (fromIntegral n)
+    mb <- lookupValueAbs n
     case mb of
 
       Just tv -> return tv
 
       -- forward reference
       Nothing -> do
-        name <- entryName (fromIntegral n)
-        return (Typed ty (ValIdent (Ident name)))
+        mb <- entryNameMb n
+        case mb of
+          Just name -> return (Typed ty (ValIdent (Ident name)))
 
+          Nothing
+            | Just vt <- mbVt ->
+              do cxt <- getContext
+                 return (forwardRef cxt n vt)
 
+            | otherwise ->
+              fail "Unable to create forward reference"
 
 -- Value Symbol Table Entries --------------------------------------------------
 
