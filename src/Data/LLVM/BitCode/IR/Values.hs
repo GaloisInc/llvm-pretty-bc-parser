@@ -2,7 +2,7 @@
 
 module Data.LLVM.BitCode.IR.Values (
     getValueTypePair
-  , getConstantFwdRef
+  , getConstantFwdRef, getConstantFwdRefAdjustedId 
   , getValue, getValue'
   , getFnValueById, getFnValueById'
   , parseValueSymbolTableBlock
@@ -24,8 +24,11 @@ import qualified Data.Map as Map
 
 -- | Return a forward reference if the value is not in the incremental table.
 getConstantFwdRef :: ValueTable -> Type -> Int -> Parse (Typed PValue)
-getConstantFwdRef t ty n = label "getConstantFwdRef" $ do
-  n' <- adjustId n
+getConstantFwdRef t ty n = label "getConstantFwdRef" $
+    adjustId n >>= getConstantFwdRefAdjustedId t ty
+
+getConstantFwdRefAdjustedId :: ValueTable -> Type -> Int -> Parse (Typed PValue)
+getConstantFwdRefAdjustedId t ty n' = label "getConstantFwdRefAdjustedId" $ do
   mb <- lookupValue n'
   case mb of
     Just tv -> return tv

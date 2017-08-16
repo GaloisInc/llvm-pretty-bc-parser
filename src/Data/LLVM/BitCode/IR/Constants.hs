@@ -321,8 +321,8 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   17 -> label "CST_CODE_CE_CMP" $ do
     let field = parseField r
     opty <- getType                  =<< field 0 numeric
-    op0  <- getConstantFwdRef t opty =<< field 1 numeric
-    op1  <- getConstantFwdRef t opty =<< field 2 numeric
+    op0  <- getConstantFwdRefAdjustedId t opty =<< field 1 numeric
+    op1  <- getConstantFwdRefAdjustedId t opty =<< field 2 numeric
 
     let isFloat = isPrimTypeOf isFloatingPoint
     cst <- if isFloat opty || isVectorOf isFloat opty
