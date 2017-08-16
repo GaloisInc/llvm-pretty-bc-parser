@@ -588,7 +588,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (ptr,ix) <- getValueTypePair t r 0
     ty       <- elimPtrTo (typedType ptr)
                   `mplus` fail "invalid type to INST_STORE"
-    val      <- getValue ty =<< field ix numeric
+    val      <- getValue' t ty =<< field ix numeric
     aval     <- field (ix+1) numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
