@@ -451,9 +451,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
             PrimType (Integer w) -> return w
             _                    -> fail "invalid switch discriminate"
 
-          cond     <- getValue opty =<< field 2 numeric
-          def      <-                   field 3 numeric -- Int id of a label
-          numCases <-                   field 4 numeric
+          cond     <- getValue' t opty =<< field 2 numeric
+          def      <-                      field 3 numeric -- Int id of a label
+          numCases <-                      field 4 numeric
           ls       <- parseNewSwitchLabels width r numCases 5
           effect (Switch cond def ls) d
 
@@ -463,8 +463,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     -- [opty, op0, op1, ...]
     let oldSwitch = do
           opty <- getType n
-          cond <- getValue opty =<< field 1 numeric
-          def  <-                   field 2 numeric
+          cond <- getValue' t opty =<< field 1 numeric
+          def  <-                      field 2 numeric
           ls   <- parseSwitchLabels opty r 3
           effect (Switch cond def ls) d
 
