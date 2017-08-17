@@ -19,6 +19,10 @@ Flag fuzz
   Description:         Enable fuzzing harness
   Default:             False
 
+Flag ast
+  Description:         Enable llvm-ast, pretty printing ASTs for dev work.
+  Default:             False
+
 Source-repository head
   type:                git
   location:            http://github.com/galoisinc/llvm-pretty-bc-parser
@@ -75,6 +79,26 @@ Executable llvm-disasm
                        cereal     >= 0.3.5.2,
                        llvm-pretty>= 0.7.1.0,
                        llvm-pretty-bc-parser
+
+Executable llvm-ast
+  Main-is:             LLVMast.hs
+  Default-language:    Haskell2010
+  Ghc-options:         -Wall
+  Hs-source-dirs:      llvm-ast
+  Build-depends:       bytestring >= 0.9.1,
+                       base       >= 4 && < 5,
+                       pretty     >= 1.0.1,
+                       containers >= 0.4,
+                       array      >= 0.3,
+                       monadLib   >= 3.7.2,
+                       cereal     >= 0.3.5.2,
+                       llvm-pretty>= 0.7.1.0,
+                       llvm-pretty-bc-parser,
+                       pretty-show
+  if flag(ast)
+      Buildable:       True
+  else
+      Buildable:       False
 
 Test-suite disasm-test
   type:                exitcode-stdio-1.0
