@@ -614,7 +614,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   29 -> label "FUNC_CODE_INST_VSELECT" $ do
     let field = parseField r
     (tv,ix) <- getValueTypePair t r 0
-    fv      <- getValue (typedType tv) =<< field ix numeric
+    fv      <- getValue' t (typedType tv) =<< field ix numeric
     (c,_)   <- getValueTypePair t r (ix+1)
     result (typedType tv) (Select c tv (typedValue fv)) d
 
