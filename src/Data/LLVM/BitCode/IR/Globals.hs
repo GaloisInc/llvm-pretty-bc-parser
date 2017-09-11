@@ -56,9 +56,7 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
   let valid | initid == 0 = Nothing
             | otherwise   = Just (initid - 1)
       attrs = GlobalAttrs
-        { gaLinkage    = do
-          guard (link /= External)
-          return link
+        { gaLinkage    = Just link
         , gaConstant   = isconst
         }
 
