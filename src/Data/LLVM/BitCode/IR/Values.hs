@@ -3,7 +3,7 @@
 module Data.LLVM.BitCode.IR.Values (
     getValueTypePair
   , getConstantFwdRef, getConstantFwdRefAdjustedId 
-  , getValue, getValue'
+  , getValue'
   , getFnValueById, getFnValueById'
   , parseValueSymbolTableBlock
   ) where

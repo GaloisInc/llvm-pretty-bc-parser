@@ -383,14 +383,14 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   5 -> label "FUNC_CODE_INST_SELECT" $ do
     let field = parseField r
     (tval,ix) <- getValueTypePair t r 0
-    fval      <- getValue (typedType tval)       =<< field  ix    numeric
-    cond      <- getValue (PrimType (Integer 1)) =<< field (ix+1) numeric
+    fval      <- getValue' t (typedType tval)       =<< field  ix    numeric
+    cond      <- getValue' t (PrimType (Integer 1)) =<< field (ix+1) numeric
     result (typedType tval) (Select cond tval (typedValue fval)) d
 
   -- [ty,opval,opval]
   6 -> label "FUNC_CODE_INST_EXTRACTELT" $ do
     (tv,ix) <- getValueTypePair t r 0
-    idx     <- getValue (PrimType (Integer 32)) =<< parseField r ix numeric
+    idx     <- getValue' t (PrimType (Integer 32)) =<< parseField r ix numeric
     (_, ty) <- elimVector (typedType tv)
         `mplus` fail "invalid EXTRACTELT record"
     result ty (ExtractElt tv (typedValue idx)) d
@@ -401,15 +401,15 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (tv,ix) <- getValueTypePair t r 0
     (_,pty) <- elimVector (typedType tv)
                  `mplus` fail "invalid INSERTELT record (not a vector)"
-    elt     <- getValue pty                     =<< field  ix    numeric
-    idx     <- getValue (PrimType (Integer 32)) =<< field (ix+1) numeric
+    elt     <- getValue' t pty                     =<< field  ix    numeric
+    idx     <- getValue' t (PrimType (Integer 32)) =<< field (ix+1) numeric
     result (typedType tv) (InsertElt tv elt (typedValue idx)) d
 
   -- [opval,ty,opval,opval]
   8 -> label "FUNC_CODE_INST_SHUFFLEVEC" $ do
     let field = parseField r
     (vec1,ix) <- getValueTypePair t r 0
-    vec2      <- getValue (typedType vec1) =<< field  ix    numeric
+    vec2      <- getValue' t (typedType vec1) =<< field  ix    numeric
     (mask,_)  <- getValueTypePair t r (ix+1)
     result (typedType vec1) (ShuffleVector vec1 (typedValue vec2) mask) d
 
@@ -430,7 +430,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
         branch = do
           bb2  <- field 1 numeric
           n    <- field 2 numeric
-          cond <- getValue (PrimType (Integer 1)) n
+          cond <- getValue' t (PrimType (Integer 1)) n
           effect (Br cond bb1 bb2) d
     branch `mplus` jump
 
@@ -578,7 +578,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   23 -> label "FUNC_CODE_INST_VAARG" $ do
     let field = parseField r
     ty    <- getType     =<< field 0 numeric
-    op    <- getValue ty =<< field 1 numeric
+    op    <- getValue' t ty =<< field 1 numeric
     resTy <- getType     =<< field 2 numeric
     result resTy (VaArg op resTy) d
 
@@ -623,7 +623,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   31 -> label "FUNC_CODE_INST_INDIRECTBR" $ do
     let field = parseField r
     ty   <- getType     =<< field 0 numeric
-    addr <- getValue ty =<< field 1 numeric
+    addr <- getValue' t ty =<< field 1 numeric
     ls   <- parseIndexes r 2
     effect (IndirectBr addr ls) d
 
@@ -992,7 +992,7 @@ parseCallArgs t b r = parseArgs t op b r
 
 -- | Parse the arguments for an invoke record.
 parseInvokeArgs :: ValueTable -> Bool -> Record -> Int -> [Type] -> Parse [Typed PValue]
-parseInvokeArgs t = parseArgs t getValue
+parseInvokeArgs t = parseArgs t (getValue' t)
 
 -- | Parse arguments for the invoke and call instructions.
 parseArgs :: ValueTable -> (Type -> Int -> Parse (Typed PValue))
