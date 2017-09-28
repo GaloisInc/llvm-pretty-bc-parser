@@ -3,7 +3,7 @@
 module Data.LLVM.BitCode.IR.Values (
     getValueTypePair
   , getConstantFwdRef, getConstantFwdRefAdjustedId 
-  , getValue'
+  , getValue
   , getFnValueById, getFnValueById'
   , parseValueSymbolTableBlock
   ) where
@@ -62,14 +62,14 @@ getValueTypePair t r ix = do
       return (Typed ty (typedValue ref), ix+2)
 
 -- | Get a single value from the value table.
-getValue :: Type -> Int -> Parse (Typed PValue)
-getValue ty n = label "getValue" (getFnValueById ty =<< adjustId n)
+getValueNoFwdRef :: Type -> Int -> Parse (Typed PValue)
+getValueNoFwdRef ty n = label "getValueNoFwdRef" (getFnValueById ty =<< adjustId n)
 
 getFnValueById :: Type -> Int -> Parse (Typed PValue)
 getFnValueById  = getFnValueById' Nothing
 
-getValue' :: ValueTable -> Type -> Int -> Parse (Typed PValue)
-getValue' vt ty n = label "getValue'" (getFnValueById' (Just vt) ty =<< adjustId n)
+getValue :: ValueTable -> Type -> Int -> Parse (Typed PValue)
+getValue vt ty n = label "getValue" (getFnValueById' (Just vt) ty =<< adjustId n)
 
 -- | Lookup a value by its absolute id, or perhaps some metadata.
 getFnValueById' :: Maybe ValueTable -> Type -> Int -> Parse (Typed PValue)

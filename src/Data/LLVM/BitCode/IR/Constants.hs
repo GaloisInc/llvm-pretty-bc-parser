@@ -362,7 +362,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   21 -> label "CST_CODE_BLOCKADDRESS" $ do
     let field = parseField r
     ty  <- getTy
-    val <- getValue' t ty =<< field 1 numeric
+    val <- getValue t ty =<< field 1 numeric
     bid <-                 field 2 numeric
     sym <- elimValSymbol (typedValue val)
         `mplus` fail "invalid function symbol in BLOCKADDRESS record"
