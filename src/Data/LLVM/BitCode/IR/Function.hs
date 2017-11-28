@@ -820,8 +820,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
                                   return () ]
 
     -- XXX: we're ignoring the fast math flags
-    let ix1 | isfp && length (recordFields r) > ix0 + 1 = ix0 + 1
-            | otherwise                                 = ix0
+    let ix1 | isfp && length (recordFields r) > 3 = ix0 + 1
+            | otherwise                           = ix0
 
     rhs <- getValue t (typedType lhs) =<< field ix1 numeric
 
