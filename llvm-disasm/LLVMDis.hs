@@ -1,7 +1,7 @@
 {-# LANGUAGE ImplicitParams #-}
 import Data.LLVM.BitCode (parseBitCode, formatError)
 import Data.LLVM.CFG (buildCFG, CFG(..), blockId)
-import Text.LLVM.AST (defBody, modDefines)
+import Text.LLVM.AST (defBody, modDefines,Module)
 import Text.LLVM.PP (ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, ppModule)
 import Text.PrettyPrint (Style(..), renderStyle, style)
 
@@ -9,6 +9,7 @@ import Control.Monad (when)
 import Data.Graph.Inductive.Graph (nmap, emap)
 import Data.Graph.Inductive.Dot (fglToDotString, showDot)
 import Data.Monoid (mconcat, Endo(..))
+import Text.Show.Pretty (pPrint)
 import System.Console.GetOpt
   (ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo)
 import System.Environment (getArgs,getProgName)
@@ -19,6 +20,7 @@ import qualified Data.ByteString as S
 data Options = Options {
     optLLVMVersion :: String
   , optDoCFG       :: Bool
+  , optAST         :: Bool
   , optHelp        :: Bool
   } deriving (Show)
 
@@ -26,6 +28,7 @@ defaultOptions :: Options
 defaultOptions  = Options {
     optLLVMVersion = "3.8"
   , optDoCFG       = False
+  , optAST         = False
   , optHelp        = False
   }
 
@@ -35,6 +38,8 @@ options  =
     "print assembly compatible with this LLVM version (e.g., 3.8)"
   , Option "" ["cfg"] (NoArg setDoCFG)
     "output CFG in graphviz format"
+  , Option "" ["ast"] (NoArg setAST)
+    "Output the Haskell AST instead"
   , Option "h" ["help"] (NoArg setHelp)
     "display this message"
   ]
@@ -63,6 +68,9 @@ setLLVMVersion str = Endo (\opt -> opt { optLLVMVersion = str })
 setDoCFG :: Endo Options
 setDoCFG = Endo (\opt -> opt { optDoCFG = True })
 
+setAST :: Endo Options
+setAST = Endo (\opt -> opt { optAST = True })
+
 setHelp :: Endo Options
 setHelp = Endo (\opt -> opt { optHelp = True })
 
@@ -83,20 +91,26 @@ disasm opts file = do
       exitFailure
 
     Right m  -> do
-      let s = style { lineLength = maxBound, ribbonsPerLine = 1.0 }
-      case optLLVMVersion opts of
-        -- try the 3.5 style for 3.4
-        "3.4" -> putStrLn (renderStyle s (ppLLVM35 (ppModule m)))
-        "3.5" -> putStrLn (renderStyle s (ppLLVM35 (ppModule m)))
-        "3.6" -> putStrLn (renderStyle s (ppLLVM36 (ppModule m)))
-        "3.7" -> putStrLn (renderStyle s (ppLLVM37 (ppModule m)))
-        "3.8" -> putStrLn (renderStyle s (ppLLVM38 (ppModule m)))
-        -- try the 3.8 style for 3.9
-        "3.9" -> putStrLn (renderStyle s (ppLLVM38 (ppModule m)))
-        -- try the 3.8 style for 4.0
-        "4.0" -> putStrLn (renderStyle s (ppLLVM38 (ppModule m)))
-        v -> printUsage ["unsupported LLVM version: " ++ v] >> exitFailure
-      when (optDoCFG opts) $ do
-        let cfgs  = map (buildCFG . defBody) $ modDefines m
-            fixup = nmap (show . blockId) . emap (const "")
-        mapM_ (putStrLn . showDot . fglToDotString . fixup . cfgGraph) cfgs
+        if optAST opts
+          then pPrint m
+          else renderLLVM opts m
+
+renderLLVM :: Options -> Module -> IO ()
+renderLLVM opts m = do
+  let s = style { lineLength = maxBound, ribbonsPerLine = 1.0 }
+  case optLLVMVersion opts of
+    -- try the 3.5 style for 3.4
+    "3.4" -> putStrLn (renderStyle s (ppLLVM35 (ppModule m)))
+    "3.5" -> putStrLn (renderStyle s (ppLLVM35 (ppModule m)))
+    "3.6" -> putStrLn (renderStyle s (ppLLVM36 (ppModule m)))
+    "3.7" -> putStrLn (renderStyle s (ppLLVM37 (ppModule m)))
+    "3.8" -> putStrLn (renderStyle s (ppLLVM38 (ppModule m)))
+    -- try the 3.8 style for 3.9
+    "3.9" -> putStrLn (renderStyle s (ppLLVM38 (ppModule m)))
+    -- try the 3.8 style for 4.0
+    "4.0" -> putStrLn (renderStyle s (ppLLVM38 (ppModule m)))
+    v -> printUsage ["unsupported LLVM version: " ++ v] >> exitFailure
+  when (optDoCFG opts) $ do
+    let cfgs  = map (buildCFG . defBody) $ modDefines m
+        fixup = nmap (show . blockId) . emap (const "")
+    mapM_ (putStrLn . showDot . fglToDotString . fixup . cfgGraph) cfgs
