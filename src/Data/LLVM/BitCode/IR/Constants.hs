@@ -292,7 +292,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   -- [n x operands]
   12 -> label "CST_CODE_CE_GEP" $ do
     ty <- getTy
-    v <- parseCeGep False t r
+    v <- parseCeGep False Nothing 0 t r
     return (getTy,Typed ty v:cs)
 
   -- [opval,opval,opval]
@@ -355,7 +355,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   -- [n x operands]
   20 -> label "CST_CODE_CE_INBOUNDS_GEP" $ do
     ty <- getTy
-    v <- parseCeGep True t r
+    v <- parseCeGep True Nothing 1 t r
     return (getTy,Typed ty v:cs)
 
   -- [funty,fnval,bb#]
@@ -415,6 +415,14 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
 
     return (getTy, Typed ty val : cs)
 
+  -- [opty, flags, n x operands]
+  24 -> label "CST_CODE_CE_GEP_WITH_INRANGE_INDEX" $ do
+    ty <- getTy
+    (flags :: Word64) <- parseField r 1 numeric
+    let inBounds = testBit flags 0
+        inRangeIndex = flags `shiftR` 1
+    v <- parseCeGep inBounds (Just inRangeIndex) 2 t r
+    return (getTy,Typed ty v:cs)
 
 
 
@@ -427,10 +435,9 @@ parseConstantEntry _ st (abbrevDef -> Just _) =
 parseConstantEntry _ _ e =
   fail ("constant block: unexpected: " ++ show e)
 
-parseCeGep :: Bool -> ValueTable -> Record -> Parse PValue
-parseCeGep isInbounds t r = do
-  let isExplicit = odd (length (recordFields r))
-      firstIdx = if isExplicit then 1 else 0
+parseCeGep :: Bool -> Maybe Word64 -> Int -> ValueTable -> Record -> Parse PValue
+parseCeGep isInbounds mInrangeIdx firstIdx t r = do
+  let isExplicit = odd (length (recordFields r)) -- TODO: is this right for INRANGE_INDEX?
       field = parseField r
       loop n = do
         ty   <- getType =<< field  n    numeric
@@ -443,7 +450,7 @@ parseCeGep isInbounds t r = do
     then Just <$> (getType =<< field 0 numeric)
     else pure Nothing
   args <- loop firstIdx
-  return $! ValConstExpr (ConstGEP isInbounds mPointeeType args)
+  return $! ValConstExpr (ConstGEP isInbounds mInrangeIdx mPointeeType args)
 
 parseWideInteger :: Record -> Parse Integer
 parseWideInteger r = do
