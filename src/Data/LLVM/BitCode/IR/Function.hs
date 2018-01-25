@@ -693,7 +693,11 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [ordering, synchscope]
   36 -> label "FUNC_CODE_INST_FENCE" $ do
-    notImplemented
+    mordval <- getDecodedOrdering =<< parseField r 0 unsigned
+    -- TODO: parse scope
+    case mordval of
+      Just ordval -> effect (Fence Nothing ordval) d
+      Nothing -> fail "`fence` instruction requires ordering"
 
   -- [ptrty,ptr,cmp,new, align, vol,
   --  ordering, synchscope]
