@@ -511,13 +511,14 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
   21 -> label "METADATA_SUBPROGRAM" $ do
     -- this one is a bit funky:
-    -- https://github.com/llvm-mirror/llvm/blob/release_38/lib/Bitcode/Reader/BitcodeReader.cpp#L2186
+    -- https://github.com/llvm-mirror/llvm/blob/release_50/lib/Bitcode/Reader/MetadataLoader.cpp#L1382
     let recordSize = length (recordFields r)
         adj i | recordSize == 19 = i + 1
               | otherwise        = i
         hasThisAdjustment = recordSize >= 20
-    unless (18 <= recordSize && recordSize <= 20)
-      (fail "Invalid record")
+        hasThrownTypes = recordSize >= 21
+    unless (18 <= recordSize && recordSize <= 21)
+      (fail ("Invalid subprogram record, size = " ++ show recordSize))
 
     ctx <- getContext
     isDistinct         <- parseField r 0 nonzero
@@ -536,6 +537,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     dispThisAdjustment <- if hasThisAdjustment
                             then parseField r 19 numeric
                             else return 0
+    dispThrownTypes <- if hasThrownTypes
+                         then mdForwardRefOrNull ctx mt <$> parseField r 20 numeric
+                         else return Nothing
     dispFlags          <- parseField r 13 numeric
     dispIsOptimized    <- parseField r 14 nonzero
     dispTemplateParams <-
