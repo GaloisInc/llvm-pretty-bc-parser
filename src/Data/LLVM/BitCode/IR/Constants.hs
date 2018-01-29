@@ -17,7 +17,7 @@ import Control.Monad.ST (runST,ST)
 import Data.Array.ST (newArray,readArray,MArray,STUArray)
 import Data.Bits (shiftL,shiftR,testBit)
 import Data.Char (chr)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Word (Word32,Word64)
 import qualified Data.Map as Map
 
@@ -292,7 +292,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   -- [n x operands]
   12 -> label "CST_CODE_CE_GEP" $ do
     ty <- getTy
-    v <- parseCeGep False Nothing 0 t r
+    v <- parseCeGep False Nothing t r
     return (getTy,Typed ty v:cs)
 
   -- [opval,opval,opval]
@@ -355,7 +355,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   -- [n x operands]
   20 -> label "CST_CODE_CE_INBOUNDS_GEP" $ do
     ty <- getTy
-    v <- parseCeGep True Nothing 1 t r
+    v <- parseCeGep True Nothing t r
     return (getTy,Typed ty v:cs)
 
   -- [funty,fnval,bb#]
@@ -421,7 +421,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     (flags :: Word64) <- parseField r 1 numeric
     let inBounds = testBit flags 0
         inRangeIndex = flags `shiftR` 1
-    v <- parseCeGep inBounds (Just inRangeIndex) 2 t r
+    v <- parseCeGep inBounds (Just inRangeIndex) t r
     return (getTy,Typed ty v:cs)
 
 
@@ -435,9 +435,10 @@ parseConstantEntry _ st (abbrevDef -> Just _) =
 parseConstantEntry _ _ e =
   fail ("constant block: unexpected: " ++ show e)
 
-parseCeGep :: Bool -> Maybe Word64 -> Int -> ValueTable -> Record -> Parse PValue
-parseCeGep isInbounds mInrangeIdx firstIdx t r = do
+parseCeGep :: Bool -> Maybe Word64 -> ValueTable -> Record -> Parse PValue
+parseCeGep isInbounds mInrangeIdx t r = do
   let isExplicit = odd (length (recordFields r)) -- TODO: is this right for INRANGE_INDEX?
+      firstIdx = if isJust mInrangeIdx then 2 else if isExplicit then 1 else 0
       field = parseField r
       loop n = do
         ty   <- getType =<< field  n    numeric
