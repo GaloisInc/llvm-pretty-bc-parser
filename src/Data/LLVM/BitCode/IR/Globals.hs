@@ -46,6 +46,9 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
   mbAlign <- if length (recordFields r) > 4
                 then Just `fmap` field 4 numeric
                 else return Nothing
+  vis <- if length (recordFields r) > 6 && not (link `elem` [Internal, Private])
+                then field 6 visibility
+                else pure DefaultVisibility
 
   ty <- if explicitTy
            then return ptrty
@@ -57,6 +60,7 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
             | otherwise   = Just (initid - 1)
       attrs = GlobalAttrs
         { gaLinkage    = Just link
+        , gaVisibility = Just vis
         , gaConstant   = isconst
         }
 

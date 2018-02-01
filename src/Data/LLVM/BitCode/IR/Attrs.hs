@@ -35,3 +35,13 @@ linkage  = choose <=< numeric
     18 -> return Linkonce
     19 -> return LinkonceODR
     _  -> mzero
+
+visibility :: Match Field Visibility
+visibility = choose <=< numeric
+  where
+  choose :: Match Int Visibility
+  choose n = case n of
+    0 -> return DefaultVisibility
+    1 -> return HiddenVisibility
+    2 -> return ProtectedVisibility
+    _ -> mzero
