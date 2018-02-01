@@ -411,7 +411,11 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (vec1,ix) <- getValueTypePair t r 0
     vec2      <- getValue t (typedType vec1) =<< field  ix    numeric
     (mask,_)  <- getValueTypePair t r (ix+1)
-    result (typedType vec1) (ShuffleVector vec1 (typedValue vec2) mask) d
+    resTy <- case (typedType vec1,typedType mask) of
+                (Vector _ elemTy, Vector shuffleLen _) ->
+                        return (Vector shuffleLen elemTy)
+                _ -> fail "Invalid arguments to shuffle vector (not vectors)"
+    result resTy (ShuffleVector vec1 (typedValue vec2) mask) d
 
   -- 9 is handled lower down, as it's processed the same way as 28
 
