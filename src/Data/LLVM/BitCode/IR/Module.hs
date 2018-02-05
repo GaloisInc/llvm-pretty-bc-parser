@@ -96,7 +96,7 @@ parseModuleBlock ents = label "MODULE_BLOCK" $ do
       Just es -> parseTypeBlock es
       Nothing -> return mempty
 
-  withTypeSymtab tsymtab $ do
+  withTypeSymtab tsymtab $ label "value symbol table" $ do
     -- parse the value symbol table out first, if there is one
     symtab <- do
       mb <- match (findMatch valueSymtabBlockId) ents
