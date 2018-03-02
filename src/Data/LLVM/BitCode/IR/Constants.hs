@@ -12,6 +12,7 @@ import Data.LLVM.BitCode.Parse
 import Data.LLVM.BitCode.Record
 import Text.LLVM.AST
 
+import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import Control.Monad (mplus,mzero,foldM,(<=<),when)
 import Control.Monad.ST (runST,ST)
 import Data.Array.ST (newArray,readArray,MArray,STUArray)
@@ -262,7 +263,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   9 -> label "CST_CODE_CSTRING" $ do
     ty     <- getTy
     values <- parseField r 0 cstring
-        `mplus` parseFields r 0 (fieldChar6 ||| char)
+        `mplus` fmap UTF8.decode (parseFields r 0 (fieldChar6 ||| char))
     return (getTy, Typed ty (ValString (values ++ [chr 0])):cs)
 
   -- [opcode,opval,opval]
@@ -342,10 +343,10 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
         alignStack = (flags `shiftR` 1) == 1
 
     alen <- field 1 numeric
-    asm  <- parseSlice r 2 alen char
+    asm  <- UTF8.decode <$> parseSlice r 2 alen char
 
     clen <- field (2+alen) numeric
-    cst  <- parseSlice r (3+alen) clen char
+    cst  <- UTF8.decode <$> parseSlice r (3+alen) clen char
 
     return (getTy, Typed ty (ValAsm sideEffect alignStack asm cst):cs)
 
@@ -407,8 +408,8 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     when (3 + asmStrSize + constStrSize > len)
          (fail "Invalid record")
 
-    asmStr   <- parseSlice r  2               asmStrSize   char
-    constStr <- parseSlice r (3 + asmStrSize) constStrSize char
+    asmStr   <- fmap UTF8.decode $ parseSlice r  2               asmStrSize   char
+    constStr <- fmap UTF8.decode $ parseSlice r (3 + asmStrSize) constStrSize char
 
     ty <- getTy
     let val = ValAsm hasSideEffects isAlignStack asmStr constStr

@@ -6,11 +6,11 @@ import Data.LLVM.BitCode.Match
 import Data.LLVM.BitCode.Parse
 
 import Data.Bits (Bits,testBit,shiftR,bit)
-import Data.Char (chr)
 import Data.Int  (Int64)
-import Data.Word (Word64,Word32)
+import Data.Word (Word8,Word32,Word64)
 import Data.ByteString (ByteString)
 
+import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import Control.Monad ((<=<),MonadPlus(..),guard)
 
 
@@ -67,7 +67,7 @@ fieldVbr (FieldVBR bs) = return bs
 fieldVbr _             = mzero
 
 -- | Match a character field.
-fieldChar6 :: Match Field Char
+fieldChar6 :: Match Field Word8
 fieldChar6 (FieldChar6 c) = return c
 fieldChar6 _              = mzero
 
@@ -154,11 +154,11 @@ nonzero  = decode <=< (fieldFixed ||| fieldLiteral ||| fieldVbr)
     | bsData bs == 0 = return False
     | otherwise      = return True
 
-char :: Match Field Char
-char  = fmap chr . numeric
+char :: Match Field Word8
+char  = numeric
 
 string :: Match Field String
-string  = fieldArray char
+string  = fmap UTF8.decode . fieldArray char
 
 cstring :: Match Field String
-cstring  = fieldArray (fieldChar6 ||| char)
+cstring  = fmap UTF8.decode . fieldArray (fieldChar6 ||| char)

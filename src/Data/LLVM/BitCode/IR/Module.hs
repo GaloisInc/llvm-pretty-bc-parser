@@ -16,6 +16,7 @@ import Data.LLVM.BitCode.Parse
 import Data.LLVM.BitCode.Record
 import Text.LLVM.AST
 
+import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import Control.Monad (foldM,guard,when,forM_)
 import Data.List (sortBy)
 import Data.Ord (comparing)
@@ -170,14 +171,14 @@ parseModuleBlockEntry pm (moduleCodeTriple -> Just _) = do
 
 parseModuleBlockEntry pm (moduleCodeDatalayout -> Just r) = do
   -- MODULE_CODE_DATALAYOUT
-  layout <- parseFields r 0 char
+  layout <- UTF8.decode <$> parseFields r 0 char
   case parseDataLayout layout of
     Nothing -> fail ("unable to parse data layout: ``" ++ layout ++ "''")
     Just dl -> return (pm { partialDataLayout = dl })
 
 parseModuleBlockEntry pm (moduleCodeAsm -> Just r) = do
   -- MODULE_CODE_ASM
-  asm <- parseFields r 0 char
+  asm <- UTF8.decode <$> parseFields r 0 char
   return pm { partialInlineAsm = lines asm }
 
 parseModuleBlockEntry pm (abbrevDef -> Just _) = do
@@ -213,14 +214,14 @@ parseModuleBlockEntry pm (moduleCodeVersion -> Just r) = do
   return pm
 
 parseModuleBlockEntry pm (moduleCodeSectionname -> Just r) = do
-  name <- parseFields r 0 char
+  name <- UTF8.decode <$> parseFields r 0 char
   return pm { partialSections = partialSections pm Seq.|> name }
 
 parseModuleBlockEntry pm (moduleCodeComdat -> Just r) = do
   -- MODULE_CODE_COMDAT
   when (length (recordFields r) < 2) (fail "Invalid record (MODULE_CODE_COMDAT)")
   kindVal <- parseField r 0 numeric
-  name <- parseFields r 2 char
+  name <- UTF8.decode <$> parseFields r 2 char
   kind <- case kindVal :: Int of
             1  -> pure ComdatAny
             2  -> pure ComdatExactMatch

@@ -11,6 +11,7 @@ import Data.LLVM.BitCode.Parse
 import Data.LLVM.BitCode.Record
 import Text.LLVM.AST
 
+import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import Control.Monad (when,unless,mplus,(<=<))
 import Data.List (sortBy)
 import Data.Maybe (catMaybes)
@@ -163,7 +164,7 @@ parseTypeBlockEntry (fromEntry -> Just r) = case recordCode r of
 
   19 -> label "TYPE_CODE_STRUCT_NAME" $ do
     name <- label "struct name" $ parseField r 0 cstring
-        `mplus` parseFields r 0 char
+        `mplus` fmap UTF8.decode (parseFields r 0 char)
     setTypeName name
     noType
 
