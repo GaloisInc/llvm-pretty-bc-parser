@@ -8,8 +8,6 @@ module Data.LLVM.BitCode.IR.Values (
   , parseValueSymbolTableBlock
   ) where
 
-import Data.Word
-
 import Data.LLVM.BitCode.Bitstream
 import Data.LLVM.BitCode.Match
 import Data.LLVM.BitCode.Parse
@@ -122,14 +120,14 @@ parseValueSymbolTableBlockEntry vs (vstCodeEntry -> Just r) = do
   -- VST_ENTRY: [valid, namechar x N]
   let field = parseField r
   valid <- field 0 numeric
-  name  <- field 1 (fieldArray (fieldChar6 ||| char))
+  name  <- field 1 cstring
   return (addEntry valid name vs)
 
 parseValueSymbolTableBlockEntry vs (vstCodeBBEntry -> Just r) = do
   -- VST_BBENTRY: [bbid, namechar x N]
   let field = parseField r
   bbid <- field 0 numeric
-  name <- field 1 (fieldArray (fieldChar6 ||| char))
+  name <- field 1 cstring
   return (addBBEntry bbid name vs)
 
 parseValueSymbolTableBlockEntry vs (vstCodeFNEntry -> Just r) = do
@@ -137,7 +135,7 @@ parseValueSymbolTableBlockEntry vs (vstCodeFNEntry -> Just r) = do
   let field = parseField r
   valid  <- field 0 numeric
   offset <- field 1 numeric
-  name   <- field 2 (fieldArray (fieldChar6 ||| char))
+  name   <- field 2 cstring
   return (addFNEntry valid offset name vs)
 
 parseValueSymbolTableBlockEntry vs (abbrevDef -> Just _) =

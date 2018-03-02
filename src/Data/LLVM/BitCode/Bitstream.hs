@@ -61,15 +61,15 @@ vbrNum :: Num a => Int -> GetBits a
 vbrNum n = fromBitString <$> vbr n
 
 -- | Decode a 6-bit encoded character.
-char6 :: GetBits Char
+char6 :: GetBits Word8
 char6  = do
   word <- numeric 6
   case word of
-    n | 0  <= n && n <= 25 -> return (toEnum (n + 97))
-      | 26 <= n && n <= 51 -> return (toEnum (n + 39))
-      | 52 <= n && n <= 61 -> return (toEnum (n - 4))
-    62                     -> return '.'
-    63                     -> return '_'
+    n | 0  <= n && n <= 25 -> return (n + 97)
+      | 26 <= n && n <= 51 -> return (n + 39)
+      | 52 <= n && n <= 61 -> return (n - 4)
+    62                     -> return (fromIntegral (fromEnum '.'))
+    63                     -> return (fromIntegral (fromEnum '_'))
     _                      -> fail "invalid char6"
 
 
@@ -412,7 +412,7 @@ data Field
   | FieldFixed   !BitString
   | FieldVBR     !BitString
   | FieldArray    [Field]
-  | FieldChar6   !Char
+  | FieldChar6   !Word8
   | FieldBlob    !S.ByteString
     deriving Show
 

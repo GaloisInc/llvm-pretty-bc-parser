@@ -22,6 +22,7 @@ import Data.LLVM.BitCode.Record
 import Text.LLVM.AST
 import Text.LLVM.Labels
 
+import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import Control.Exception (throw)
 import Control.Monad (foldM,guard,mplus,unless,when)
 import Data.List (mapAccumL)
@@ -290,7 +291,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
  case recordCode r of
   -- [values]
   1 -> label "METADATA_STRING" $ do
-    str <- parseFields r 0 char `mplus` parseField r 0 string
+    str <- fmap UTF8.decode (parseFields r 0 char) `mplus` parseField r 0 string
     return $! updateMetadataTable (addString str) pm
 
   -- [type num, value num]
@@ -315,7 +316,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
   -- [values]
   4 -> label "METADATA_NAME" $ do
-    name <- parseFields r 0 char `mplus` parseField r 0 cstring
+    name <- fmap UTF8.decode (parseFields r 0 char) `mplus` parseField r 0 cstring
     return $! setNextName name pm
 
   -- [n x md num]
@@ -323,8 +324,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
   -- [n x [id, name]]
   6 -> label "METADATA_KIND" $ do
-    kind <- parseField  r 0 numeric
-    name <- parseFields r 1 char
+    kind <- parseField r 0 numeric
+    name <- UTF8.decode <$> parseFields r 1 char
     addKind kind name
     return pm
 
@@ -872,4 +873,4 @@ parseMetadataKindEntry :: Record -> Parse ()
 parseMetadataKindEntry r = do
   kind <- parseField  r 0 numeric
   name <- parseFields r 1 char
-  addKind kind name
+  addKind kind (UTF8.decode name)
