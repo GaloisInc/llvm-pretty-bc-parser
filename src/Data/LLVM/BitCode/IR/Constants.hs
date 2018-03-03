@@ -256,15 +256,15 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   8 -> label "CST_CODE_STRING" $ do
     let field = parseField r
     ty     <- getTy
-    values <- field 0 string
+    values <- field 0 (fieldArray char)
     return (getTy, Typed ty (ValString values):cs)
 
   -- [values]
   9 -> label "CST_CODE_CSTRING" $ do
     ty     <- getTy
-    values <- parseField r 0 cstring
-        `mplus` fmap UTF8.decode (parseFields r 0 (fieldChar6 ||| char))
-    return (getTy, Typed ty (ValString (values ++ [chr 0])):cs)
+    values <- parseField r 0 (fieldArray (fieldChar6 ||| char))
+        `mplus` parseFields r 0 (fieldChar6 ||| char)
+    return (getTy, Typed ty (ValString (values ++ [0])):cs)
 
   -- [opcode,opval,opval]
   10 -> label "CST_CODE_CE_BINOP" $ do
