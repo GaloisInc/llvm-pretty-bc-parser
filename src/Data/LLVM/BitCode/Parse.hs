@@ -544,6 +544,9 @@ addFNEntry :: Int -> Int -> String -> ValueSymtab -> ValueSymtab
 -- TODO: do we ever need to be able to look up the offset?
 addFNEntry i _o n = Map.insert (SymTabFNEntry i) (Left n)
 
+addFwdFNEntry :: Int -> Int -> ValueSymtab -> ValueSymtab
+addFwdFNEntry i o = Map.insert (SymTabFNEntry i) (Right o)
+
 -- | Lookup the name of an entry. Returns @Nothing@ when it's not present.
 entryNameMb :: Int -> Parse (Maybe String)
 entryNameMb n = do

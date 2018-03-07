@@ -135,8 +135,12 @@ parseValueSymbolTableBlockEntry vs (vstCodeFNEntry -> Just r) = do
   let field = parseField r
   valid  <- field 0 numeric
   offset <- field 1 numeric
-  name   <- field 2 cstring
-  return (addFNEntry valid offset name vs)
+  case length (recordFields r) of
+    2 -> return (addFwdFNEntry valid offset vs)
+    3 -> do
+      name <- field 2 cstring
+      return (addFNEntry valid offset name vs)
+    _ -> fail "unexpected number of parameters to FNENTRY"
 
 parseValueSymbolTableBlockEntry vs (abbrevDef -> Just _) =
   -- skip abbreviation definitions, they're already resolved
