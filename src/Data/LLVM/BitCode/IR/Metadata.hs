@@ -804,7 +804,7 @@ parseMetadataEntry _ _ pm (abbrevDef -> Just _) =
   return pm
 
 parseMetadataEntry _ _ _ r =
-  fail ("unexpected: " ++ show r)
+  fail ("unexpected metadata entry: " ++ show r)
 
 parseAttachment :: Record -> Int -> Parse [(PKindMd,PValMd)]
 parseAttachment r l = loop (length (recordFields r) - 1) []

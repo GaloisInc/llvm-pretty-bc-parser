@@ -66,6 +66,18 @@ operandBundleTagsBlockId = fmap blockEntries . hasBlockId 21 <=< block
 metadataKindBlockId :: Match Entry [Entry]
 metadataKindBlockId  = fmap blockEntries . hasBlockId 22 <=< block
 
+strtabBlockId :: Match Entry [Entry]
+strtabBlockId  = fmap blockEntries . hasBlockId 23 <=< block
+
+ltoSummaryBlockId :: Match Entry [Entry]
+ltoSummaryBlockId  = fmap blockEntries . hasBlockId 24 <=< block
+
+symtabBlockId :: Match Entry [Entry]
+symtabBlockId  = fmap blockEntries . hasBlockId 25 <=< block
+
+syncScopeNamesBlockId :: Match Entry [Entry]
+syncScopeNamesBlockId  = fmap blockEntries . hasBlockId 26 <=< block
+
 -- Module Codes ----------------------------------------------------------------
 
 -- | MODULE_CODE_VERSION

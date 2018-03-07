@@ -209,6 +209,7 @@ parseModuleBlockEntry pm (moduleCodeVersion -> Just r) = do
   case version :: Int of
     0 -> setRelIds False  -- Absolute value ids in LLVM <= 3.2
     1 -> setRelIds True   -- Relative value ids in LLVM >= 3.3
+    2 -> setRelIds True   -- Relative value ids in LLVM >= 5.0
     _ -> fail ("unsupported version id: " ++ show version)
 
   return pm
@@ -285,8 +286,25 @@ parseModuleBlockEntry pm (metadataKindBlockId -> Just es) = label "METADATA_KIND
       Nothing -> fail "Can't parse metadata kind block entry."
   return pm
 
+parseModuleBlockEntry _pm (strtabBlockId -> Just _) =
+  label "STRTAB_BLOCK_ID" $ do
+    fail "STRTAB_BLOCK_ID unsupported"
+
+parseModuleBlockEntry _pm (ltoSummaryBlockId -> Just _) =
+  label "FULL_LTO_GLOBALVAL_SUMMARY_BLOCK_ID" $ do
+    fail "FULL_LTO_GLOBALVAL_SUMMARY_BLOCK_ID unsupported"
+
+parseModuleBlockEntry _pm (symtabBlockId -> Just _) =
+  label "SYMTAB_BLOCK_ID" $ do
+    fail "SYMTAB_BLOCK_ID unsupported"
+
+parseModuleBlockEntry pm (syncScopeNamesBlockId -> Just _) =
+  label "SYNC_SCOPE_NAMES_BLOCK_ID" $ do
+    -- TODO: record this information somewhere
+    return pm
+
 parseModuleBlockEntry _ e =
-  fail ("unexpected: " ++ show e)
+  fail ("unexpected module block entry: " ++ show e)
 
 
 parseFunProto :: Record -> PartialModule -> Parse PartialModule
