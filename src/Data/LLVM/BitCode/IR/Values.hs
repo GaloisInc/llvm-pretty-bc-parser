@@ -118,6 +118,7 @@ parseValueSymbolTableBlockEntry :: ValueSymtab -> Entry -> Parse ValueSymtab
 
 parseValueSymbolTableBlockEntry vs (vstCodeEntry -> Just r) = do
   -- VST_ENTRY: [valid, namechar x N]
+  -- TODO: fail if version >= 2? These aren't supposed to be around anymore.
   let field = parseField r
   valid <- field 0 numeric
   name  <- field 1 cstring
@@ -125,6 +126,7 @@ parseValueSymbolTableBlockEntry vs (vstCodeEntry -> Just r) = do
 
 parseValueSymbolTableBlockEntry vs (vstCodeBBEntry -> Just r) = do
   -- VST_BBENTRY: [bbid, namechar x N]
+  -- TODO: fail if version >= 2? These aren't supposed to be around anymore.
   let field = parseField r
   bbid <- field 0 numeric
   name <- field 1 cstring

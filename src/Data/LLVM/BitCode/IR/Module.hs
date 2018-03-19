@@ -206,6 +206,7 @@ parseModuleBlockEntry pm (moduleCodeVersion -> Just r) = do
   -- please see:
   -- http://llvm.org/docs/BitCodeFormat.html#module-code-version-record
   version <- parseField r 0 numeric
+  setModVersion version
   case version :: Int of
     0 -> setRelIds False  -- Absolute value ids in LLVM <= 3.2
     1 -> setRelIds True   -- Relative value ids in LLVM >= 3.3
@@ -221,6 +222,8 @@ parseModuleBlockEntry pm (moduleCodeSectionname -> Just r) = do
 parseModuleBlockEntry pm (moduleCodeComdat -> Just r) = do
   -- MODULE_CODE_COMDAT
   when (length (recordFields r) < 2) (fail "Invalid record (MODULE_CODE_COMDAT)")
+  v <- getModVersion
+  when (v >= 2) (fail "COMDAT not yet supported in LLVM bitcode version 2")
   kindVal <- parseField r 0 numeric
   name <- UTF8.decode <$> parseFields r 2 char
   kind <- case kindVal :: Int of
@@ -286,17 +289,19 @@ parseModuleBlockEntry pm (metadataKindBlockId -> Just es) = label "METADATA_KIND
       Nothing -> fail "Can't parse metadata kind block entry."
   return pm
 
-parseModuleBlockEntry _pm (strtabBlockId -> Just _) =
+parseModuleBlockEntry pm (strtabBlockId -> Just [strtabBlobId -> Just r]) =
   label "STRTAB_BLOCK_ID" $ do
-    fail "STRTAB_BLOCK_ID unsupported"
+    bs <- mkStrtab <$> parseField r 0 fieldBlob
+    return (fixupStrtabReferences bs pm)
 
 parseModuleBlockEntry _pm (ltoSummaryBlockId -> Just _) =
   label "FULL_LTO_GLOBALVAL_SUMMARY_BLOCK_ID" $ do
     fail "FULL_LTO_GLOBALVAL_SUMMARY_BLOCK_ID unsupported"
 
-parseModuleBlockEntry _pm (symtabBlockId -> Just _) =
+parseModuleBlockEntry pm (symtabBlockId -> Just [symtabBlobId -> Just r]) =
   label "SYMTAB_BLOCK_ID" $ do
-    fail "SYMTAB_BLOCK_ID unsupported"
+    bs <- {- mkSymtab <$> -} parseField r 0 fieldBlob
+    return pm -- TODO: (fixupSymtabReferences bs pm)
 
 parseModuleBlockEntry pm (syncScopeNamesBlockId -> Just _) =
   label "SYNC_SCOPE_NAMES_BLOCK_ID" $ do
@@ -306,10 +311,27 @@ parseModuleBlockEntry pm (syncScopeNamesBlockId -> Just _) =
 parseModuleBlockEntry _ e =
   fail ("unexpected module block entry: " ++ show e)
 
+fixupStrtabReferences :: StringTable -> PartialModule -> PartialModule
+fixupStrtabReferences st pm =
+  pm { partialAliases = fmap fixupAlias (partialAliases pm)
+     , partialDeclares = fmap fixupDeclare (partialDeclares pm)
+     , partialDefines = fmap fixupDefine (partialDefines pm)
+     , partialGlobals = fmap fixupGlobal (partialGlobals pm)
+     }
+  where
+    fixupAlias pa = pa { paName = resolveStrtabSymbol st (paName pa) }
+    fixupDeclare pp = pp { protoSym = resolveStrtabSymbol st (protoSym pp) }
+    fixupDefine pd = pd { partialName = resolveStrtabSymbol st (partialName pd) }
+    fixupGlobal pg = pg { pgSym = resolveStrtabSymbol st (pgSym pg) }
+
+--fixupSymtabReferences :: SymbolTable -> PartialModule -> PartialModule
+--fixupSymtabReferences _st pm = pm -- TODO
 
 parseFunProto :: Record -> PartialModule -> Parse PartialModule
 parseFunProto r pm = label "FUNCTION" $ do
-  let field = parseField r
+  ix   <- nextValueId
+  (name, offset) <- oldOrStrtabName ix r
+  let field i = parseField r (i + offset)
   funTy   <- getType =<< field 0 numeric
   let ty = case funTy of
              PtrTo _  -> funTy
@@ -332,9 +354,7 @@ parseFunProto r pm = label "FUNCTION" $ do
        else return Nothing
 
   -- push the function type
-  ix   <- nextValueId
-  name <- entryName ix
-  _    <- pushValue (Typed ty (ValSymbol (Symbol name)))
+  _    <- pushPartialSymbol (Typed ty name)
   let lkMb t x
        | Seq.length t > x = Just (Seq.index t x)
        | otherwise        = Nothing
@@ -350,7 +370,7 @@ parseFunProto r pm = label "FUNCTION" $ do
              guard (link /= External)
              return link
         , protoGC    = Nothing
-        , protoName  = name
+        , protoSym   = name
         , protoIndex = ix
         , protoSect  = section
         , protoComdat = comdat

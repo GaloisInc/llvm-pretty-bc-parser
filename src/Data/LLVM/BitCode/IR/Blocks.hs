@@ -139,3 +139,9 @@ moduleCodeHash = hasRecordCode 17 <=< fromEntry
 
 moduleCodeIFunc :: Match Entry Record
 moduleCodeIFunc = hasRecordCode 18 <=< fromEntry
+
+strtabBlobId :: Match Entry Record
+strtabBlobId = hasRecordCode 1 <=< fromEntry
+
+symtabBlobId :: Match Entry Record
+symtabBlobId = hasRecordCode 1 <=< fromEntry

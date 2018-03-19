@@ -21,7 +21,7 @@ import Data.Word (Word32)
 type GlobalList = Seq.Seq PartialGlobal
 
 data PartialGlobal = PartialGlobal
-  { pgSym     :: Symbol
+  { pgSym     :: PartialSymbol
   , pgAttrs   :: GlobalAttrs
   , pgType    :: Type
   , pgValueIx :: Maybe Int
@@ -35,7 +35,8 @@ data PartialGlobal = PartialGlobal
 -- ]
 parseGlobalVar :: Int -> Record -> Parse PartialGlobal
 parseGlobalVar n r = label "GLOBALVAR" $ do
-  let field = parseField r
+  (name, offset) <- oldOrStrtabName n r
+  let field i = parseField r (i + offset)
   ptrty   <- getType =<< field 0 numeric
   mask    <-             field 1 numeric
   let isconst    = testBit (mask :: Word32) 0
@@ -52,10 +53,9 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
 
   ty <- if explicitTy
            then return ptrty
-           else elimPtrTo ptrty `mplus` fail "Invalid type for value"
+           else elimPtrTo ptrty `mplus` (fail $ "Invalid type for value: " ++ show ptrty)
 
-  name    <- entryName n
-  _       <- pushValue (Typed (PtrTo ty) (ValSymbol (Symbol name)))
+  _       <- pushPartialSymbol (Typed (PtrTo ty) name)
   let valid | initid == 0 = Nothing
             | otherwise   = Just (initid - 1)
       attrs = GlobalAttrs
@@ -65,7 +65,7 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
         }
 
   return PartialGlobal
-    { pgSym     = Symbol name
+    { pgSym     = name
     , pgAttrs   = attrs
     , pgType    = ty
     , pgValueIx = valid
@@ -87,7 +87,10 @@ finalizeGlobal pg = case pgValueIx pg of
   where
   mkGlobal mval =
     do md <- mapM (relabel (const requireBbEntryName)) (pgMd pg)
-       return Global { globalSym   = pgSym pg
+       name <- case pgSym pg of
+                 ResolvedSymbol sym -> return sym
+                 _ -> fail "unresolved symbol when finalizing global"
+       return Global { globalSym   = name
                      , globalAttrs = pgAttrs pg
                      , globalType  = pgType pg
                      , globalValue = mval

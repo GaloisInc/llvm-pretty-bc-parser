@@ -1,9 +1,11 @@
+{-# LANGUAGE MultiWayIf #-}
 module Data.LLVM.BitCode.Record where
 
 import Data.LLVM.BitCode.Bitstream
 import Data.LLVM.BitCode.BitString hiding (drop,take)
 import Data.LLVM.BitCode.Match
 import Data.LLVM.BitCode.Parse
+import Text.LLVM.AST
 
 import Data.Bits (Bits,testBit,shiftR,bit)
 import Data.Int  (Int64)
@@ -162,3 +164,18 @@ string  = fmap UTF8.decode . fieldArray char
 
 cstring :: Match Field String
 cstring  = fmap UTF8.decode . fieldArray (fieldChar6 ||| char)
+
+-- | Lookup the name at the given field index if using an old bitcode
+-- version, or in the string table if using a new bitcode version.
+-- Returns the name and the offset into the record to use for further
+-- queries.
+oldOrStrtabName :: Int -> Record -> Parse (PartialSymbol, Int)
+oldOrStrtabName n r = do
+  v <- getModVersion
+  if | v >= 2 -> do
+        name <- entryName n
+        return (ResolvedSymbol (Symbol name), 0)
+     | otherwise -> do
+        offset <- parseField r 0 numeric
+        len <- parseField r 1 numeric
+        return (StrtabSymbol offset len, 2)

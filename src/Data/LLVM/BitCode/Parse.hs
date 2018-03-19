@@ -17,7 +17,10 @@ import Data.Maybe (fromMaybe)
 import Data.Typeable (Typeable)
 import Data.Word ( Word32 )
 import MonadLib
+import Text.PrettyPrint.HughesPJ
+import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import qualified Control.Exception as X
+import qualified Data.ByteString as BS
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 
@@ -87,6 +90,7 @@ data ParseState = ParseState
   , psNextTypeId    :: !Int
   , psLastLoc       :: Maybe PDebugLoc
   , psKinds         :: !KindTable
+  , psModVersion    :: !Int
   } deriving (Show)
 
 -- | The initial parsing state.
@@ -103,6 +107,7 @@ emptyParseState  = ParseState
   , psNextTypeId    = 0
   , psLastLoc       = Nothing
   , psKinds         = emptyKindTable
+  , psModVersion    = 0
   }
 
 -- | The next implicit result id.
@@ -135,6 +140,15 @@ getLastLoc  = Parse $ do
   case psLastLoc ps of
     Just loc -> return loc
     Nothing  -> fail "No last location available"
+
+setModVersion :: Int -> Parse ()
+setModVersion v = Parse $ do
+  ps <- get
+  set $! ps { psModVersion = v }
+
+getModVersion :: Parse Int
+getModVersion = Parse $ do
+  psModVersion <$> get
 
 -- | Sort of a hack to preserve state between function body parses.  It would
 -- really be nice to separate this into a different monad, that could just run
@@ -238,6 +252,7 @@ type PInstr = Instr' Int
 data ValueTable = ValueTable
   { valueNextId  :: !Int
   , valueEntries :: Map.Map Int (Typed PValue)
+  , symbolEntries :: Map.Map Int (Typed PartialSymbol)
   , valueRelIds  :: Bool
   } deriving (Show)
 
@@ -245,6 +260,7 @@ emptyValueTable :: Bool -> ValueTable
 emptyValueTable rel = ValueTable
   { valueNextId  = 0
   , valueEntries = Map.empty
+  , symbolEntries = Map.empty
   , valueRelIds  = rel
   }
 
@@ -259,12 +275,31 @@ addValue' tv vs = (valueNextId vs,vs')
     , valueEntries = Map.insert (valueNextId vs) tv (valueEntries vs)
     }
 
+addPartialSymbol :: Typed PartialSymbol -> ValueTable -> ValueTable
+addPartialSymbol ps vs = snd (addPartialSymbol' ps vs)
+
+addPartialSymbol' :: Typed PartialSymbol -> ValueTable -> (Int,ValueTable)
+addPartialSymbol' ps vs = (valueNextId vs,vs')
+  where
+  vs' = vs
+    { valueNextId  = valueNextId vs + 1
+    , symbolEntries = Map.insert (valueNextId vs) ps (symbolEntries vs)
+    }
+
 -- | Push a value into the value table, and return its index.
 pushValue :: Typed PValue -> Parse Int
 pushValue tv = Parse $ do
   ps <- get
   let vt = psValueTable ps
   set ps { psValueTable = addValue tv vt }
+  return (valueNextId vt)
+
+-- | Push a partial symbol into the value table, and return its index.
+pushPartialSymbol :: Typed PartialSymbol -> Parse Int
+pushPartialSymbol ts = Parse $ do
+  ps <- get
+  let vt = psValueTable ps
+  set ps { psValueTable = addPartialSymbol ts vt }
   return (valueNextId vt)
 
 -- | Get the index for the next value.
@@ -288,6 +323,7 @@ translateValueId vt n | valueRelIds vt = fromIntegral adjusted
   adjusted  = fromIntegral (valueNextId vt - n)
 
 -- | Lookup an absolute address in the value table.
+-- TODO: look in partial symbols table, too
 lookupValueTableAbs :: Int -> ValueTable -> Maybe (Typed PValue)
 lookupValueTableAbs n values = Map.lookup n (valueEntries values)
 
@@ -392,7 +428,7 @@ data FunProto = FunProto
   { protoType  :: Type
   , protoLinkage :: Maybe Linkage
   , protoGC    :: Maybe GC
-  , protoName  :: String
+  , protoSym   :: PartialSymbol
   , protoIndex :: Int
   , protoSect  :: Maybe String
   , protoComdat :: Maybe String
@@ -583,7 +619,6 @@ requireBbEntryName n = do
     Just l  -> return l
     Nothing -> fail ("basic block " ++ show n ++ " has no id")
 
-
 -- Type Symbol Tables ----------------------------------------------------------
 
 data TypeSymtab = TypeSymtab
@@ -639,3 +674,29 @@ getKind kind = Parse $ do
   case Map.lookup kind ktNames of
     Just name -> return name
     Nothing   -> fail ("Unknown kind id: " ++ show kind ++ "\nKind table: " ++ show (psKinds ps))
+
+-- Partial Symbols -------------------------------------------------------------
+
+newtype StringTable = Strtab BS.ByteString
+--newtype SymbolTable = Symtab BS.ByteString
+
+mkStrtab :: BS.ByteString -> StringTable
+mkStrtab = Strtab
+
+--mkSymtab :: BS.ByteString -> SymbolTable
+--mkSymtab = Symtab
+
+data PartialSymbol
+  = StrtabSymbol Int Int
+  | ResolvedSymbol Symbol
+  deriving (Eq, Ord, Show)
+
+resolveStrtabSymbol :: StringTable -> PartialSymbol -> PartialSymbol
+resolveStrtabSymbol (Strtab bs) (StrtabSymbol start len) =
+  ResolvedSymbol $ Symbol $ UTF8.decode $ BS.unpack $ BS.take len $ BS.drop start bs
+resolveStrtabSymbol _ s@(ResolvedSymbol _) = s
+
+ppPartialSymbol :: PartialSymbol -> Doc
+ppPartialSymbol (ResolvedSymbol sym) = ppSymbol sym
+ppPartialSymbol (StrtabSymbol start len) =
+  text "strtab@" <> text (show (start, len))
