@@ -172,7 +172,7 @@ cstring  = fmap UTF8.decode . fieldArray (fieldChar6 ||| char)
 oldOrStrtabName :: Int -> Record -> Parse (PartialSymbol, Int)
 oldOrStrtabName n r = do
   v <- getModVersion
-  if | v >= 2 -> do
+  if | v < 2 -> do
         name <- entryName n
         return (ResolvedSymbol (Symbol name), 0)
      | otherwise -> do
