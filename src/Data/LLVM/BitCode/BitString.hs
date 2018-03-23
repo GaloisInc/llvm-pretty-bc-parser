@@ -11,6 +11,7 @@ import Prelude hiding (take,drop,splitAt)
 
 import Data.Bits ((.&.),(.|.),shiftL,shiftR,bit)
 import Data.Monoid (Monoid(..))
+import Data.Semigroup
 import Numeric (showIntAtBase)
 
 
@@ -22,10 +23,13 @@ data BitString = BitString
 instance Eq BitString where
   BitString n i == BitString m j = n == m && i == j
 
+instance Semigroup BitString where
+  BitString n i <> BitString m j =
+    BitString (n+m) (i .|. (j `shiftL` n))
+
 instance Monoid BitString where
   mempty = BitString 0 0
-  mappend (BitString n i) (BitString m j) =
-    BitString (n+m) (i .|. (j `shiftL` n))
+  mappend = (<>)
 
 -- | Given a number of bits to take, and an @Integer@, create a @BitString@.
 toBitString :: Int -> Integer -> BitString
