@@ -292,6 +292,7 @@ parseModuleBlockEntry pm (metadataKindBlockId -> Just es) = label "METADATA_KIND
 parseModuleBlockEntry pm (strtabBlockId -> Just [strtabBlobId -> Just r]) =
   label "STRTAB_BLOCK_ID" $ do
     bs <- mkStrtab <$> parseField r 0 fieldBlob
+    fixupStrtabValueReferences bs
     return (fixupStrtabReferences bs pm)
 
 parseModuleBlockEntry _pm (ltoSummaryBlockId -> Just _) =
@@ -323,6 +324,9 @@ fixupStrtabReferences st pm =
     fixupDeclare pp = pp { protoSym = resolveStrtabSymbol st (protoSym pp) }
     fixupDefine pd = pd { partialName = resolveStrtabSymbol st (partialName pd) }
     fixupGlobal pg = pg { pgSym = resolveStrtabSymbol st (pgSym pg) }
+
+fixupStrtabValueReferences :: StringTable -> Parse ()
+fixupStrtabValueReferences st = return () -- TODO: fixup all string table references in value table
 
 --fixupSymtabReferences :: SymbolTable -> PartialModule -> PartialModule
 --fixupSymtabReferences _st pm = pm -- TODO

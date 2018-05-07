@@ -225,7 +225,6 @@ unnamedEntries :: PartialMetadata -> ([PartialUnnamedMd],[PartialUnnamedMd])
 unnamedEntries pm = foldl resolveNode ([],[]) (Map.toList (mtNodes mt))
   where
   mt = pmEntries pm
-  es = valueEntries (mtEntries mt)
 
   resolveNode (gs,fs) (ref,(fnLocal,d,ix)) = case lookupNode ref d ix of
     Just pum | fnLocal   -> (gs,pum:fs)
@@ -236,7 +235,7 @@ unnamedEntries pm = foldl resolveNode ([],[]) (Map.toList (mtNodes mt))
     Nothing              -> (gs,fs)
 
   lookupNode ref d ix = do
-    Typed { typedValue = ValMd v } <- Map.lookup ref es
+    Typed { typedValue = ValMd v } <- lookupValueTableAbs ref (mtEntries mt)
     return PartialUnnamedMd
       { pumIndex  = ix
       , pumValues = v

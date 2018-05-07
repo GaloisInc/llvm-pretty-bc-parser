@@ -253,7 +253,7 @@ type PInstr = Instr' Int
 data ValueTable = ValueTable
   { valueNextId  :: !Int
   , valueEntries :: Map.Map Int (Typed PValue)
-  , symbolEntries :: Map.Map Int (Typed PartialSymbol)
+  , strtabEntries :: Map.Map Int (Int, Int)
   , valueRelIds  :: Bool
   } deriving (Show)
 
@@ -261,7 +261,7 @@ emptyValueTable :: Bool -> ValueTable
 emptyValueTable rel = ValueTable
   { valueNextId  = 0
   , valueEntries = Map.empty
-  , symbolEntries = Map.empty
+  , strtabEntries = Map.empty
   , valueRelIds  = rel
   }
 
@@ -282,9 +282,17 @@ addPartialSymbol ps vs = snd (addPartialSymbol' ps vs)
 addPartialSymbol' :: Typed PartialSymbol -> ValueTable -> (Int,ValueTable)
 addPartialSymbol' ps vs = (valueNextId vs,vs')
   where
+  (v, se) = case ps of
+              Typed t (ResolvedSymbol s) -> (Typed t (ValSymbol s), se)
+              Typed t (StrtabSymbol o s) ->
+                ( Typed t (ValSymbol (strtabSymbol o s))
+                , Map.insert (valueNextId vs) (o, s) (strtabEntries vs)
+                )
+  strtabSymbol o s = Symbol ("strtab:" ++ show o ++ "-" ++ show s)
   vs' = vs
     { valueNextId  = valueNextId vs + 1
-    , symbolEntries = Map.insert (valueNextId vs) ps (symbolEntries vs)
+    , valueEntries = Map.insert (valueNextId vs) v (valueEntries vs)
+    , strtabEntries = se
     }
 
 -- | Push a value into the value table, and return its index.
@@ -324,7 +332,6 @@ translateValueId vt n | valueRelIds vt = fromIntegral adjusted
   adjusted  = fromIntegral (valueNextId vt - n)
 
 -- | Lookup an absolute address in the value table.
--- TODO: look in partial symbols table, too
 lookupValueTableAbs :: Int -> ValueTable -> Maybe (Typed PValue)
 lookupValueTableAbs n values = Map.lookup n (valueEntries values)
 
@@ -412,7 +419,7 @@ resolveMd ix ps = nodeRef `mplus` mdValue
   where
   reference = Typed (PrimType Metadata) . ValMd . ValMdRef
   nodeRef   = reference `fmap` Map.lookup ix (psMdRefs ps)
-  mdValue   = Map.lookup ix (valueEntries (psMdTable ps))
+  mdValue   = lookupValueTableAbs ix (psMdTable ps)
 
 
 type MdRefTable = Map.Map Int Int
