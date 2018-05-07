@@ -14,6 +14,7 @@ import Text.LLVM.PP
 import Control.Applicative (Alternative(..))
 import Control.Monad.Fix (MonadFix)
 import Data.Maybe (fromMaybe)
+import Data.Semigroup
 import Data.Typeable (Typeable)
 import Data.Word ( Word32 )
 import MonadLib
@@ -481,16 +482,19 @@ data Symtab = Symtab
   , symTypeSymtab  :: TypeSymtab
   } deriving (Show)
 
+instance Semigroup Symtab where
+  l <> r = Symtab
+    { symValueSymtab = symValueSymtab l `Map.union` symValueSymtab r
+    , symTypeSymtab  = symTypeSymtab  l <> symTypeSymtab  r
+    }
+
 instance Monoid Symtab where
   mempty = Symtab
     { symValueSymtab = emptyValueSymtab
     , symTypeSymtab  = mempty
     }
 
-  mappend l r = Symtab
-    { symValueSymtab = symValueSymtab l `Map.union` symValueSymtab r
-    , symTypeSymtab  = symTypeSymtab  l `mappend`   symTypeSymtab  r
-    }
+  mappend = (<>)
 
 withSymtab :: Symtab -> Parse a -> Parse a
 withSymtab symtab body = Parse $ do
@@ -626,16 +630,19 @@ data TypeSymtab = TypeSymtab
   , tsByName :: Map.Map Ident Int
   } deriving Show
 
+instance Semigroup TypeSymtab where
+  l <> r = TypeSymtab
+    { tsById   = tsById   l `Map.union` tsById r
+    , tsByName = tsByName l `Map.union` tsByName r
+    }
+
 instance Monoid TypeSymtab where
   mempty = TypeSymtab
     { tsById   = Map.empty
     , tsByName = Map.empty
     }
 
-  mappend l r = TypeSymtab
-    { tsById   = tsById   l `Map.union` tsById r
-    , tsByName = tsByName l `Map.union` tsByName r
-    }
+  mappend = (<>)
 
 addTypeSymbol :: Int -> Ident -> TypeSymtab -> TypeSymtab
 addTypeSymbol ix n ts = ts
