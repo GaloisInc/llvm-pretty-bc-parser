@@ -18,7 +18,7 @@ import Data.Semigroup
 import Data.Typeable (Typeable)
 import Data.Word ( Word32 )
 import MonadLib
-import Text.PrettyPrint.HughesPJ
+import Text.PrettyPrint.HughesPJ hiding ((<>))
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import qualified Control.Exception as X
 import qualified Data.ByteString as BS
