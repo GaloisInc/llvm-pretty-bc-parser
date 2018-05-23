@@ -289,20 +289,17 @@ parseModuleBlockEntry pm (metadataKindBlockId -> Just es) = label "METADATA_KIND
       Nothing -> fail "Can't parse metadata kind block entry."
   return pm
 
-parseModuleBlockEntry pm (strtabBlockId -> Just [strtabBlobId -> Just r]) =
-  label "STRTAB_BLOCK_ID" $ do
-    bs <- mkStrtab <$> parseField r 0 fieldBlob
-    fixupStrtabValueReferences bs
-    return (fixupStrtabReferences bs pm)
+parseModuleBlockEntry pm (strtabBlockId -> Just _) =
+  -- Handled already.
+  return pm
 
 parseModuleBlockEntry _pm (ltoSummaryBlockId -> Just _) =
   label "FULL_LTO_GLOBALVAL_SUMMARY_BLOCK_ID" $ do
     fail "FULL_LTO_GLOBALVAL_SUMMARY_BLOCK_ID unsupported"
 
 parseModuleBlockEntry pm (symtabBlockId -> Just [symtabBlobId -> Just r]) =
-  label "SYMTAB_BLOCK_ID" $ do
-    bs <- {- mkSymtab <$> -} parseField r 0 fieldBlob
-    return pm -- TODO: (fixupSymtabReferences bs pm)
+  -- Handled already
+  return pm
 
 parseModuleBlockEntry pm (syncScopeNamesBlockId -> Just _) =
   label "SYNC_SCOPE_NAMES_BLOCK_ID" $ do
@@ -311,25 +308,6 @@ parseModuleBlockEntry pm (syncScopeNamesBlockId -> Just _) =
 
 parseModuleBlockEntry _ e =
   fail ("unexpected module block entry: " ++ show e)
-
-fixupStrtabReferences :: StringTable -> PartialModule -> PartialModule
-fixupStrtabReferences st pm =
-  pm { partialAliases = fmap fixupAlias (partialAliases pm)
-     , partialDeclares = fmap fixupDeclare (partialDeclares pm)
-     , partialDefines = fmap fixupDefine (partialDefines pm)
-     , partialGlobals = fmap fixupGlobal (partialGlobals pm)
-     }
-  where
-    fixupAlias pa = pa { paName = resolveStrtabSymbol st (paName pa) }
-    fixupDeclare pp = pp { protoSym = resolveStrtabSymbol st (protoSym pp) }
-    fixupDefine pd = pd { partialName = resolveStrtabSymbol st (partialName pd) }
-    fixupGlobal pg = pg { pgSym = resolveStrtabSymbol st (pgSym pg) }
-
-fixupStrtabValueReferences :: StringTable -> Parse ()
-fixupStrtabValueReferences st = return () -- TODO: fixup all string table references in value table
-
---fixupSymtabReferences :: SymbolTable -> PartialModule -> PartialModule
---fixupSymtabReferences _st pm = pm -- TODO
 
 parseFunProto :: Record -> PartialModule -> Parse PartialModule
 parseFunProto r pm = label "FUNCTION" $ do
@@ -358,7 +336,7 @@ parseFunProto r pm = label "FUNCTION" $ do
        else return Nothing
 
   -- push the function type
-  _    <- pushPartialSymbol (Typed ty name)
+  _    <- pushValue (Typed ty (ValSymbol name))
   let lkMb t x
        | Seq.length t > x = Just (Seq.index t x)
        | otherwise        = Nothing

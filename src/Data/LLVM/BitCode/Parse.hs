@@ -83,6 +83,7 @@ data ParseState = ParseState
   { psTypeTable     :: TypeTable
   , psTypeTableSize :: !Int
   , psValueTable    :: ValueTable
+  , psStringTable   :: Maybe StringTable
   , psMdTable       :: ValueTable
   , psMdRefs        :: MdRefTable
   , psFunProtos     :: Seq.Seq FunProto
@@ -100,6 +101,7 @@ emptyParseState  = ParseState
   { psTypeTable     = Map.empty
   , psTypeTableSize = 0
   , psValueTable    = emptyValueTable False
+  , psStringTable   = Nothing
   , psMdTable       = emptyValueTable False
   , psMdRefs        = Map.empty
   , psFunProtos     = Seq.empty
@@ -242,6 +244,13 @@ getType' ref = do
 isTypeTableEmpty :: Parse Bool
 isTypeTableEmpty  = Parse (Map.null . psTypeTable <$> get)
 
+setStringTable :: StringTable -> Parse ()
+setStringTable st = Parse $ do
+  ps <- get
+  set ps { psStringTable = Just st }
+
+getStringTable :: Parse (Maybe StringTable)
+getStringTable = Parse (psStringTable <$> get)
 
 -- Value Tables ----------------------------------------------------------------
 
@@ -276,39 +285,12 @@ addValue' tv vs = (valueNextId vs,vs')
     , valueEntries = Map.insert (valueNextId vs) tv (valueEntries vs)
     }
 
-addPartialSymbol :: Typed PartialSymbol -> ValueTable -> ValueTable
-addPartialSymbol ps vs = snd (addPartialSymbol' ps vs)
-
-addPartialSymbol' :: Typed PartialSymbol -> ValueTable -> (Int,ValueTable)
-addPartialSymbol' ps vs = (valueNextId vs,vs')
-  where
-  (v, se) = case ps of
-              Typed t (ResolvedSymbol s) -> (Typed t (ValSymbol s), se)
-              Typed t (StrtabSymbol o s) ->
-                ( Typed t (ValSymbol (strtabSymbol o s))
-                , Map.insert (valueNextId vs) (o, s) (strtabEntries vs)
-                )
-  strtabSymbol o s = Symbol ("strtab:" ++ show o ++ "-" ++ show s)
-  vs' = vs
-    { valueNextId  = valueNextId vs + 1
-    , valueEntries = Map.insert (valueNextId vs) v (valueEntries vs)
-    , strtabEntries = se
-    }
-
 -- | Push a value into the value table, and return its index.
 pushValue :: Typed PValue -> Parse Int
 pushValue tv = Parse $ do
   ps <- get
   let vt = psValueTable ps
   set ps { psValueTable = addValue tv vt }
-  return (valueNextId vt)
-
--- | Push a partial symbol into the value table, and return its index.
-pushPartialSymbol :: Typed PartialSymbol -> Parse Int
-pushPartialSymbol ts = Parse $ do
-  ps <- get
-  let vt = psValueTable ps
-  set ps { psValueTable = addPartialSymbol ts vt }
   return (valueNextId vt)
 
 -- | Get the index for the next value.
@@ -436,7 +418,7 @@ data FunProto = FunProto
   { protoType  :: Type
   , protoLinkage :: Maybe Linkage
   , protoGC    :: Maybe GC
-  , protoSym   :: PartialSymbol
+  , protoSym   :: Symbol
   , protoIndex :: Int
   , protoSect  :: Maybe String
   , protoComdat :: Maybe String
@@ -692,6 +674,7 @@ getKind kind = Parse $ do
 -- Partial Symbols -------------------------------------------------------------
 
 newtype StringTable = Strtab BS.ByteString
+  deriving (Show)
 --newtype SymbolTable = Symtab BS.ByteString
 
 mkStrtab :: BS.ByteString -> StringTable
@@ -700,17 +683,6 @@ mkStrtab = Strtab
 --mkSymtab :: BS.ByteString -> SymbolTable
 --mkSymtab = Symtab
 
-data PartialSymbol
-  = StrtabSymbol Int Int
-  | ResolvedSymbol Symbol
-  deriving (Eq, Ord, Show)
-
-resolveStrtabSymbol :: StringTable -> PartialSymbol -> PartialSymbol
-resolveStrtabSymbol (Strtab bs) (StrtabSymbol start len) =
-  ResolvedSymbol $ Symbol $ UTF8.decode $ BS.unpack $ BS.take len $ BS.drop start bs
-resolveStrtabSymbol _ s@(ResolvedSymbol _) = s
-
-ppPartialSymbol :: PartialSymbol -> Doc
-ppPartialSymbol (ResolvedSymbol sym) = ppSymbol sym
-ppPartialSymbol (StrtabSymbol start len) =
-  text "strtab@" <> text (show (start, len))
+resolveStrtabSymbol :: StringTable -> Int -> Int -> Symbol
+resolveStrtabSymbol (Strtab bs) start len =
+  Symbol $ UTF8.decode $ BS.unpack $ BS.take len $ BS.drop start bs

@@ -21,7 +21,7 @@ import Data.Word (Word32)
 type GlobalList = Seq.Seq PartialGlobal
 
 data PartialGlobal = PartialGlobal
-  { pgSym     :: PartialSymbol
+  { pgSym     :: Symbol
   , pgAttrs   :: GlobalAttrs
   , pgType    :: Type
   , pgValueIx :: Maybe Int
@@ -55,7 +55,7 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
            then return ptrty
            else elimPtrTo ptrty `mplus` (fail $ "Invalid type for value: " ++ show ptrty)
 
-  _       <- pushPartialSymbol (Typed (PtrTo ty) name)
+  _       <- pushValue (Typed (PtrTo ty) (ValSymbol name))
   let valid | initid == 0 = Nothing
             | otherwise   = Just (initid - 1)
       attrs = GlobalAttrs
@@ -87,10 +87,7 @@ finalizeGlobal pg = case pgValueIx pg of
   where
   mkGlobal mval =
     do md <- mapM (relabel (const requireBbEntryName)) (pgMd pg)
-       name <- case pgSym pg of
-                 ResolvedSymbol sym -> return sym
-                 _ -> fail "unresolved symbol when finalizing global"
-       return Global { globalSym   = name
+       return Global { globalSym   = pgSym pg
                      , globalAttrs = pgAttrs pg
                      , globalType  = pgType pg
                      , globalValue = mval

@@ -33,7 +33,7 @@ import qualified Data.Traversable as T
 type AliasList = Seq.Seq PartialAlias
 
 data PartialAlias = PartialAlias
-  { paName   :: PartialSymbol
+  { paName   :: Symbol
   , paType   :: Type
   , paTarget :: !Word32
   } deriving Show
@@ -42,10 +42,10 @@ parseAliasOld :: Int -> Record -> Parse PartialAlias
 parseAliasOld n r = do
   sym <- entryName n
   let field = parseField r
-      name = ResolvedSymbol (Symbol sym)
+      name = Symbol sym
   ty  <- getType   =<< field 0 numeric
   tgt <-               field 1 numeric
-  _   <- pushPartialSymbol (Typed ty name)
+  _   <- pushValue (Typed ty (ValSymbol name))
   return PartialAlias
     { paName   = name
     , paType   = ty
@@ -64,7 +64,7 @@ parseAlias r = do
 
   -- XXX: is it the case that the alias type will always be a pointer to the
   -- aliasee?
-  _   <- pushPartialSymbol (Typed (PtrTo ty) name)
+  _   <- pushValue (Typed (PtrTo ty) (ValSymbol name))
 
   return PartialAlias
     { paName   = name
@@ -77,11 +77,8 @@ finalizePartialAlias pa = label "finalizePartialAlias" $ do
   -- aliases refer to absolute offsets
   tv  <- getFnValueById (paType pa) (fromIntegral (paTarget pa))
   tgt <- relabel (const requireBbEntryName) (typedValue tv)
-  name <- case paName pa of
-            ResolvedSymbol sym -> return sym
-            _ -> fail "unresolved symbol when finalizing alias"
   return GlobalAlias
-    { aliasName   = name
+    { aliasName   = paName pa
     , aliasType   = paType pa
     , aliasTarget = tgt
     }
@@ -93,16 +90,15 @@ type DeclareList = Seq.Seq FunProto
 
 -- | Turn a function prototype into a declaration.
 finalizeDeclare :: FunProto -> Parse Declare
-finalizeDeclare fp = case (protoType fp, protoSym fp) of
-  (PtrTo (FunTy ret args va), ResolvedSymbol sym) -> return Declare
+finalizeDeclare fp = case protoType fp of
+  PtrTo (FunTy ret args va) -> return Declare
     { decRetType = ret
-    , decName    = sym
+    , decName    = protoSym fp
     , decArgs    = args
     , decVarArgs = va
     , decAttrs   = []
     , decComdat  = protoComdat fp
     }
-  (_, StrtabSymbol _ _) -> fail "unresolved name on function prototype"
   _ -> fail "invalid type on function prototype"
 
 
@@ -117,7 +113,7 @@ data PartialDefine = PartialDefine
   , partialGC       :: Maybe GC
   , partialSection  :: Maybe String
   , partialRetType  :: Type
-  , partialName     :: PartialSymbol
+  , partialName     :: Symbol
   , partialArgs     :: [Typed Ident]
   , partialVarArgs  :: Bool
   , partialBody     :: BlockList
@@ -191,14 +187,14 @@ updateLastStmt f pd = case updatePartialBlock `mplus` updatePartialBody of
 
 
 
-type BlockLookup = PartialSymbol -> Int -> Parse BlockLabel
+type BlockLookup = Symbol -> Int -> Parse BlockLabel
 
 lookupBlockName :: DefineList -> BlockLookup
 lookupBlockName dl = lkp
   where
   syms = Map.fromList [ (partialName d, partialSymtab d) | d <- F.toList dl ]
   lkp fn bid = case Map.lookup fn syms of
-    Nothing -> fail ("symbol " ++ show (ppLLVM (ppPartialSymbol fn)) ++ " is not defined")
+    Nothing -> fail ("symbol " ++ show (ppLLVM (ppSymbol fn)) ++ " is not defined")
     Just st -> case Map.lookup (SymTabBBEntry bid) st of
       Nothing -> fail ("block id " ++ show bid ++ " does not exist")
       Just sn -> return (mkBlockLabel sn)
@@ -212,15 +208,12 @@ finalizePartialDefine lkp pd =
   withValueSymtab (partialSymtab pd) $ do
     body <- finalizeBody lkp (partialBody pd)
     md <- finalizeMetadata (partialMetadata pd)
-    name <- case partialName pd of
-              ResolvedSymbol sym -> return sym
-              _ -> fail "unresolved symbol when finalizing function definition"
     return Define
       { defLinkage  = partialLinkage pd
       , defGC       = partialGC pd
       , defAttrs    = []
       , defRetType  = partialRetType pd
-      , defName     = name
+      , defName     = partialName pd
       , defArgs     = partialArgs pd
       , defVarArgs  = partialVarArgs pd
       , defBody     = body
@@ -237,7 +230,7 @@ finalizeMetadata patt = Map.fromList <$> mapM f (Map.toList patt)
 resolveBlockLabel :: BlockLookup -> Maybe Symbol -> Int -> Parse BlockLabel
 resolveBlockLabel lkp mbSym = case mbSym of
   Nothing  -> requireBbEntryName
-  Just sym -> lkp (ResolvedSymbol sym)
+  Just sym -> lkp sym
 
 -- | Name the next result with either its symbol, or the next available
 -- anonymous result id.
@@ -339,7 +332,7 @@ parseFunctionBlock unnamedGlobals ents =
   -- pop the function prototype off of the internal stack
   proto <- popFunProto
 
-  label (show (ppPartialSymbol (protoSym proto))) $ withValueSymtab symtab $ do
+  label (show (ppSymbol (protoSym proto))) $ withValueSymtab symtab $ do
 
     -- generate the initial partial definition
     pd  <- emptyPartialDefine proto

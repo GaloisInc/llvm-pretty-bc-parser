@@ -169,7 +169,7 @@ updateMetadataTable :: (MetadataTable -> MetadataTable)
 updateMetadataTable f pm = pm { pmEntries = f (pmEntries pm) }
 
 addGlobalAttachments ::
-  PartialSymbol {- ^ name of the global to attach to ^ -} ->
+  Symbol {- ^ name of the global to attach to ^ -} ->
   (Map.Map KindMd PValMd) {- ^ metadata references to attach ^ -} ->
   (PartialMetadata -> PartialMetadata)
 addGlobalAttachments sym mds pm =
@@ -246,7 +246,7 @@ type InstrMdAttachments = Map.Map Int [(KindMd,PValMd)]
 
 type PKindMd = Int
 type PFnMdAttachments = Map.Map PKindMd PValMd
-type PGlobalAttachments = Map.Map PartialSymbol (Map.Map KindMd PValMd)
+type PGlobalAttachments = Map.Map Symbol (Map.Map KindMd PValMd)
 
 type ParsedMetadata =
   ( [NamedMd]
@@ -766,7 +766,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
     refs <- parseGlobalObjectAttachment mt r
 
-    return $! addGlobalAttachments (ResolvedSymbol sym) refs pm
+    return $! addGlobalAttachments sym refs pm
 
   37 -> label "METADATA_GLOBAL_VAR_EXPR" $ do
     when (length (recordFields r) /= 3)

@@ -169,13 +169,17 @@ cstring  = fmap UTF8.decode . fieldArray (fieldChar6 ||| char)
 -- version, or in the string table if using a new bitcode version.
 -- Returns the name and the offset into the record to use for further
 -- queries.
-oldOrStrtabName :: Int -> Record -> Parse (PartialSymbol, Int)
+oldOrStrtabName :: Int -> Record -> Parse (Symbol, Int)
 oldOrStrtabName n r = do
   v <- getModVersion
   if | v < 2 -> do
         name <- entryName n
-        return (ResolvedSymbol (Symbol name), 0)
+        return (Symbol name, 0)
      | otherwise -> do
-        offset <- parseField r 0 numeric
-        len <- parseField r 1 numeric
-        return (StrtabSymbol offset len, 2)
+        mst <- getStringTable
+        case mst of
+          Just st -> do
+            offset <- parseField r 0 numeric
+            len <- parseField r 1 numeric
+            return (resolveStrtabSymbol st offset len, 2)
+          Nothing -> fail "New-style name encountered with no string table."

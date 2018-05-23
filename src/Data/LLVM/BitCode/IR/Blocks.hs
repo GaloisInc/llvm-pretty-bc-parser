@@ -16,6 +16,7 @@ blockInfoBlockId  = fmap blockEntries . hasBlockId 0 <=< block
 
 -- Module Block Ids ------------------------------------------------------------
 
+-- | Block selector for the top-level module block.
 moduleBlockId :: Match Entry [Entry]
 moduleBlockId  = fmap blockEntries . hasBlockId 8 <=< block
 
