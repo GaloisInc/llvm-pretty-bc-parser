@@ -468,8 +468,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
   20 -> label "METADATA_COMPILE_UNIT" $ do
     let recordSize = length (recordFields r)
 
-    -- TODO: update this for llvm-4.0, which bumped the upper bound to 18
-    when (recordSize < 14 || recordSize > 18)
+    when (recordSize < 14 || recordSize > 19)
       (fail "Invalid record")
 
     ctx <- getContext

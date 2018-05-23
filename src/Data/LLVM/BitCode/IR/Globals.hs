@@ -44,10 +44,10 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
   initid  <-             field 2 numeric
   link    <-             field 3 linkage
 
-  mbAlign <- if length (recordFields r) > 4
+  mbAlign <- if length (recordFields r) > (4 + offset)
                 then Just `fmap` field 4 numeric
                 else return Nothing
-  vis <- if length (recordFields r) > 6 && not (link `elem` [Internal, Private])
+  vis <- if length (recordFields r) > (6 + offset) && not (link `elem` [Internal, Private])
                 then field 6 visibility
                 else pure DefaultVisibility
 
