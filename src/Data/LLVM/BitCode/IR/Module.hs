@@ -297,7 +297,7 @@ parseModuleBlockEntry _pm (ltoSummaryBlockId -> Just _) =
   label "FULL_LTO_GLOBALVAL_SUMMARY_BLOCK_ID" $ do
     fail "FULL_LTO_GLOBALVAL_SUMMARY_BLOCK_ID unsupported"
 
-parseModuleBlockEntry pm (symtabBlockId -> Just [symtabBlobId -> Just r]) =
+parseModuleBlockEntry pm (symtabBlockId -> Just [symtabBlobId -> Just _]) =
   -- Handled already
   return pm
 
@@ -325,13 +325,13 @@ parseFunProto r pm = label "FUNCTION" $ do
 
   section <-
     if length (recordFields r) >= 6
-       then do ix <- field 6 numeric
-               if ix == 0
+       then do sid <- field 6 numeric
+               if sid == 0
                   then return Nothing
-                  else do let ix' = ix - 1
-                          when (ix' >= Seq.length (partialSections pm))
+                  else do let sid' = sid - 1
+                          when (sid' >= Seq.length (partialSections pm))
                               (fail "invalid section name index")
-                          return (Just (Seq.index (partialSections pm) (ix - 1)))
+                          return (Just (Seq.index (partialSections pm) sid'))
 
        else return Nothing
 

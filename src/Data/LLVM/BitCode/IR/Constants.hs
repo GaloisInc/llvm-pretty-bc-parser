@@ -17,7 +17,6 @@ import Control.Monad (mplus,mzero,foldM,(<=<),when)
 import Control.Monad.ST (runST,ST)
 import Data.Array.ST (newArray,readArray,MArray,STUArray)
 import Data.Bits (shiftL,shiftR,testBit)
-import Data.Char (chr)
 import Data.Maybe (fromMaybe, isJust)
 import Data.Word (Word32,Word64)
 import qualified Data.Map as Map

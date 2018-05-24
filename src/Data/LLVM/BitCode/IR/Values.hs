@@ -60,8 +60,8 @@ getValueTypePair t r ix = do
       return (Typed ty (typedValue ref), ix+2)
 
 -- | Get a single value from the value table.
-getValueNoFwdRef :: Type -> Int -> Parse (Typed PValue)
-getValueNoFwdRef ty n = label "getValueNoFwdRef" (getFnValueById ty =<< adjustId n)
+--getValueNoFwdRef :: Type -> Int -> Parse (Typed PValue)
+--getValueNoFwdRef ty n = label "getValueNoFwdRef" (getFnValueById ty =<< adjustId n)
 
 getFnValueById :: Type -> Int -> Parse (Typed PValue)
 getFnValueById  = getFnValueById' Nothing
@@ -86,8 +86,8 @@ getFnValueById' mbVt ty n = label "getFnValueById'" $ case ty of
 
       -- forward reference
       Nothing -> do
-        mb <- entryNameMb n
-        case mb of
+        mbName <- entryNameMb n
+        case mbName of
           Just name -> return (Typed ty (ValIdent (Ident name)))
 
           Nothing

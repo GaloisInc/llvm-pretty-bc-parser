@@ -13,7 +13,7 @@ import Data.LLVM.BitCode.Parse
 import Data.LLVM.BitCode.Record
 import Text.LLVM.AST
 
-import Control.Monad ((<=<),unless,forM_)
+import Control.Monad (unless,forM_)
 import Data.Monoid (mappend)
 import Data.Word (Word16)
 
@@ -33,7 +33,7 @@ parseModule Bitstream { bsAppMagic, bsEntries } = label "Bitstream" $ do
 findTables :: [Entry] -> Parse ()
 findTables es = forM_ es $ \e ->
   case e of
-    (strtabBlockId -> Just [ abbrevDef -> Just d
+    (strtabBlockId -> Just [ abbrevDef -> Just _
                            , abbrev -> Just (fromAbbrev -> Just r)
                            ]) -> do
       st <- mkStrtab <$> parseField r 0 fieldBlob
