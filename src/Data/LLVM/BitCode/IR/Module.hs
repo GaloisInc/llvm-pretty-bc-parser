@@ -267,9 +267,11 @@ parseModuleBlockEntry pm (moduleCodeSourceFilename -> Just r) = do
   do str <- parseField r 0 cstring
      return pm { partialSourceName = Just str }
 
-parseModuleBlockEntry _ (moduleCodeHash -> Just _) = do
+parseModuleBlockEntry pm (moduleCodeHash -> Just _) = do
   -- MODULE_CODE_HASH
-  fail "MODULE_CODE_HASH"
+  -- It should be safe to ignore this for now.
+  --fail "MODULE_CODE_HASH"
+  return pm
 
 parseModuleBlockEntry _ (moduleCodeIFunc -> Just _) = do
   -- MODULE_CODE_IFUNC
@@ -284,9 +286,10 @@ parseModuleBlockEntry _ (moduleStrtabBlockId -> Just _) = do
   -- MODULE_STRTAB_BLOCK_ID
   fail "MODULE_STRTAB_BLOCK_ID"
 
-parseModuleBlockEntry _ (globalvalSummaryBlockId -> Just _) = do
+parseModuleBlockEntry pm (globalvalSummaryBlockId -> Just _) = do
   -- GLOBALVAL_SUMMARY_BLOCK_ID
-  fail "GLOBALVAL_SUMMARY_BLOCK_ID"
+  -- It should be safe to ignore this for now.
+  return pm
 
 parseModuleBlockEntry pm (operandBundleTagsBlockId -> Just _) = do
   -- OPERAND_BUNDLE_TAGS_BLOCK_ID
@@ -304,9 +307,11 @@ parseModuleBlockEntry pm (strtabBlockId -> Just _) =
   -- Handled already.
   return pm
 
-parseModuleBlockEntry _pm (ltoSummaryBlockId -> Just _) =
-  label "FULL_LTO_GLOBALVAL_SUMMARY_BLOCK_ID" $ do
-    fail "FULL_LTO_GLOBALVAL_SUMMARY_BLOCK_ID unsupported"
+parseModuleBlockEntry pm (ltoSummaryBlockId -> Just _) =
+  -- It should be safe to ignore this for now.
+  --label "FULL_LTO_GLOBALVAL_SUMMARY_BLOCK_ID" $ do
+  --  fail "FULL_LTO_GLOBALVAL_SUMMARY_BLOCK_ID unsupported"
+  return pm
 
 parseModuleBlockEntry pm (symtabBlockId -> Just [symtabBlobId -> Just _]) =
   -- Handled already
