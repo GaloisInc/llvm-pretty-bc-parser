@@ -582,12 +582,17 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       pm
 
   24 -> label "METADATA_NAMESPACE" $ do
+    isNew <- case length (recordFields r) of
+               3 -> return True
+               5 -> return False
+               _ -> fail "Invalid METADATA_NAMESPACE record"
     cxt <- getContext
     isDistinct <- parseField r 0 nonzero
     dinsScope <- mdForwardRef cxt mt <$> parseField r 1 numeric
-    dinsFile <- mdForwardRef cxt mt <$> parseField r 2 numeric
-    dinsName <- mdString cxt mt <$> parseField r 3 numeric
-    dinsLine <- parseField r 4 numeric
+    dinsFile <- if isNew then (return (ValMdString "")) else mdForwardRef cxt mt <$> parseField r 2 numeric
+    let nameIdx = if isNew then 2 else 3
+    dinsName <- mdString cxt mt <$> parseField r nameIdx numeric
+    dinsLine <- if isNew then return 0 else parseField r 4 numeric
     return $! updateMetadataTable
         (addDebugInfo
             isDistinct
