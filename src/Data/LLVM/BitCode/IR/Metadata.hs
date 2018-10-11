@@ -1,7 +1,8 @@
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Data.LLVM.BitCode.IR.Metadata (
     parseMetadataBlock
@@ -23,7 +24,7 @@ import Text.LLVM.AST
 import Text.LLVM.Labels
 
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
-import Control.Exception (throw)
+import MonadLib (raise)
 import Control.Monad (foldM,guard,mplus,unless,when)
 import Data.List (mapAccumL)
 import Data.Maybe (fromMaybe)
@@ -119,22 +120,30 @@ mdForwardRefOrNull :: [String] -> MetadataTable -> Int -> Maybe PValMd
 mdForwardRefOrNull cxt mt ix | ix > 0 = Just (mdForwardRef cxt mt (ix - 1))
                              | otherwise = Nothing
 
-mdNodeRef :: [String] -> MetadataTable -> Int -> Int
+-- | This is in the Parse monad because it can throw an error.
+mdNodeRef :: [String] -> MetadataTable -> Int -> Parse Int
 mdNodeRef cxt mt ix =
-  maybe (throw (BadValueRef cxt ix)) prj (Map.lookup ix (mtNodes mt))
-  where
-  prj (_,_,x) = x
+  case (Map.lookup ix (mtNodes mt)) of
+    Just (_, _, x) -> pure x
+    Nothing        -> fail $ formatError $ badRefError (BadValueRef cxt ix)
 
-mdString :: [String] -> MetadataTable -> Int -> String
-mdString cxt mt ix =
-  fromMaybe (throw (BadValueRef cxt ix)) (mdStringOrNull cxt mt ix)
+-- | This is in the Parse monad because it can throw an error.
+mdString :: [String] -> MetadataTable -> Int -> Parse String
+mdString cxt mt ix = do
+  mdStringOrNull cxt mt ix >>=
+    \case
+      Just x  -> pure x
+      Nothing ->
+        fail $ formatError $ badRefError (BadValueRef cxt ix)
 
-mdStringOrNull :: [String] -> MetadataTable -> Int -> Maybe String
+-- | This is in the Parse monad because it can throw an error.
+mdStringOrNull :: [String] -> MetadataTable -> Int -> Parse (Maybe String)
 mdStringOrNull cxt mt ix =
   case mdForwardRefOrNull cxt mt ix of
-    Nothing -> Nothing
-    Just (ValMdString str) -> Just str
-    Just _ -> throw (BadTypeRef cxt ix)
+    Nothing                -> pure $ Nothing
+    Just (ValMdString str) -> pure $ Just str
+    Just _                 ->
+      fail $ formatError $ badRefError (BadTypeRef cxt ix)
 
 mkMdRefTable :: MetadataTable -> MdRefTable
 mkMdRefTable mt = Map.mapMaybe step (mtNodes mt)
@@ -354,7 +363,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
   10 -> label "METADATA_NAMED_NODE" $ do
     mdIds <- parseFields r 0 numeric
     cxt   <- getContext
-    let ids = map (mdNodeRef cxt mt) mdIds
+    ids   <- mapM (mdNodeRef cxt mt) mdIds
     nameMetadata ids pm
 
   -- [m x [value, [n x [id, mdnode]]]
@@ -392,7 +401,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     ctx        <- getContext
     isDistinct <- parseField r 0 nonzero
     value      <- parseField r 1 signedInt64
-    name       <- mdString ctx mt <$> parseField r 2 numeric
+    name       <- mdString ctx mt =<< parseField r 2 numeric
     return $! updateMetadataTable
       (addDebugInfo isDistinct (DebugInfoEnumerator name value)) pm
 
@@ -400,7 +409,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     ctx <- getContext
     isDistinct <- parseField r 0 nonzero
     dibtTag <- parseField r 1 numeric
-    dibtName <- mdString ctx mt <$> parseField r 2 numeric
+    dibtName <- mdString ctx mt =<< parseField r 2 numeric
     dibtSize <- parseField r 3 numeric
     dibtAlign <- parseField r 4 numeric
     dibtEncoding <- parseField r 5 numeric
@@ -411,8 +420,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
   16 -> label "METADATA_FILE" $ do
     ctx <- getContext
     isDistinct <- parseField r 0 nonzero
-    difFilename <- mdString ctx mt <$> parseField r 1 numeric
-    difDirectory <- mdString ctx mt <$> parseField r 2 numeric
+    difFilename <- mdString ctx mt =<< parseField r 1 numeric
+    difDirectory <- mdString ctx mt =<< parseField r 2 numeric
     return $! updateMetadataTable
       (addDebugInfo isDistinct (DebugInfoFile DIFile{..})) pm
 
@@ -420,7 +429,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     ctx <- getContext
     isDistinct    <- parseField r 0 nonzero
     didtTag       <- parseField r 1 numeric
-    didtName      <- mdStringOrNull     ctx mt <$> parseField r 2 numeric
+    didtName      <- mdStringOrNull     ctx mt =<< parseField r 2 numeric
     didtFile      <- mdForwardRefOrNull ctx mt <$> parseField r 3 numeric
     didtLine      <- parseField r 4 numeric
     didtScope     <- mdForwardRefOrNull ctx mt <$> parseField r 5 numeric
@@ -437,7 +446,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     ctx <- getContext
     isDistinct         <- parseField r 0 nonzero
     dictTag            <- parseField r 1 numeric
-    dictName           <- mdStringOrNull     ctx mt <$> parseField r 2 numeric
+    dictName           <- mdStringOrNull     ctx mt =<< parseField r 2 numeric
     dictFile           <- mdForwardRefOrNull ctx mt <$> parseField r 3 numeric
     dictLine           <- parseField r 4 numeric
     dictScope          <- mdForwardRefOrNull ctx mt <$> parseField r 5 numeric
@@ -450,7 +459,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     dictRuntimeLang    <- parseField r 12 numeric
     dictVTableHolder   <- mdForwardRefOrNull ctx mt <$> parseField r 13 numeric
     dictTemplateParams <- mdForwardRefOrNull ctx mt <$> parseField r 14 numeric
-    dictIdentifier     <- mdStringOrNull     ctx mt <$> parseField r 15 numeric
+    dictIdentifier     <- mdStringOrNull     ctx mt =<< parseField r 15 numeric
     return $! updateMetadataTable
       (addDebugInfo isDistinct (DebugInfoCompositeType DICompositeType{..})) pm
 
@@ -476,11 +485,11 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     dicuLanguage           <- parseField r 1 numeric
     dicuFile               <-
       mdForwardRefOrNull ctx mt <$> parseField r 2 numeric
-    dicuProducer           <- mdStringOrNull ctx mt <$> parseField r 3 numeric
+    dicuProducer           <- mdStringOrNull ctx mt =<< parseField r 3 numeric
     dicuIsOptimized        <- parseField r 4 nonzero
-    dicuFlags              <- mdStringOrNull ctx mt <$> parseField r 5 numeric
+    dicuFlags              <- mdStringOrNull ctx mt =<< parseField r 5 numeric
     dicuRuntimeVersion     <- parseField r 6 numeric
-    dicuSplitDebugFilename <- mdStringOrNull ctx mt <$> parseField r 7 numeric
+    dicuSplitDebugFilename <- mdStringOrNull ctx mt =<< parseField r 7 numeric
     dicuEmissionKind       <- parseField r 8 numeric
     dicuEnums              <-
       mdForwardRefOrNull ctx mt <$> parseField r 9 numeric
@@ -522,8 +531,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     ctx <- getContext
     isDistinct         <- parseField r 0 nonzero
     dispScope          <- mdForwardRefOrNull ctx mt <$> parseField r 1 numeric
-    dispName           <- mdStringOrNull ctx mt <$> parseField r 2 numeric
-    dispLinkageName    <- mdStringOrNull ctx mt <$> parseField r 3 numeric
+    dispName           <- mdStringOrNull ctx mt =<< parseField r 2 numeric
+    dispLinkageName    <- mdStringOrNull ctx mt =<< parseField r 3 numeric
     dispFile           <- mdForwardRefOrNull ctx mt <$> parseField r 4 numeric
     dispLine           <- parseField r 5 numeric
     dispType           <- mdForwardRefOrNull ctx mt <$> parseField r 6 numeric
@@ -591,7 +600,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     dinsScope <- mdForwardRef cxt mt <$> parseField r 1 numeric
     dinsFile <- if isNew then (return (ValMdString "")) else mdForwardRef cxt mt <$> parseField r 2 numeric
     let nameIdx = if isNew then 2 else 3
-    dinsName <- mdString cxt mt <$> parseField r nameIdx numeric
+    dinsName <- mdString cxt mt =<< parseField r nameIdx numeric
     dinsLine <- if isNew then return 0 else parseField r 4 numeric
     return $! updateMetadataTable
         (addDebugInfo
@@ -601,7 +610,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
   25 -> label "METADATA_TEMPLATE_TYPE" $ do
     cxt <- getContext
     isDistinct <- parseField r 0 nonzero
-    dittpName <- mdString cxt mt <$> parseField r 1 numeric
+    dittpName <- mdString cxt mt =<< parseField r 1 numeric
     dittpType <- mdForwardRef cxt mt <$> parseField r 2 numeric
     return $! updateMetadataTable
             (addDebugInfo
@@ -611,7 +620,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
   26 -> label "METADATA_TEMPLATE_VALUE" $ do
     cxt <- getContext
     isDistinct <- parseField r 0 nonzero
-    ditvpName  <- mdString cxt mt <$> parseField r 1 numeric
+    ditvpName  <- mdString cxt mt =<< parseField r 1 numeric
     ditvpType  <- mdForwardRef cxt mt <$> parseField r 2 numeric
     ditvpValue <- mdForwardRef cxt mt <$> parseField r 3 numeric
     return $! updateMetadataTable
@@ -631,8 +640,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         _version   = shiftR  field0 1 :: Int
 
     digvScope  <- mdForwardRefOrNull ctx mt <$> parseField r 1 numeric
-    digvName   <- mdStringOrNull ctx mt <$> parseField r 2 numeric
-    digvLinkageName <- mdStringOrNull ctx mt <$> parseField r 3 numeric
+    digvName   <- mdStringOrNull ctx mt =<< parseField r 2 numeric
+    digvLinkageName <- mdStringOrNull ctx mt =<< parseField r 3 numeric
     digvFile   <- mdForwardRefOrNull ctx mt <$> parseField r 4 numeric
     digvLine   <- parseField r 5 numeric
     digvType   <- mdForwardRefOrNull ctx mt <$> parseField r 6 numeric
@@ -675,7 +684,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
          else return 0
 
     dilvScope  <- mdForwardRefOrNull ("dilvScope":ctx) mt <$> parseField r (adj 1) numeric
-    dilvName   <- mdStringOrNull     ("dilvName" :ctx) mt <$> parseField r (adj 2) numeric
+    dilvName   <- mdStringOrNull     ("dilvName" :ctx) mt =<< parseField r (adj 2) numeric
     dilvFile   <- mdForwardRefOrNull ("dilvFile" :ctx) mt <$> parseField r (adj 3) numeric
     dilvLine   <- parseField r (adj 4) numeric
     dilvType   <- mdForwardRefOrNull ("dilvType" :ctx) mt <$> parseField r (adj 5) numeric
@@ -703,7 +712,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     diieScope  <- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
     diieEntity <- mdForwardRefOrNull cxt mt <$> parseField r 3 numeric
     diieLine   <- parseField r 4 numeric
-    diieName   <- mdString cxt mt <$> parseField r 5 numeric
+    diieName   <- mdString cxt mt =<< parseField r 5 numeric
     return $! updateMetadataTable
         (addDebugInfo
             isDistinct

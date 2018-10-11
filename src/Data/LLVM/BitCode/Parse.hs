@@ -68,6 +68,12 @@ instance MonadPlus Parse where
   {-# INLINE mplus #-}
   mplus = (<|>)
 
+instance BaseM Parse (ExceptionT Error Lift) where
+  inBase = Parse . lift . lift
+
+instance ExceptionM Parse Error where
+  raise = inBase . raise
+
 runParse :: Parse a -> Either Error a
 runParse (Parse m) = case runM m emptyEnv emptyParseState of
   Left err    -> Left err
