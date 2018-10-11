@@ -125,7 +125,7 @@ mdNodeRef :: [String] -> MetadataTable -> Int -> Parse Int
 mdNodeRef cxt mt ix =
   case (Map.lookup ix (mtNodes mt)) of
     Just (_, _, x) -> pure x
-    Nothing        -> raise $ badRefError (BadValueRef cxt ix)
+    Nothing        -> fail $ formatError $ badRefError (BadValueRef cxt ix)
 
 -- | This is in the Parse monad because it can throw an error.
 mdString :: [String] -> MetadataTable -> Int -> Parse String
@@ -133,7 +133,8 @@ mdString cxt mt ix = do
   mdStringOrNull cxt mt ix >>=
     \case
       Just x  -> pure x
-      Nothing -> raise $ badRefError (BadValueRef cxt ix)
+      Nothing ->
+        fail $ formatError $ badRefError (BadValueRef cxt ix)
 
 -- | This is in the Parse monad because it can throw an error.
 mdStringOrNull :: [String] -> MetadataTable -> Int -> Parse (Maybe String)
@@ -141,7 +142,8 @@ mdStringOrNull cxt mt ix =
   case mdForwardRefOrNull cxt mt ix of
     Nothing                -> pure $ Nothing
     Just (ValMdString str) -> pure $ Just str
-    Just _                 -> raise $ badRefError (BadTypeRef cxt ix)
+    Just _                 ->
+      fail $ formatError $ badRefError (BadTypeRef cxt ix)
 
 mkMdRefTable :: MetadataTable -> MdRefTable
 mkMdRefTable mt = Map.mapMaybe step (mtNodes mt)
