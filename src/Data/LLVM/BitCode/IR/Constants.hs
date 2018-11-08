@@ -217,16 +217,17 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
 
   -- [fpval]
   6 -> label "CST_CODE_FLOAT" $ do
-    let field = parseField r
     ty <- getTy
     ft <- (elimFloatType =<< elimPrimType ty)
         `mplus` fail "expecting a float type"
-    let build k = do
-          w <- field 0 numeric
-          return (getTy, (Typed ty $! k w):cs)
+    let build :: Num a => (a -> PValue) -> Parse (Parse Type, [Typed PValue])
+        build k = do
+          a <-  parseField r 0 (fmap k . numeric)
+          return (getTy, (Typed ty $! a):cs)
     case ft of
       Float -> build (ValFloat  . castFloat)
-      _     -> build (ValDouble . castDouble)
+      Double -> build (ValDouble . castDouble)
+      _ -> error $ "parseConstantEntry: Unsupported type " ++ show ft
 
   -- [n x value number]
   7 -> label "CST_CODE_AGGREGATE" $ do
