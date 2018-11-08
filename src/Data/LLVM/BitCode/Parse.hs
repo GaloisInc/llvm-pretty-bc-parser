@@ -30,7 +30,7 @@ import qualified Data.Sequence as Seq
 data Error = Error
   { errContext :: [String]
   , errMessage :: String
-  } deriving (Show)
+  } deriving (Show, Eq, Ord)
 
 formatError :: Error -> String
 formatError err
