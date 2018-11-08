@@ -13,7 +13,7 @@ import           Control.Monad (when, forM, forM_, filterM)
 import           Control.Monad.IO.Class (liftIO)
 import           Data.List (nub)
 import           Data.Maybe (fromMaybe, listToMaybe)
-import           Data.Monoid ( mconcat, Endo(..) )
+import           Data.Semigroup hiding ( Option )
 import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Typeable (Typeable)
@@ -23,6 +23,9 @@ import           System.Environment (getArgs, getProgName, getExecutablePath)
 import           System.Exit (exitFailure, exitSuccess)
 import           System.FilePath (takeDirectory)
 import qualified Turtle as T
+
+import           Prelude
+
 
 ----------------------------------------------------------------
 -- ** Option parsing
