@@ -7,12 +7,12 @@ module Data.LLVM.BitCode.BitString (
   , take, drop, splitAt
   ) where
 
-import Prelude hiding (take,drop,splitAt)
-
 import Data.Bits ((.&.),(.|.),shiftL,shiftR,bit)
 import Data.Monoid (Monoid(..))
 import Data.Semigroup
 import Numeric (showIntAtBase)
+
+import Prelude hiding (take,drop,splitAt)
 
 
 data BitString = BitString

@@ -24,6 +24,8 @@ import qualified Data.ByteString as BS
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 
+import Prelude
+
 
 -- Error Collection Parser -----------------------------------------------------
 
