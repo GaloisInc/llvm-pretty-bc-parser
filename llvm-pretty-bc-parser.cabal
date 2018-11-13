@@ -92,8 +92,7 @@ Test-suite disasm-test
                        llvm-pretty>= 0.7.3,
                        llvm-pretty-bc-parser
 
-Test-suite regression-test
-  type:                exitcode-stdio-1.0
+Executable regression-test
   Main-is:             Main.hs
   Default-language:    Haskell2010
   hs-source-dirs:      regression-test
