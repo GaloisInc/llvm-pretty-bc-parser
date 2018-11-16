@@ -20,6 +20,7 @@ import Text.LLVM.AST
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import Control.Monad (foldM,guard,when,forM_)
 import Data.List (sortBy)
+import Data.Maybe (mapMaybe)
 import Data.Ord (comparing)
 import qualified Data.Foldable as F
 import qualified Data.Map as Map
@@ -31,7 +32,7 @@ import qualified Data.Traversable as T
 
 data PartialModule = PartialModule
   { partialGlobalIx   :: !Int
-  , partialGlobals    :: GlobalList
+  , partialGlobals    :: !GlobalList
   , partialDefines    :: DefineList
   , partialDeclares   :: DeclareList
   , partialDataLayout :: DataLayout
@@ -106,11 +107,41 @@ parseModuleBlock ents = label "MODULE_BLOCK" $ do
         Just es -> parseValueSymbolTableBlock es
         Nothing -> return emptyValueSymtab
 
-    pm <- withValueSymtab symtab
-        $ foldM parseModuleBlockEntry emptyPartialModule ents
+    withValueSymtab symtab $ do
 
-    finalizeModule pm
+      -- Before parsing global variables, we have to get the module code version.
+      _ <- findModuleCodeEntry ents
 
+      -- Global variables contain no references to other parts of the AST
+      -- but are themselves referenced. Thus, they are parsed first.
+      pm <- parseGlobalVars emptyPartialModule ents
+
+      finalizeModule =<< foldM parseModuleBlockEntry pm ents
+
+-- | See: http://llvm.org/docs/BitCodeFormat.html#module-code-version-record
+findModuleCodeEntry :: [Entry] -> Parse ()
+findModuleCodeEntry ents = label "MODULE_CODE_VERSION" $ do
+  mb <- match (findMatch moduleCodeVersion) ents
+  case mb of
+    Nothing  -> fail "No module code version found!" -- TODO: is it always present?
+    Just mcv -> do
+      version <- parseField mcv 0 numeric
+      setModVersion version
+      case version :: Int of
+        0 -> setRelIds False  -- Absolute value ids in LLVM <= 3.2
+        1 -> setRelIds True   -- Relative value ids in LLVM >= 3.3
+        2 -> setRelIds True   -- Relative value ids in LLVM >= 5.0
+        _ -> fail ("unsupported version id: " ++ show version)
+
+-- | Parse all entries containing global variables
+parseGlobalVars :: PartialModule -> [Entry] -> Parse PartialModule
+parseGlobalVars pm ents = label "global variables" $ do
+  let foldM' acc l f = foldM f acc l
+  foldM' pm (mapMaybe moduleCodeGlobalvar ents) $ \pm r -> do
+    pg <- parseGlobalVar (partialGlobalIx pm) r
+    return pm { partialGlobalIx = succ $! (partialGlobalIx pm)
+              , partialGlobals  = partialGlobals pm Seq.|> pg
+              }
 
 -- | Parse the entries in a module block.
 parseModuleBlockEntry :: PartialModule -> Entry -> Parse PartialModule
@@ -186,13 +217,10 @@ parseModuleBlockEntry pm (abbrevDef -> Just _) = do
   -- skip abbreviation definitions
   return pm
 
-parseModuleBlockEntry pm (moduleCodeGlobalvar -> Just r) = do
+parseModuleBlockEntry pm (moduleCodeGlobalvar -> Just _) = do
   -- MODULE_CODE_GLOBALVAR
-  pg <- parseGlobalVar (partialGlobalIx pm) r
+  -- These are parsed before the rest of the module, they can be ignored
   return pm
-    { partialGlobalIx = succ (partialGlobalIx pm)
-    , partialGlobals  = partialGlobals pm Seq.|> pg
-    }
 
 parseModuleBlockEntry pm (moduleCodeAlias -> Just r) = label "MODULE_CODE_ALIAS_OLD" $ do
   pa <- parseAliasOld (partialAliasIx pm) r
@@ -201,19 +229,9 @@ parseModuleBlockEntry pm (moduleCodeAlias -> Just r) = label "MODULE_CODE_ALIAS_
     , partialAliases = partialAliases pm Seq.|> pa
     }
 
-parseModuleBlockEntry pm (moduleCodeVersion -> Just r) = do
+parseModuleBlockEntry pm (moduleCodeVersion -> Just _) = do
   -- MODULE_CODE_VERSION
-
-  -- please see:
-  -- http://llvm.org/docs/BitCodeFormat.html#module-code-version-record
-  version <- parseField r 0 numeric
-  setModVersion version
-  case version :: Int of
-    0 -> setRelIds False  -- Absolute value ids in LLVM <= 3.2
-    1 -> setRelIds True   -- Relative value ids in LLVM >= 3.3
-    2 -> setRelIds True   -- Relative value ids in LLVM >= 5.0
-    _ -> fail ("unsupported version id: " ++ show version)
-
+  -- Already handled
   return pm
 
 parseModuleBlockEntry pm (moduleCodeSectionname -> Just r) = do

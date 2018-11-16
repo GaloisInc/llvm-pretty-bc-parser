@@ -15,7 +15,6 @@ import Data.ByteString (ByteString)
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import Control.Monad ((<=<),MonadPlus(..),guard)
 
-
 -- Generic Records -------------------------------------------------------------
 
 data Record = Record
@@ -180,6 +179,6 @@ oldOrStrtabName n r = do
         case mst of
           Just st -> do
             offset <- parseField r 0 numeric
-            len <- parseField r 1 numeric
+            len    <- parseField r 1 numeric
             return (resolveStrtabSymbol st offset len, 2)
           Nothing -> fail "New-style name encountered with no string table."

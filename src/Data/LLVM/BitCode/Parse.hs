@@ -259,18 +259,18 @@ type PValue = Value' Int
 type PInstr = Instr' Int
 
 data ValueTable = ValueTable
-  { valueNextId  :: !Int
-  , valueEntries :: Map.Map Int (Typed PValue)
+  { valueNextId   :: !Int
+  , valueEntries  :: Map.Map Int (Typed PValue)
   , strtabEntries :: Map.Map Int (Int, Int)
-  , valueRelIds  :: Bool
+  , valueRelIds   :: !Bool
   } deriving (Show)
 
 emptyValueTable :: Bool -> ValueTable
 emptyValueTable rel = ValueTable
-  { valueNextId  = 0
-  , valueEntries = Map.empty
+  { valueNextId   = 0
+  , valueEntries  = Map.empty
   , strtabEntries = Map.empty
-  , valueRelIds  = rel
+  , valueRelIds   = rel
   }
 
 addValue :: Typed PValue -> ValueTable -> ValueTable
