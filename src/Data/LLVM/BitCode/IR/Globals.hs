@@ -1,3 +1,4 @@
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Data.LLVM.BitCode.IR.Globals where
@@ -9,8 +10,8 @@ import Data.LLVM.BitCode.Parse
 import Text.LLVM.AST
 import Text.LLVM.Labels
 
-import Control.Monad (guard,mplus)
-import Data.Bits (bit,shiftR,testBit)
+import Control.Monad (guard, mplus)
+import Data.Bits (bit, shiftR, testBit)
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import Data.Word (Word32)
@@ -27,7 +28,7 @@ data PartialGlobal = PartialGlobal
   , pgValueIx :: Maybe Int
   , pgAlign   :: Maybe Align
   , pgMd      :: Map.Map KindMd PValMd
-  } deriving Show
+  } deriving (Show)
 
 -- [ pointer type, isconst, initid
 -- , linkage, alignment, section, visibility, threadlocal
