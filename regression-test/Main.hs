@@ -187,7 +187,8 @@ main = T.runManaged $ do
 
   -- (6)
   T.cd outputDir
-  [a, b] <- liftIO $ forM revs $ \rev ->
+  -- [a, b] <- liftIO $ forM revs $ \rev ->
+  resAandB <- liftIO $ forM revs $ \rev ->
     forM bcfiles $ \bcfile -> do
       let exe = pathToText outputDir <> "/" <> "llvm-disasm-" <> rev
       let ast = ["--ast" | optAST opts]
@@ -203,7 +204,9 @@ main = T.runManaged $ do
       pure newPath
 
   -- (7)
-  liftIO $ forM_ (zip a b) $ \(ll1, ll2) -> do
+  case resAandB of
+   (a:b:[]) ->
+    liftIO $ forM_ (zip a b) $ \(ll1, ll2) -> do
     let ll1t = pathToText ll1
         ll2t = pathToText ll2
 
@@ -214,6 +217,9 @@ main = T.runManaged $ do
       code stdout stderr
 
     mapM_ T.echo $ T.textToLines stdout
+   _ -> error "Failed to generate old and new disassemblies for comparison"
+        -- should never happen, but this avoids requiring MonadFail on matching
+        -- [a, b] <- {...step 6...}
 
   where echoText     = liftIO . T.echo . T.unsafeTextToLine
         pathToText p =
