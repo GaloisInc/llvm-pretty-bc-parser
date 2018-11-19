@@ -23,6 +23,7 @@ import qualified Control.Exception as X
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
+import GHC.Stack (HasCallStack, CallStack, callStack, prettyCallStack)
 
 import Prelude
 
@@ -183,23 +184,31 @@ mkTypeTable :: [Type] -> TypeTable
 mkTypeTable  = Map.fromList . zip [0 ..]
 
 data BadForwardRef
-  = BadTypeRef [String] Int
-  | BadValueRef [String] Int
+  = BadTypeRef  CallStack [String] Int
+  | BadValueRef CallStack [String] Int
     deriving (Show,Typeable)
 
 instance X.Exception BadForwardRef
 
 badRefError :: BadForwardRef -> Error
 badRefError ref = case ref of
-  BadTypeRef  c i -> Error c ("bad forward reference to type: " ++ show i)
-  BadValueRef c i -> Error c ("bad forward reference to value: " ++ show i)
+  BadTypeRef  stk c i -> Error c $
+    unlines $ [ "bad forward reference to type: " ++ show i
+              , "with call stack: " ++ prettyCallStack stk
+              ]
+  BadValueRef stk c i -> Error c $
+    unlines $ [ "bad forward reference to value: " ++ show i
+              , "with call stack: " ++ prettyCallStack stk
+              ]
 
 -- | As type tables are always pre-allocated, looking things up should never
 -- fail.  As a result, the worst thing that could happen is that the type entry
 -- causes a runtime error.  This is pretty bad, but it's an acceptable trade-off
 -- for the complexity of the forward references in the type table.
-lookupTypeRef :: [String] -> Int -> TypeTable -> Type
-lookupTypeRef cxt n = fromMaybe (X.throw (BadTypeRef cxt n)) . Map.lookup n
+lookupTypeRef :: HasCallStack
+              => [String] -> Int -> TypeTable -> Type
+lookupTypeRef cxt n =
+  fromMaybe (X.throw (BadTypeRef callStack cxt n)) . Map.lookup n
 
 setTypeTable :: TypeTable -> Parse ()
 setTypeTable table = Parse $ do
@@ -334,9 +343,10 @@ lookupValue n = lookupValueTable n `fmap` getValueTable
 -- | Lookup lazily, hiding an error in the result if the entry doesn't exist by
 -- the time it's needed.  NOTE: This always looks up an absolute index, never a
 -- relative one.
-forwardRef :: [String] -> Int -> ValueTable -> Typed PValue
+forwardRef :: HasCallStack
+           => [String] -> Int -> ValueTable -> Typed PValue
 forwardRef cxt n vt =
-  fromMaybe (X.throw (BadValueRef cxt n)) (lookupValueTableAbs n vt)
+  fromMaybe (X.throw (BadValueRef callStack cxt n)) (lookupValueTableAbs n vt)
 
 -- | Require that a value be present.
 requireValue :: Int -> Parse (Typed PValue)

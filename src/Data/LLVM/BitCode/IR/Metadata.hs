@@ -34,7 +34,7 @@ import Data.Word (Word32,Word64)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as Char8 (unpack)
 import qualified Data.Map as Map
-
+import GHC.Stack (HasCallStack, callStack)
 
 -- Parsing State ---------------------------------------------------------------
 
@@ -121,22 +121,28 @@ mdForwardRefOrNull :: [String] -> MetadataTable -> Int -> Maybe PValMd
 mdForwardRefOrNull cxt mt ix | ix > 0 = Just (mdForwardRef cxt mt (ix - 1))
                              | otherwise = Nothing
 
-mdNodeRef :: [String] -> MetadataTable -> Int -> Int
+mdNodeRef :: HasCallStack
+          => [String] -> MetadataTable -> Int -> Int
 mdNodeRef cxt mt ix =
-  maybe (throw (BadValueRef cxt ix)) prj (Map.lookup ix (mtNodes mt))
+  maybe (throw (BadValueRef callStack cxt ix)) prj (Map.lookup ix (mtNodes mt))
   where
   prj (_,_,x) = x
 
-mdString :: [String] -> MetadataTable -> Int -> String
+mdString :: HasCallStack
+         => [String] -> MetadataTable -> Int -> String
 mdString cxt mt ix =
-  fromMaybe (throw (BadValueRef cxt ix)) (mdStringOrNull cxt mt ix)
+  fromMaybe (throw (BadValueRef callStack cxt ix)) (mdStringOrNull cxt mt ix)
 
-mdStringOrNull :: [String] -> MetadataTable -> Int -> Maybe String
+mdStringOrNull :: HasCallStack
+               => [String]
+               -> MetadataTable
+               -> Int
+               -> Maybe String
 mdStringOrNull cxt mt ix =
   case mdForwardRefOrNull cxt mt ix of
     Nothing -> Nothing
     Just (ValMdString str) -> Just str
-    Just _ -> throw (BadTypeRef cxt ix)
+    Just _ -> throw (BadTypeRef callStack cxt ix)
 
 mkMdRefTable :: MetadataTable -> MdRefTable
 mkMdRefTable mt = Map.mapMaybe step (mtNodes mt)
