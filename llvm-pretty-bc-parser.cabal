@@ -92,6 +92,19 @@ Test-suite disasm-test
                        llvm-pretty>= 0.7.3,
                        llvm-pretty-bc-parser
 
+Executable regression-test
+  Main-is:             Main.hs
+  Default-language:    Haskell2010
+  hs-source-dirs:      regression-test
+  Ghc-options:         -Wall
+  build-depends:       base >= 4 && < 5,
+                       directory,
+                       filepath,
+                       text,
+                       turtle,
+                       llvm-pretty>= 0.7.3,
+                       llvm-pretty-bc-parser
+
 Executable fuzz-llvm-disasm
   Main-is:             Main.hs
   Default-language:    Haskell2010

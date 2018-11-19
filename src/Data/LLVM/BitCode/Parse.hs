@@ -24,13 +24,15 @@ import qualified Data.ByteString as BS
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 
+import Prelude
+
 
 -- Error Collection Parser -----------------------------------------------------
 
 data Error = Error
   { errContext :: [String]
   , errMessage :: String
-  } deriving (Show)
+  } deriving (Show, Eq, Ord)
 
 formatError :: Error -> String
 formatError err
