@@ -35,7 +35,6 @@ import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as Char8 (unpack)
 import qualified Data.Map as Map
 
-
 -- Parsing State ---------------------------------------------------------------
 
 data MetadataTable = MetadataTable
@@ -114,7 +113,10 @@ mdForwardRef cxt mt ix = fromMaybe fallback nodeRef
   fallback          = case forwardRef cxt ix (mtEntries mt) of
                         Typed { typedValue = ValMd md } -> md
                         tv                              -> ValMdValue tv
-  reference (_,_,r) = ValMdRef r
+  reference (False, _, r) = ValMdRef r
+  reference (_    , _, r)  =
+    let explanation = "Illegal forward reference into function-local metadata."
+    in throw (BadValueRef cxt explanation r)
   nodeRef           = reference `fmap` Map.lookup ix (mtNodes mt)
 
 mdForwardRefOrNull :: [String] -> MetadataTable -> Int -> Maybe PValMd
@@ -123,20 +125,23 @@ mdForwardRefOrNull cxt mt ix | ix > 0 = Just (mdForwardRef cxt mt (ix - 1))
 
 mdNodeRef :: [String] -> MetadataTable -> Int -> Int
 mdNodeRef cxt mt ix =
-  maybe (throw (BadValueRef cxt ix)) prj (Map.lookup ix (mtNodes mt))
-  where
-  prj (_,_,x) = x
+  let explanation = "Bad forward reference into mtNodes"
+  in maybe (throw (BadValueRef cxt explanation ix)) prj (Map.lookup ix (mtNodes mt))
+  where prj (_, _, x) = x
 
 mdString :: [String] -> MetadataTable -> Int -> String
 mdString cxt mt ix =
-  fromMaybe (throw (BadValueRef cxt ix)) (mdStringOrNull cxt mt ix)
+  let explanation = "Null value when metadata string was expected"
+  in fromMaybe (throw (BadValueRef cxt explanation ix)) (mdStringOrNull cxt mt ix)
 
 mdStringOrNull :: [String] -> MetadataTable -> Int -> Maybe String
 mdStringOrNull cxt mt ix =
   case mdForwardRefOrNull cxt mt ix of
     Nothing -> Nothing
     Just (ValMdString str) -> Just str
-    Just _ -> throw (BadTypeRef cxt ix)
+    Just _ ->
+      let explanation = "Non-string metadata when string was expected"
+      in throw (BadTypeRef cxt explanation ix)
 
 mkMdRefTable :: MetadataTable -> MdRefTable
 mkMdRefTable mt = Map.mapMaybe step (mtNodes mt)
