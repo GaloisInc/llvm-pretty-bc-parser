@@ -469,7 +469,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     ctx        <- getContext
     isDistinct <- parseField r 0 nonzero
     didt       <- DIDerivedType
-      <$> parseField r 1 numeric -- didtTag
+      <$> parseField r 1 numeric                                  -- didtTag
       <*> (mdStringOrNull     ctx mt <$> parseField r 2 numeric)  -- didtName
       <*> (mdForwardRefOrNull ctx mt <$> parseField r 3 numeric)  -- didtFile
       <*> parseField r 4 numeric                                  -- didtLine
@@ -484,6 +484,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       (addDebugInfo isDistinct (DebugInfoDerivedType didt)) pm
 
   18 -> label "METADATA_COMPOSITE_TYPE" $ do
+
+    when (length (recordFields r) /= 16)
+      (fail "Invalid record")
+
     ctx        <- getContext
     isDistinct <- parseField r 0 nonzero
     dict       <- DICompositeType
