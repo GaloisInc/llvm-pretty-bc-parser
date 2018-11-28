@@ -510,6 +510,11 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       (addDebugInfo isDistinct (DebugInfoCompositeType dict)) pm
 
   19 -> label "METADATA_SUBROUTINE_TYPE" $ do
+
+    let recordSize = length (recordFields r)
+    when (recordSize < 3 || recordSize > 4)
+      (fail "Invalid record")
+
     ctx <- getContext
     isDistinct    <- parseField r 0 nonzero
     dist <- DISubroutineType
