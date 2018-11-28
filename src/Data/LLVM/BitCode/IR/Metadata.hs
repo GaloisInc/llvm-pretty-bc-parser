@@ -452,6 +452,11 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
   -- [distinct, filename, directory]
   16 -> label "METADATA_FILE" $ do
+
+    let recordSize = length (recordFields r)
+    when (recordSize /= 3 && recordSize /= 5)
+      (fail "Invalid record")
+
     ctx        <- getContext
     isDistinct <- parseField r 0 nonzero
     diFile     <- DIFile
@@ -515,8 +520,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     when (recordSize < 3 || recordSize > 4)
       (fail "Invalid record")
 
-    ctx <- getContext
-    isDistinct    <- parseField r 0 nonzero
+    ctx        <- getContext
+    isDistinct <- parseField r 0 nonzero
     dist <- DISubroutineType
       <$> parseField r 1 numeric                                 -- distFlags
       <*> (mdForwardRefOrNull ctx mt <$> parseField r 2 numeric) -- distTypeArray
