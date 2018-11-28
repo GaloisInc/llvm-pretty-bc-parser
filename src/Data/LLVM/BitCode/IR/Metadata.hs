@@ -358,6 +358,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     -- TODO: broken in 3.7+; needs to be a DILocation rather than an
     -- MDLocation, but there appears to be no difference in the
     -- bitcode. /sigh/
+
+    when (length (recordFields r) /= 5)
+      (fail "Invalid record")
+
     let field = parseField r
     cxt        <- getContext
     isDistinct <- field 0 nonzero
