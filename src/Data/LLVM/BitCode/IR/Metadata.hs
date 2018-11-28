@@ -435,6 +435,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     return $! updateMetadataTable (addDebugInfo isDistinct diEnum) pm
 
   15 -> label "METADATA_BASIC_TYPE" $ do
+
+    when (length (recordFields r) /= 6)
+      (fail "Invalid record")
+
     ctx <- getContext
     isDistinct <- parseField r 0 nonzero
     dibt <- DIBasicType
