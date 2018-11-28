@@ -410,6 +410,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     fail "not yet implemented"
 
   13 -> label "METADATA_SUBRANGE" $ do
+
+    when (length (recordFields r) /= 3)
+      (fail "Invalid record")
+
     isDistinct     <- parseField r 0 nonzero
     diNode         <- DISubrange
       <$> parseField r 1 numeric     -- disrCount
