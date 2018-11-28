@@ -423,6 +423,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
   -- [distinct, value, name]
   14 -> label "METADATA_ENUMERATOR" $ do
+
+    when (length (recordFields r) /= 3)
+      (fail "Invalid record")
+
     ctx        <- getContext
     isDistinct <- parseField r 0 nonzero
     diEnum     <- flip DebugInfoEnumerator
