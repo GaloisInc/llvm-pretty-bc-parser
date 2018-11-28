@@ -461,6 +461,11 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       (addDebugInfo isDistinct (DebugInfoFile diFile)) pm
 
   17 -> label "METADATA_DERIVED_TYPE" $ do
+
+    let recordSize = length (recordFields r)
+    when (recordSize < 12 || recordSize > 13)
+      (fail "Invalid record")
+
     ctx        <- getContext
     isDistinct <- parseField r 0 nonzero
     didt       <- DIDerivedType
