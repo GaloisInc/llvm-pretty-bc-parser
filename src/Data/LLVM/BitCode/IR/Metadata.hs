@@ -767,7 +767,13 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
   30 -> label "METADATA_OBJC_PROPERTY" $ do
     -- TODO
     fail "not yet implemented"
+
   31 -> label "METADATA_IMPORTED_ENTITY" $ do
+
+    let recordSize = length (recordFields r)
+    when (recordSize /= 6 || recordSize /= 7)
+      (fail "Invalid record")
+
     cxt        <- getContext
     isDistinct <- parseField r 0 nonzero
     diie       <- DIImportedEntity
