@@ -674,6 +674,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       (addDebugInfo isDistinct (DebugInfoTemplateTypeParameter dittp)) pm
 
   26 -> label "METADATA_TEMPLATE_VALUE" $ do
+
+    when (length (recordFields r) /= 5)
+      (fail "Invalid record")
+
     cxt <- getContext
     isDistinct <- parseField r 0 nonzero
     ditvp <- DITemplateValueParameter
