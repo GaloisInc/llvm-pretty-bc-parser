@@ -573,7 +573,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         adj i | recordSize == 19 = i + 1
               | otherwise        = i
         hasThisAdjustment = recordSize >= 20
-        hasThrownTypes = recordSize >= 21
+        hasThrownTypes    = recordSize >= 21
     unless (18 <= recordSize && recordSize <= 21)
       (fail ("Invalid subprogram record, size = " ++ show recordSize))
 
@@ -610,11 +610,13 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       (addDebugInfo isDistinct (DebugInfoSubprogram disp)) pm
 
   22 -> label "METADATA_LEXICAL_BLOCK" $ do
+
     when (length (recordFields r) /= 5)
       (fail "Invalid record")
-    cxt <- getContext
+
+    cxt        <- getContext
     isDistinct <- parseField r 0 nonzero
-    dilb <- DILexicalBlock
+    dilb       <- DILexicalBlock
       <$> (mdForwardRefOrNull cxt mt <$> parseField r 1 numeric) -- dilbScope
       <*> (mdForwardRefOrNull cxt mt <$> parseField r 2 numeric) -- dilbFile
       <*> parseField r 3 numeric                                 -- dilbLine
@@ -623,6 +625,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       (addDebugInfo isDistinct (DebugInfoLexicalBlock dilb)) pm
 
   23 -> label "METADATA_LEXICAL_BLOCK_FILE" $ do
+
     when (length (recordFields r) /= 4)
       (fail "Invalid record")
 
@@ -631,7 +634,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     dilbf      <- getCompose $ DILexicalBlockFile -- Composing (Parse . Maybe)
       <$$> (mdForwardRefOrNull cxt mt <$> parseField r 1 numeric)
       <<*> (mdForwardRefOrNull cxt mt <$> parseField r 2 numeric) -- dilbfFile
-      <<*> (parseField r 3 numeric) -- dilbfDiscriminator
+      <<*> (parseField r 3 numeric)                               -- dilbfDiscriminator
 
     case dilbf of
       Just dilbf' ->
@@ -658,6 +661,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       (addDebugInfo isDistinct (DebugInfoNameSpace dins)) pm
 
   25 -> label "METADATA_TEMPLATE_TYPE" $ do
+
+    when (length (recordFields r) /= 3)
+      (fail "Invalid record")
+
     cxt <- getContext
     isDistinct <- parseField r 0 nonzero
     dittp <- DITemplateTypeParameter
