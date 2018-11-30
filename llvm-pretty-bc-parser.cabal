@@ -8,6 +8,7 @@ Category:            Text
 Build-type:          Simple
 Cabal-version:       >=1.10
 Synopsis:            LLVM bitcode parsing library
+Tested-with:         GHC==8.0.2, GHC==8.2.2, GHC==8.4.3, GHC==8.6.1
 
 Description:
   A parser for the LLVM bitcode file format, yielding a Module from the
@@ -58,7 +59,7 @@ Library
                        cereal     >= 0.3.5.2,
                        bytestring >= 0.9.1,
                        utf8-string>= 1.0,
-                       llvm-pretty>= 0.7.3
+                       llvm-pretty>= 0.7.4
 
 Executable llvm-disasm
   Main-is:             LLVMDis.hs
@@ -74,7 +75,7 @@ Executable llvm-disasm
                        fgl        >= 5.5,
                        fgl-visualize >= 0.1,
                        cereal     >= 0.3.5.2,
-                       llvm-pretty>= 0.7.3,
+                       llvm-pretty>= 0.7.4,
                        pretty-show>= 1.6,
                        llvm-pretty-bc-parser
 
@@ -89,7 +90,7 @@ Test-suite disasm-test
                        directory,
                        bytestring,
                        filepath,
-                       llvm-pretty>= 0.7.3,
+                       llvm-pretty>= 0.7.4,
                        llvm-pretty-bc-parser
 
 Executable regression-test
@@ -102,7 +103,7 @@ Executable regression-test
                        filepath,
                        text,
                        turtle,
-                       llvm-pretty>= 0.7.3,
+                       llvm-pretty>= 0.7.4,
                        llvm-pretty-bc-parser
 
 Executable fuzz-llvm-disasm
@@ -124,7 +125,7 @@ Executable fuzz-llvm-disasm
                        abstract-par,
                        monad-par,
                        transformers,
-                       llvm-pretty>= 0.7.3,
+                       llvm-pretty>= 0.7.4,
                        llvm-pretty-bc-parser
   if flag(fuzz)
       Buildable:       True

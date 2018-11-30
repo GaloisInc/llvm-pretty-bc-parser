@@ -74,7 +74,8 @@ finalizeModule pm = label "finalizeModule" $ do
   let lkp = lookupBlockName (partialDefines pm)
   defines <- T.mapM (finalizePartialDefine lkp) (partialDefines pm)
   return emptyModule
-    { modDataLayout = partialDataLayout pm
+    { modSourceName = partialSourceName pm
+    , modDataLayout = partialDataLayout pm
     , modNamedMd    = partialNamedMd pm
     , modUnnamedMd  = sortBy (comparing umIndex) unnamed
     , modGlobals    = F.toList globals
