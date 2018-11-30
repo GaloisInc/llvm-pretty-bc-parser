@@ -1,6 +1,7 @@
 # llvm-pretty-bc-parser
 
-Parser for the llvm bitcode format.
+A parser for the LLVM bitcode file format, yielding a `Module` from
+[the llvm-pretty package](http://hackage.haskell.org/package/llvm-pretty).
 
 ## Compatibility
 
