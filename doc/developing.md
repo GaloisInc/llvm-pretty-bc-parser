@@ -61,3 +61,12 @@ To see all the options,
 ./dist/build/regression-test/regression-test --help
 ```
 
+## Travis CI build
+
+The `.travis.yml` file is generated using
+[haskell-ci](https://github.com/haskell-CI/haskell-ci).
+However, we have to add the following so that it fetches the latest
+`llvm-pretty` from Github.
+```yml
+  - "printf 'packages: llvm-pretty-bc-parser-*/*.cabal https://github.com/elliottt/llvm-pretty/archive/master.tar.gz \\n' > cabal.project"
+```
