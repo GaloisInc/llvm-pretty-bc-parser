@@ -64,9 +64,17 @@ To see all the options,
 ## Travis CI build
 
 The `.travis.yml` file is generated using
-[haskell-ci](https://github.com/haskell-CI/haskell-ci).
-However, we have to add the following so that it fetches the latest
-`llvm-pretty` from Github.
+[haskell-ci](https://github.com/haskell-CI/haskell-ci). However, we add the 
+following:
+```yml
+  - git clone https://github.com/elliottt/llvm-pretty llvm-pretty
+  - "printf 'packages: \".\" llvm-pretty\\n' > cabal.project"
+```
+so that it picks up the latest `llvm-pretty`.
+
+
+When Cabal [supports fetching tarballs](https://github.com/haskell/cabal/issues/2189), 
+we can use the following so that it fetches the latest `llvm-pretty` from Github.
 ```yml
   - "printf 'packages: llvm-pretty-bc-parser-*/*.cabal https://github.com/elliottt/llvm-pretty/archive/master.tar.gz \\n' > cabal.project"
 ```

@@ -85,7 +85,8 @@ install:
       cabal new-update head.hackage -v
     fi
   - grep -Ev -- '^\s*--' ${HOME}/.cabal/config | grep -Ev '^\s*$'
-  - "printf 'packages: \".\" https://github.com/elliottt/llvm-pretty/archive/master.tar.gz \\n' > cabal.project"
+  - git clone https://github.com/elliottt/llvm-pretty llvm-pretty
+  - "printf 'packages: \".\" llvm-pretty/\\n' > cabal.project"
   - touch cabal.project.local
   - "if ! $NOINSTALLEDCONSTRAINTS; then for pkg in $($HCPKG list --simple-output); do echo $pkg  | grep -vw -- llvm-pretty-bc-parser | sed 's/^/constraints: /' | sed 's/-[^-]*$/ installed/' >> cabal.project.local; done; fi"
   - cat cabal.project || true
@@ -107,7 +108,8 @@ script:
   - mv "."/dist/llvm-pretty-bc-parser-*.tar.gz ${DISTDIR}/
   - cd ${DISTDIR} || false
   - find . -maxdepth 1 -name '*.tar.gz' -exec tar -xvf '{}' \;
-  - "printf 'packages: llvm-pretty-bc-parser-*/*.cabal https://github.com/elliottt/llvm-pretty/archive/master.tar.gz \\n' > cabal.project"
+  - git clone https://github.com/elliottt/llvm-pretty llvm-pretty
+  - "printf 'packages: llvm-pretty-bc-parser-*/*.cabal llvm-pretty/*.cabal\\n' > cabal.project"
   - touch cabal.project.local
   - "if ! $NOINSTALLEDCONSTRAINTS; then for pkg in $($HCPKG list --simple-output); do echo $pkg  | grep -vw -- llvm-pretty-bc-parser | sed 's/^/constraints: /' | sed 's/-[^-]*$/ installed/' >> cabal.project.local; done; fi"
   - cat cabal.project || true
