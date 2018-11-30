@@ -1,3 +1,3 @@
-packages: .
+packages: . ../llvm-pretty
 optional-packages: llvm-pretty
 constraints: directory >= 1.2.7
