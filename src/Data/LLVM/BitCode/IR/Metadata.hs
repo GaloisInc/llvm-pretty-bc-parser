@@ -111,11 +111,14 @@ addOldNode fnLocal vals mt = nameNode fnLocal False ix mt'
 mdForwardRef :: [String] -> MetadataTable -> Int -> PValMd
 mdForwardRef cxt mt ix = fromMaybe fallback nodeRef
   where
+  nodeRef           = reference `fmap` Map.lookup ix (mtNodes mt)
   fallback          = case forwardRef cxt ix (mtEntries mt) of
                         Typed { typedValue = ValMd md } -> md
                         tv                              -> ValMdValue tv
-  reference (_,_,r) = ValMdRef r
-  nodeRef           = reference `fmap` Map.lookup ix (mtNodes mt)
+  reference (False, _, r) = ValMdRef r
+  reference (_    , _, r) =
+    let explanation = "Illegal forward reference into function-local metadata."
+    in throw (BadValueRef callStack cxt explanation r)
 
 mdForwardRefOrNull :: [String] -> MetadataTable -> Int -> Maybe PValMd
 mdForwardRefOrNull cxt mt ix | ix > 0 = Just (mdForwardRef cxt mt (ix - 1))
@@ -123,15 +126,17 @@ mdForwardRefOrNull cxt mt ix | ix > 0 = Just (mdForwardRef cxt mt (ix - 1))
 
 mdNodeRef :: HasCallStack
           => [String] -> MetadataTable -> Int -> Int
-mdNodeRef cxt mt ix =
-  maybe (throw (BadValueRef callStack cxt ix)) prj (Map.lookup ix (mtNodes mt))
-  where
-  prj (_,_,x) = x
+mdNodeRef cxt mt ix = maybe except prj (Map.lookup ix (mtNodes mt))
+  where explanation   = "Bad forward reference into mtNodes"
+        except        = throw (BadValueRef callStack cxt explanation ix)
+        prj (_, _, x) = x
 
 mdString :: HasCallStack
          => [String] -> MetadataTable -> Int -> String
 mdString cxt mt ix =
-  fromMaybe (throw (BadValueRef callStack cxt ix)) (mdStringOrNull cxt mt ix)
+  let explanation = "Null value when metadata string was expected"
+  in fromMaybe (throw (BadValueRef callStack cxt explanation ix))
+               (mdStringOrNull cxt mt ix)
 
 mdStringOrNull :: HasCallStack
                => [String]
@@ -140,9 +145,11 @@ mdStringOrNull :: HasCallStack
                -> Maybe String
 mdStringOrNull cxt mt ix =
   case mdForwardRefOrNull cxt mt ix of
-    Nothing -> Nothing
+    Nothing                -> Nothing
     Just (ValMdString str) -> Just str
-    Just _ -> throw (BadTypeRef callStack cxt ix)
+    Just _                 ->
+      let explanation = "Non-string metadata when string was expected"
+      in throw (BadTypeRef callStack cxt explanation ix)
 
 mkMdRefTable :: MetadataTable -> MdRefTable
 mkMdRefTable mt = Map.mapMaybe step (mtNodes mt)
