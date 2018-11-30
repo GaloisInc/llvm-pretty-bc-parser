@@ -2,7 +2,15 @@
 
 Parser for the llvm bitcode format.
 
-- Official (yet incomplete) reference: https://llvm.org/docs/BitCodeFormat.html
-- C++ implementation: 
-   + Release 5.0: https://github.com/llvm-mirror/llvm/blob/release_50/lib/Bitcode/Reader/BitcodeReader.cpp
-   + Release 6.0: https://github.com/llvm-mirror/llvm/blob/release_60/lib/Bitcode/Reader/BitcodeReader.cpp
+## Compatibility
+
+`llvm-pretty-bc-parser` has been tested extensively against LLVM/Clang 3.8.
+
+It is known to not be perfectly compatible with LLVM/Clang 3.9 in the presence
+of debug information (see [issue
+#79](https://github.com/GaloisInc/llvm-pretty-bc-parser/issues/79)), but when
+compiling with out debug symbols, your mileage may vary.
+
+## Documentation
+
+Developers' documentation: [doc/developing.md](./doc/developing.md)
