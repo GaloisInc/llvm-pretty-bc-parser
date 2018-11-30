@@ -53,20 +53,24 @@ import           GHC.Stack (HasCallStack, callStack)
 -- Parsing State ---------------------------------------------------------------
 
 data MetadataTable = MetadataTable
-  { mtEntries   :: MdTable
-  , mtNextNode  :: !Int
-  , mtNodes     :: Map.Map Int (Bool,Bool,Int)
-                   -- ^ The entries in the map are: is the entry function local,
-                   -- is the entry distinct, and the implicit id for the node.
+  { mtEntries        :: MdTable
+  , mtNextNode       :: !Int
+  , mtNodes          :: Map Int (Bool,Bool,Int)
+  -- ^ The entries in the map are: is the entry function local, is the entry
+  -- distinct, and the implicit id for the node.
+  , mtCompositeTypes :: Map String (DICompositeType' Int)
+  -- ^ Used for resolving old-style references to composite types
+  -- See https://github.com/elliottt/llvm-pretty/issues/39
   } deriving (Show)
 
 emptyMetadataTable ::
   Int {- ^ globals seen so far -} ->
   MdTable -> MetadataTable
 emptyMetadataTable globals es = MetadataTable
-  { mtEntries   = es
-  , mtNextNode  = globals
-  , mtNodes     = Map.empty
+  { mtEntries        = es
+  , mtNextNode       = globals
+  , mtNodes          = Map.empty
+  , mtCompositeTypes = Map.empty
   }
 
 metadata :: PValMd -> Typed PValue
@@ -171,6 +175,40 @@ mdStringOrNull cxt partialMeta ix =
       Just _                 ->
         let explanation = "Non-string metadata when string was expected"
         in throw (BadTypeRef callStack cxt explanation ix)
+
+-- | Reference a composite type, with either old- or new-style references.
+--
+-- Based on the function @getDITypeRefOrNull@ in the LLVM source.
+diTypeRefOrNull' :: [String]       -- ^ Parsing context
+                 -> MetadataTable
+                 -> Int            -- ^ @identifier:@
+                 -> Maybe (DICompositeType' Int)
+diTypeRefOrNull' cxt mt ix =
+  upgradeTypeRef cxt mt =<< mdForwardRefOrNull cxt mt ix
+
+-- | Just like 'diTypeRefOrNull', but wraps the result in a
+-- @ValMdDebugInfo . DebugInfoCompositeType@, giving it the less-specific
+-- type that many constructors in the AST expect.
+diTypeRefOrNull :: [String]       -- ^ Parsing context
+                -> MetadataTable
+                -> Int            -- ^ @identifier:@
+                -> Maybe PValMd
+diTypeRefOrNull cxt mt ix =
+  ValMdDebugInfo . DebugInfoCompositeType <$> diTypeRefOrNull' cxt mt ix
+
+-- | If it's a string, look it up in the composite type table
+upgradeTypeRef :: HasCallStack
+               => [String]      -- ^ Parsing context, for error messages
+               -> MetadataTable
+               -> PValMd        -- ^ Value to upgrade
+               -> Maybe (DICompositeType' Int)
+upgradeTypeRef cxt mt =
+  \case
+    ValMdString s ->
+      let explanation = "" -- TODO
+      in Just (fromMaybe (throw (BadValueRef callStack cxt explanation 0))
+                         (Map.lookup s (mtCompositeTypes mt)))
+    _otherMdValue -> Nothing
 
 mdStringOrEmpty :: HasCallStack
                 => [String]
@@ -356,6 +394,16 @@ parsedMetadata pm =
   , pmFnAttachments pm
   , pmGlobalAttachments pm
   )
+
+-- | Old-style DICompositeType references
+-- See https://github.com/elliottt/llvm-pretty/issues/39
+--
+-- Corresponds to @addTypeRef@ in the LLVM source.
+addCompositeType :: (DICompositeType' Int) -> MetadataTable -> MetadataTable
+addCompositeType dict mt =
+  case dictIdentifier dict of
+    Just name -> mt { mtCompositeTypes = Map.insert name dict (mtCompositeTypes mt) }
+    Nothing   -> mt
 
 -- Applicative composition ------------------------------------------------------------
 
@@ -560,40 +608,50 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)  -- didtName
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 3 numeric)  -- didtFile
         <*> parseField r 4 numeric                                  -- didtLine
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 5 numeric)  -- didtScope
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 6 numeric)  -- didtBaseType
+        <*> (diTypeRefOrNull    ctx mt <$> parseField r 5 numeric)  -- didtScope
+        <*> (diTypeRefOrNull    ctx mt <$> parseField r 6 numeric)  -- didtBaseType
         <*> parseField r 7 numeric                                  -- didtSize
         <*> parseField r 8 numeric                                  -- didtAlign
         <*> parseField r 9 numeric                                  -- didtOffset
         <*> parseField r 10 numeric                                 -- didtFlags
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 11 numeric) -- didtExtraData
+        <*> (diTypeRefOrNull    ctx mt <$> parseField r 11 numeric) -- didtExtraData
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoDerivedType didt)) pm
 
     18 -> label "METADATA_COMPOSITE_TYPE" $ do
       assertRecordSizeIn [16]
       ctx        <- getContext
+
+      -- High-order bits of isDistinct serve as an ad-hoc "version" tag, so
+      -- we need to understand its value as a number as well as a Bool.
+      version    <- parseField r 0 numeric
       isDistinct <- parseField r 0 nonzero
+
       dict       <- DICompositeType
         <$> parseField r 1 numeric                                  -- dictTag
         <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)  -- dictName
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 3 numeric)  -- dictFile
         <*> parseField r 4 numeric                                  -- dictLine
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 5 numeric)  -- dictScope
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 6 numeric)  -- dictBaseType
+        <*> (diTypeRefOrNull    ctx mt <$> parseField r 5 numeric)  -- dictScope
+        <*> (diTypeRefOrNull    ctx mt <$> parseField r 6 numeric)  -- dictBaseType
         <*> parseField r 7 numeric                                  -- dictSize
         <*> parseField r 8 numeric                                  -- dictAlign
         <*> parseField r 9 numeric                                  -- dictOffset
         <*> parseField r 10 numeric                                 -- dictFlags
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 11 numeric) -- dictElements
         <*> parseField r 12 numeric                                 -- dictRuntimeLang
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 13 numeric) -- dictVTableHolder
+        <*> (diTypeRefOrNull    ctx mt <$> parseField r 13 numeric) -- dictVTableHolder
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 14 numeric) -- dictTemplateParams
         <*> (mdStringOrNull     ctx pm <$> parseField r 15 numeric) -- dictIdentifier
+
+      -- If this is the "old-style" DICompositeType, it might be referred to by name.
       return $! updateMetadataTable
-        (addDebugInfo isDistinct (DebugInfoCompositeType dict)) pm
+          (if version < (2 :: Int) then addCompositeType dict else id .
+            addDebugInfo isDistinct (DebugInfoCompositeType dict))
+          pm
 
     19 -> label "METADATA_SUBROUTINE_TYPE" $ do
+      -- TODO: upgradeTypeRefArray this thing
       assertRecordSizeBetween 3 4
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
@@ -666,8 +724,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
             then mdForwardRefOrNull ctx mt <$> parseField r n numeric
             else pure Nothing
 
-      disp         <- DISubprogram
-        <$> (mdForwardRefOrNull ctx mt <$> parseField r 1 numeric)        -- dispScope
+      ctx        <- getContext
+      isDistinct <- parseField r 0 nonzero -- isDistinct
+      disp       <- DISubprogram
+        <$> (diTypeRefOrNull    ctx mt <$> parseField r 1 numeric)        -- dispScope
         <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)        -- dispName
         <*> (mdStringOrNull     ctx pm <$> parseField r 3 numeric)        -- dispLinkageName
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 4 numeric)        -- dispFile
@@ -676,7 +736,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*>                                parseField r 7 nonzero         -- dispIsLocal
         <*>                                pure isDefinition              -- dispIsDefinition
         <*>                                parseField r 9 numeric         -- dispScopeLine
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 10 numeric)       -- dispContainingType
+        <*> (diTypeRefOrNull    ctx mt <$> parseField r 10 numeric)       -- dispContainingType
         <*>                                parseField r 11 numeric        -- dispVirtuality
         <*>                                parseField r 12 numeric        -- dispVirtualIndex
         <*> (if hasThisAdjustment
@@ -746,8 +806,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       cxt <- getContext
       isDistinct <- parseField r 0 nonzero
       dittp <- DITemplateTypeParameter
-        <$> (mdString cxt pm     <$> parseField r 1 numeric) -- dittpName
-        <*> (mdForwardRef cxt mt <$> parseField r 2 numeric) -- dittpType
+        <$> (mdString cxt pm        <$> parseField r 1 numeric) -- dittpName
+        <*> (fromMaybe (error "TEMPLATE_TYPE") . diTypeRefOrNull cxt mt <$>
+               parseField r 2 numeric) -- dittpType
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoTemplateTypeParameter dittp)) pm
 
@@ -758,7 +819,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       ditvp      <- DITemplateValueParameter
         <$> (mdString cxt pm     <$> parseField r 1 numeric) -- ditvpName
         <*> (mdForwardRef cxt mt <$> parseField r 2 numeric) -- ditvpType
-        <*> (mdForwardRef cxt mt <$> parseField r 3 numeric) -- ditvpValue
+        <*> (fromMaybe (error "TEMPLATE_VALUE") . diTypeRefOrNull cxt mt <$>
+               parseField r 3 numeric) -- ditvpValue
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoTemplateValueParameter ditvp)) pm
 
@@ -775,7 +837,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> (mdStringOrNull     ctx pm <$> parseField r 3 numeric)  -- digvLinkageName
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 4 numeric)  -- digvFile
         <*> parseField r 5 numeric                                  -- digvLine
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 6 numeric)  -- digvType
+        <*> (diTypeRefOrNull    ctx mt <$> parseField r 6 numeric)  -- digvType
         <*> parseField r 7 nonzero                                  -- digvIsLocal
         <*> parseField r 8 nonzero                                  -- digvIsDefinition
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 9 numeric)  -- digvVariable
@@ -817,7 +879,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> (mdForwardRefOrNull ("dilvFile" :ctx) mt
               <$> parseField r (adj 3) numeric) -- dilvFile
         <*> parseField r (adj 4) numeric        -- dilvLine
-        <*> (mdForwardRefOrNull ("dilvType" :ctx) mt
+        <*> (diTypeRefOrNull    ("dilvType" :ctx) mt
               <$> parseField r (adj 5) numeric) -- dilvType
         <*> parseField r (adj 6) numeric        -- dilvArg
         <*> parseField r (adj 7) numeric        -- dilvFlags
@@ -840,7 +902,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       diie       <- DIImportedEntity
         <$> parseField r 1 numeric                                 -- diieTag
         <*> (mdForwardRefOrNull cxt mt <$> parseField r 2 numeric) -- diieScope
-        <*> (mdForwardRefOrNull cxt mt <$> parseField r 3 numeric) -- diieEntity
+        <*> (diTypeRefOrNull    cxt mt <$> parseField r 3 numeric) -- diieEntity
         <*> (if length (recordFields r) >= 7
              then mdForwardRefOrNull cxt mt <$> parseField r 6 numeric
              else pure Nothing)                                    -- diieFile
