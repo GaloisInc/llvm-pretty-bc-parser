@@ -154,13 +154,20 @@ mdStringOrNull :: HasCallStack
                -> Int
                -> Maybe String
 mdStringOrNull cxt partialMeta ix =
-  Map.lookup ix (pmStrings partialMeta) <|>
+  Map.lookup (ix - 1) (pmStrings partialMeta) <|>
     case mdForwardRefOrNull cxt (pmEntries partialMeta) ix of
       Nothing                -> Nothing
       Just (ValMdString str) -> Just str
       Just _                 ->
         let explanation = "Non-string metadata when string was expected"
         in throw (BadTypeRef callStack cxt explanation ix)
+
+mdStringOrEmpty :: HasCallStack
+                => [String]
+                -> PartialMetadata
+                -> Int
+                -> String
+mdStringOrEmpty cxt partialMeta = fromMaybe "" . mdStringOrNull cxt partialMeta
 
 mkMdRefTable :: MetadataTable -> MdRefTable
 mkMdRefTable mt = Map.mapMaybe step (mtNodes mt)
@@ -490,8 +497,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       diFile     <- DIFile
-        <$> (mdString ctx pm <$> parseField r 1 numeric) -- difFilename
-        <*> (mdString ctx pm <$> parseField r 2 numeric) -- difDirectory
+        <$> (mdStringOrEmpty ctx pm <$> parseField r 1 numeric) -- difFilename
+        <*> (mdStringOrEmpty ctx pm <$> parseField r 2 numeric) -- difDirectory
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoFile diFile)) pm
 
