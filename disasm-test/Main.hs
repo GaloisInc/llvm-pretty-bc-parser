@@ -158,7 +158,7 @@ generateBitCode Options { .. } pfx file = do
 normalizeBitCode :: Options -> FilePath -> FilePath -> IO FilePath
 normalizeBitCode Options { .. } pfx file = do
   tmp      <- getTemporaryDirectory
-  (norm,h) <- openTempFile tmp (pfx <.> "ll")
+  (norm,h) <- openTempFile tmp (pfx ++ "llvm-dis" <.> "ll")
   hClose h
   callProc optLlvmDis ["-o", norm, file]
   -- stripComments norm
@@ -172,7 +172,7 @@ processBitCode Options { .. } pfx file = do
       handler se = return (Left (Error [] (show se)))
       printToTempFile sufx stuff = do
         tmp        <- getTemporaryDirectory
-        (parsed,h) <- openTempFile tmp (pfx <.> sufx)
+        (parsed,h) <- openTempFile tmp (pfx ++ "llvm-disasm" <.> sufx)
         hPrint h stuff
         hClose h
         return parsed
