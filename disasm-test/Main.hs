@@ -120,21 +120,13 @@ runTest opts file =
             putStrLn ("successfully parsed " ++ show f)
             return (parsed, ast)
   in do
-    (parsed, ast) <- processLL file
+    (parsed1, ast) <- processLL file
     case ast of               -- this Maybe also encodes the data of optRoundtrip
       Nothing   -> return ()
       Just ast1 -> do
-        -- Re-assemble and re-disassemble
-        (_, Just ast2)  <- processLL parsed
-        -- Ensure that the ASTs match
-        (code, stdout, stderr) <-
-          Proc.readCreateProcessWithExitCode (Proc.proc "diff" ["-u", ast1, ast2]) ""
-        case code of
-          ExitFailure _ -> exitF ["diff failed", stdout, stderr]
-          ExitSuccess   ->
-            if stdout /= ""
-            then exitF ["non-empty diff", stdout, stderr]
-            else putStrLn "success: empty diff!"
+        (parsed2, Just ast2) <- processLL parsed1 -- Re-assemble and re-disassemble
+        diff ast1 ast2                            -- Ensure that the ASTs match
+        diff parsed1 parsed2                      -- Ensure that the disassembled files match
   where pfx   = dropExtension (takeFileName file)
         exitF l = mapM_ putStrLn l >> exitFailure
         withFile iofile f = X.bracket iofile (\_ -> return ()) f
@@ -142,6 +134,15 @@ runTest opts file =
           putStrLn "failure"
           putStrLn (unlines (map ("; " ++) (lines (formatError msg))))
           exitFailure
+        diff file1 file2 = do
+          (code, stdout, stderr) <-
+            Proc.readCreateProcessWithExitCode (Proc.proc "diff" ["-u", file1, file2]) ""
+          case code of
+            ExitFailure _ -> exitF ["diff failed", stdout, stderr]
+            ExitSuccess   ->
+              if stdout /= "" || stderr /= ""
+              then exitF ["non-empty diff", stdout, stderr]
+              else mapM_ putStrLn ["success: empty diff: ", file1, file2]
 
 -- | Assemble some llvm assembly, producing a bitcode file in /tmp.
 generateBitCode :: Options -> FilePath -> FilePath -> IO FilePath
