@@ -33,6 +33,20 @@ C++ implementation:
 
 ### `llvm-disasm-test`
 
+#### description
+
+This test compares the behavior of `llvm-disasm` against that of `llvm-dis`, by
+having them both disassemble the same file and diffing their output (in general,
+we don't expect them to exactly match).
+
+Additionally, by default this test does a "round-trip" comparison of
+`llvm-disasm` against itself. After disassembling the first time, it reassembles
+the output of `llvm-disasm` and runs it again. It then compares the ASTs generated
+by the first and second run of `llvm-disasm`, to ensure that the printer/parser
+combo conserves all the information the parser recognizes.
+
+#### use
+
 To compare the behavior of `llvm-disasm` against that of `llvm-dis`:
 ```bash
 cabal build
