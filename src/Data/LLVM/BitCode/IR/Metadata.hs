@@ -130,7 +130,8 @@ addOldNode fnLocal vals mt = nameNode fnLocal False ix mt'
   where
   (ix,mt') = addMetadata (ValMdNode [ Just (ValMdValue tv) | tv <- vals ]) mt
 
-mdForwardRef :: [String] -> MetadataTable -> Int -> PValMd
+mdForwardRef :: HasCallStack
+             => [String] -> MetadataTable -> Int -> PValMd
 mdForwardRef cxt mt ix = fromMaybe fallback nodeRef
   where
   nodeRef           = reference `fmap` Map.lookup ix (mtNodes mt)
@@ -142,7 +143,8 @@ mdForwardRef cxt mt ix = fromMaybe fallback nodeRef
     let explanation = "Illegal forward reference into function-local metadata."
     in throw (BadValueRef callStack cxt explanation r)
 
-mdForwardRefOrNull :: [String] -> MetadataTable -> Int -> Maybe PValMd
+mdForwardRefOrNull :: HasCallStack
+                   => [String] -> MetadataTable -> Int -> Maybe PValMd
 mdForwardRefOrNull cxt mt ix | ix > 0 = Just (mdForwardRef cxt mt (ix - 1))
                              | otherwise = Nothing
 
@@ -179,7 +181,8 @@ mdStringOrNull cxt partialMeta ix =
 -- | Reference a composite type, with either old- or new-style references.
 --
 -- Based on the function @getDITypeRefOrNull@ in the LLVM source.
-diTypeRefOrNull' :: [String]       -- ^ Parsing context
+diTypeRefOrNull' :: HasCallStack
+                 => [String]       -- ^ Parsing context
                  -> MetadataTable
                  -> Int            -- ^ @identifier:@
                  -> Maybe (DICompositeType' Int)
@@ -189,7 +192,8 @@ diTypeRefOrNull' cxt mt ix =
 -- | Just like 'diTypeRefOrNull', but wraps the result in a
 -- @ValMdDebugInfo . DebugInfoCompositeType@, giving it the less-specific
 -- type that many constructors in the AST expect.
-diTypeRefOrNull :: [String]       -- ^ Parsing context
+diTypeRefOrNull :: HasCallStack
+                => [String]       -- ^ Parsing context
                 -> MetadataTable
                 -> Int            -- ^ @identifier:@
                 -> Maybe PValMd
