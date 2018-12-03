@@ -1,4 +1,5 @@
 {-# LANGUAGE ExplicitForAll #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE TupleSections #-}
@@ -16,25 +17,28 @@ module Data.LLVM.BitCode.IR.Metadata (
   , PGlobalAttachments
   ) where
 
-import Data.LLVM.BitCode.Bitstream
-import Data.LLVM.BitCode.Match
-import Data.LLVM.BitCode.Parse
-import Data.LLVM.BitCode.Record
-import Text.LLVM.AST
-import Text.LLVM.Labels
+import           Data.LLVM.BitCode.Bitstream
+import           Data.LLVM.BitCode.Match
+import           Data.LLVM.BitCode.Parse
+import           Data.LLVM.BitCode.Record
+import           Text.LLVM.AST
+import           Text.LLVM.Labels
 
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
-import Control.Exception (throw)
-import Control.Monad (foldM,guard,mplus,when)
-import Data.Functor.Compose (Compose(..), getCompose)
-import Data.List (mapAccumL)
-import Data.Maybe (fromMaybe)
-import Data.Bits (shiftR, testBit, shiftL)
-import Data.Word (Word32,Word64)
+import           Control.Exception (throw)
+import           Control.Monad (foldM,guard,mplus,when)
+import           Control.Applicative ((<|>))
+import           Data.Bits (shiftR, testBit, shiftL)
+
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as Char8 (unpack)
+import           Data.Functor.Compose (Compose(..), getCompose)
+import           Data.List (mapAccumL)
+import           Data.Map (Map)
 import qualified Data.Map as Map
 import GHC.Stack (HasCallStack, callStack)
+import           Data.Maybe (fromMaybe)
+import           Data.Word (Word32,Word64)
 
 -- Parsing State ---------------------------------------------------------------
 
@@ -77,11 +81,15 @@ nameNode fnLocal isDistinct ix mt = mt
   , mtNextNode = mtNextNode mt + 1
   }
 
-addString :: String -> MetadataTable -> MetadataTable
-addString str = snd . addMetadata (ValMdString str)
+addString :: String -> PartialMetadata -> PartialMetadata
+addString str pm =
+  let (ix, mt) = addMetadata (ValMdString str) (pmEntries pm)
+  in pm { pmEntries = mt
+        , pmStrings = Map.insert ix str (pmStrings pm)
+        }
 
-addStrings :: [String] -> MetadataTable -> MetadataTable
-addStrings strs mt = foldl (flip addString) mt strs
+addStrings :: [String] -> PartialMetadata -> PartialMetadata
+addStrings strs pm = foldl (flip addString) pm strs
 
 addLoc :: Bool -> PDebugLoc -> MetadataTable -> MetadataTable
 addLoc isDistinct loc mt = nameNode False isDistinct ix mt'
@@ -132,24 +140,34 @@ mdNodeRef cxt mt ix = maybe except prj (Map.lookup ix (mtNodes mt))
         prj (_, _, x) = x
 
 mdString :: HasCallStack
-         => [String] -> MetadataTable -> Int -> String
-mdString cxt mt ix =
+         => [String] -> PartialMetadata -> Int -> String
+mdString cxt partialMeta ix =
   let explanation = "Null value when metadata string was expected"
   in fromMaybe (throw (BadValueRef callStack cxt explanation ix))
-               (mdStringOrNull cxt mt ix)
+               (mdStringOrNull cxt partialMeta ix)
 
+-- | This preferentially fetches the string from the strict string table
+-- (@pmStrings@), but will return a forward reference when it can't find it there.
 mdStringOrNull :: HasCallStack
                => [String]
-               -> MetadataTable
+               -> PartialMetadata
                -> Int
                -> Maybe String
-mdStringOrNull cxt mt ix =
-  case mdForwardRefOrNull cxt mt ix of
-    Nothing                -> Nothing
-    Just (ValMdString str) -> Just str
-    Just _                 ->
-      let explanation = "Non-string metadata when string was expected"
-      in throw (BadTypeRef callStack cxt explanation ix)
+mdStringOrNull cxt partialMeta ix =
+  Map.lookup (ix - 1) (pmStrings partialMeta) <|>
+    case mdForwardRefOrNull cxt (pmEntries partialMeta) ix of
+      Nothing                -> Nothing
+      Just (ValMdString str) -> Just str
+      Just _                 ->
+        let explanation = "Non-string metadata when string was expected"
+        in throw (BadTypeRef callStack cxt explanation ix)
+
+mdStringOrEmpty :: HasCallStack
+                => [String]
+                -> PartialMetadata
+                -> Int
+                -> String
+mdStringOrEmpty cxt partialMeta = fromMaybe "" . mdStringOrNull cxt partialMeta
 
 mkMdRefTable :: MetadataTable -> MdRefTable
 mkMdRefTable mt = Map.mapMaybe step (mtNodes mt)
@@ -165,18 +183,28 @@ data PartialMetadata = PartialMetadata
   , pmInstrAttachments :: InstrMdAttachments
   , pmFnAttachments    :: PFnMdAttachments
   , pmGlobalAttachments:: PGlobalAttachments
+  , pmStrings          :: Map Int String
+  -- ^ Forward references to metadata strings are never actually
+  -- forward references, string blocks (@METADATA_STRINGS@) always come first.
+  -- So references to them don't need to be inside the @MonadFix@ like
+  -- references into other 'pmEntries', allowing them to be strict.
+  --
+  -- See this comment:
+  -- - https://github.com/llvm-mirror/llvm/blob/release_40/lib/Bitcode/Reader/MetadataLoader.cpp#L913
+  -- - https://github.com/llvm-mirror/llvm/blob/release_60/lib/Bitcode/Reader/MetadataLoader.cpp#L1017
   } deriving (Show)
 
 emptyPartialMetadata ::
   Int {- ^ globals seen so far -} ->
   MdTable -> PartialMetadata
 emptyPartialMetadata globals es = PartialMetadata
-  { pmEntries          = emptyMetadataTable globals es
-  , pmNamedEntries     = Map.empty
-  , pmNextName         = Nothing
-  , pmInstrAttachments = Map.empty
-  , pmFnAttachments    = Map.empty
-  , pmGlobalAttachments= Map.empty
+  { pmEntries           = emptyMetadataTable globals es
+  , pmNamedEntries      = Map.empty
+  , pmNextName          = Nothing
+  , pmInstrAttachments  = Map.empty
+  , pmFnAttachments     = Map.empty
+  , pmGlobalAttachments = Map.empty
+  , pmStrings           = Map.empty
   }
 
 updateMetadataTable :: (MetadataTable -> MetadataTable)
@@ -322,6 +350,8 @@ parseMetadataBlock globals vt es = label "METADATA_BLOCK" $ do
 -- XXX this currently relies on the constant block having been parsed already.
 -- Though most bitcode examples I've seen are ordered this way, it would be nice
 -- to not have to rely on it.
+--
+-- Based on the function 'parseOneMetadata' in the LLVM source.
 parseMetadataEntry :: ValueTable -> MetadataTable -> PartialMetadata -> Entry
                    -> Parse PartialMetadata
 parseMetadataEntry vt mt pm (fromEntry -> Just r) =
@@ -341,7 +371,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     -- [values]
     1 -> label "METADATA_STRING" $ do
       str <- fmap UTF8.decode (parseFields r 0 char) `mplus` parseField r 0 string
-      return $! updateMetadataTable (addString str) pm
+      return $! addString str pm
 
     -- [type num, value num]
     2 -> label "METADATA_VALUE" $ do
@@ -445,7 +475,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       isDistinct <- parseField r 0 nonzero
       diEnum     <- flip DebugInfoEnumerator
         <$> parseField r 1 signedInt64                   -- value
-        <*> (mdString ctx mt <$> parseField r 2 numeric) -- name
+        <*> (mdString ctx pm <$> parseField r 2 numeric) -- name
       return $! updateMetadataTable (addDebugInfo isDistinct diEnum) pm
 
     15 -> label "METADATA_BASIC_TYPE" $ do
@@ -454,7 +484,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       isDistinct <- parseField r 0 nonzero
       dibt       <- DIBasicType
         <$> parseField r 1 numeric                       -- dibtTag
-        <*> (mdString ctx mt <$> parseField r 2 numeric) -- dibtName
+        <*> (mdString ctx pm <$> parseField r 2 numeric) -- dibtName
         <*> parseField r 3 numeric                       -- dibtSize
         <*> parseField r 4 numeric                       -- dibtAlign
         <*> parseField r 5 numeric                       -- dibtEncoding
@@ -467,8 +497,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       diFile     <- DIFile
-        <$> (mdString ctx mt <$> parseField r 1 numeric) -- difFilename
-        <*> (mdString ctx mt <$> parseField r 2 numeric) -- difDirectory
+        <$> (mdStringOrEmpty ctx pm <$> parseField r 1 numeric) -- difFilename
+        <*> (mdStringOrEmpty ctx pm <$> parseField r 2 numeric) -- difDirectory
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoFile diFile)) pm
 
@@ -478,7 +508,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       isDistinct <- parseField r 0 nonzero
       didt       <- DIDerivedType
         <$> parseField r 1 numeric                                  -- didtTag
-        <*> (mdStringOrNull     ctx mt <$> parseField r 2 numeric)  -- didtName
+        <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)  -- didtName
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 3 numeric)  -- didtFile
         <*> parseField r 4 numeric                                  -- didtLine
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 5 numeric)  -- didtScope
@@ -497,7 +527,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       isDistinct <- parseField r 0 nonzero
       dict       <- DICompositeType
         <$> parseField r 1 numeric                                  -- dictTag
-        <*> (mdStringOrNull     ctx mt <$> parseField r 2 numeric)  -- dictName
+        <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)  -- dictName
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 3 numeric)  -- dictFile
         <*> parseField r 4 numeric                                  -- dictLine
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 5 numeric)  -- dictScope
@@ -510,7 +540,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> parseField r 12 numeric                                 -- dictRuntimeLang
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 13 numeric) -- dictVTableHolder
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 14 numeric) -- dictTemplateParams
-        <*> (mdStringOrNull     ctx mt <$> parseField r 15 numeric) -- dictIdentifier
+        <*> (mdStringOrNull     ctx pm <$> parseField r 15 numeric) -- dictIdentifier
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoCompositeType dict)) pm
 
@@ -532,11 +562,11 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       dicu       <- DICompileUnit
         <$> parseField r 1 numeric                                  -- dicuLanguage
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 2 numeric)  -- dicuFile
-        <*> (mdStringOrNull ctx mt     <$> parseField r 3 numeric)  -- dicuProducer
+        <*> (mdStringOrNull     ctx pm <$> parseField r 3 numeric)  -- dicuProducer
         <*> parseField r 4 nonzero                                  -- dicuIsOptimized
-        <*> (mdStringOrNull ctx mt     <$> parseField r 5 numeric)  -- dicuFlags
+        <*> (mdStringOrNull     ctx pm <$> parseField r 5 numeric)  -- dicuFlags
         <*> parseField r 6 numeric                                  -- dicuRuntimeVersion
-        <*> (mdStringOrNull ctx mt     <$> parseField r 7 numeric)  -- dicuSplitDebugFilename
+        <*> (mdStringOrNull     ctx pm <$> parseField r 7 numeric)  -- dicuSplitDebugFilename
         <*> parseField r 8 numeric                                  -- dicuEmissionKind
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 9 numeric)  -- dicuEnums
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 10 numeric) -- dicuRetainedTypes
@@ -573,8 +603,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       isDistinct <- parseField r 0 nonzero -- isDistinct
       disp       <- DISubprogram
         <$> (mdForwardRefOrNull ctx mt <$> parseField r 1 numeric)        -- dispScope
-        <*> (mdStringOrNull ctx mt <$> parseField r 2 numeric)            -- dispName
-        <*> (mdStringOrNull ctx mt <$> parseField r 3 numeric)            -- dispLinkageName
+        <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)            -- dispName
+        <*> (mdStringOrNull     ctx pm <$> parseField r 3 numeric)            -- dispLinkageName
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 4 numeric)        -- dispFile
         <*> parseField r 5 numeric                                        -- dispLine
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 6 numeric)        -- dispType
@@ -637,7 +667,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       isDistinct <- parseField r 0 nonzero
       let nameIdx = if isNew then 2 else 3
       dins       <- DINameSpace
-        <$> (mdString cxt mt         <$> parseField r nameIdx numeric) -- dinsName
+        <$> (mdString cxt pm         <$> parseField r nameIdx numeric) -- dinsName
         <*> (mdForwardRef cxt mt     <$> parseField r 1 numeric)       -- dinsScope
         <*> (if isNew
             then return (ValMdString "")
@@ -651,7 +681,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       cxt <- getContext
       isDistinct <- parseField r 0 nonzero
       dittp <- DITemplateTypeParameter
-        <$> (mdString cxt mt     <$> parseField r 1 numeric) -- dittpName
+        <$> (mdString cxt pm     <$> parseField r 1 numeric) -- dittpName
         <*> (mdForwardRef cxt mt <$> parseField r 2 numeric) -- dittpType
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoTemplateTypeParameter dittp)) pm
@@ -661,7 +691,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
       ditvp      <- DITemplateValueParameter
-        <$> (mdString cxt mt     <$> parseField r 1 numeric) -- ditvpName
+        <$> (mdString cxt pm     <$> parseField r 1 numeric) -- ditvpName
         <*> (mdForwardRef cxt mt <$> parseField r 2 numeric) -- ditvpType
         <*> (mdForwardRef cxt mt <$> parseField r 3 numeric) -- ditvpValue
       return $! updateMetadataTable
@@ -676,8 +706,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
       digv <- DIGlobalVariable
         <$> (mdForwardRefOrNull ctx mt <$> parseField r 1 numeric)  -- digvScope
-        <*> (mdStringOrNull ctx mt     <$> parseField r 2 numeric)  -- digvName
-        <*> (mdStringOrNull ctx mt     <$> parseField r 3 numeric)  -- digvLinkageName
+        <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)  -- digvName
+        <*> (mdStringOrNull     ctx pm <$> parseField r 3 numeric)  -- digvLinkageName
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 4 numeric)  -- digvFile
         <*> parseField r 5 numeric                                  -- digvLine
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 6 numeric)  -- digvType
@@ -717,7 +747,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       dilv <- DILocalVariable
         <$> (mdForwardRefOrNull ("dilvScope":ctx) mt
               <$> parseField r (adj 1) numeric) -- dilvScope
-        <*> (mdStringOrNull     ("dilvName" :ctx) mt
+        <*> (mdStringOrNull     ("dilvName" :ctx) pm
               <$> parseField r (adj 2) numeric) -- dilvName
         <*> (mdForwardRefOrNull ("dilvFile" :ctx) mt
               <$> parseField r (adj 3) numeric) -- dilvFile
@@ -744,7 +774,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       isDistinct <- parseField r 0 nonzero
       diie       <- DIImportedEntity
         <$> parseField r 1 numeric                                 -- diieTag
-        <*> (mdString cxt mt           <$> parseField r 5 numeric) -- diieName
+        <*> (mdString cxt pm           <$> parseField r 5 numeric) -- diieName
         <*> (mdForwardRefOrNull cxt mt <$> parseField r 2 numeric) -- diieScope
         <*> (mdForwardRefOrNull cxt mt <$> parseField r 3 numeric) -- diieEntity
         <*> parseField r 4 numeric                                 -- diieLine
@@ -796,7 +826,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       let strings = snd (mapAccumL f bsStrings lengths)
             where f s i = case S.splitAt i s of
                             (str, rest) -> (rest, Char8.unpack str)
-      return $! updateMetadataTable (addStrings strings) pm
+      return $! addStrings strings pm
 
     -- [ valueid, n x [id, mdnode] ]
     36 -> label "METADATA_GLOBAL_DECL_ATTACHMENT" $ do

@@ -51,6 +51,9 @@ To compare the behavior of `llvm-disasm` against that of `llvm-dis`:
 ```bash
 cabal build
 ./dist/build/disasm-test/disasm-test ./disasm-test/tests/fun-attrs.ll
+
+# When using cabal new-build, the binary locations aren't so nice.
+$(find . -name disasm-test -type f) disasm-test/tests/*.ll
 ```
 To see all the options,
 ```bash
