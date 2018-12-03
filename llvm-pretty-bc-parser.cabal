@@ -90,6 +90,7 @@ Test-suite disasm-test
                        directory,
                        bytestring,
                        filepath,
+                       pretty-show>= 1.6,
                        llvm-pretty>= 0.7.4,
                        llvm-pretty-bc-parser
 
