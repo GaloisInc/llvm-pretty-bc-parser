@@ -7,7 +7,12 @@
     - [Upstream documentation](#upstream-documentation)
     - [Running the tests](#running-the-tests)
         - [`llvm-disasm-test`](#llvm-disasm-test)
+            - [description](#description)
+            - [use](#use)
         - [`regression-test`](#regression-test)
+        - [`unit-test`](#unit-test)
+    - [Travis CI build](#travis-ci-build)
+
 <!-- markdown-toc end -->
 
 ## Upstream documentation
@@ -78,10 +83,14 @@ To see all the options,
 ./dist/build/regression-test/regression-test --help
 ```
 
+### `unit-test`
+
+These are run with `cabal test` or `cabal new-test`.
+
 ## Travis CI build
 
-**Note**: the CI build only makes sure the project compiles, it doesn't run any
-meaningful tests.
+**Note**: the CI build doesn't run the full test suite, just some regression
+tests and the unit tests.
 
 The `.travis.yml` file is generated using
 [haskell-ci](https://github.com/haskell-CI/haskell-ci). However, we add the 
