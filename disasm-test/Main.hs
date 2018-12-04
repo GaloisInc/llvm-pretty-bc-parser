@@ -18,7 +18,7 @@ import System.Environment (getArgs,getProgName)
 import System.Exit (exitFailure,exitSuccess,ExitCode(..))
 import System.FilePath ((<.>),dropExtension,takeFileName)
 import System.IO
-    (openBinaryTempFile,hClose,openTempFile,hPrint)
+    (openBinaryTempFile,hClose,openTempFile,hPutStrLn)
 import qualified System.Process as Proc
 import Text.Show.Pretty (ppShow)
 import qualified Control.Exception as X
@@ -173,14 +173,14 @@ processBitCode Options { .. } pfx file = do
       printToTempFile sufx stuff = do
         tmp        <- getTemporaryDirectory
         (parsed,h) <- openTempFile tmp (pfx ++ "llvm-disasm" <.> sufx)
-        hPrint h stuff
+        hPutStrLn h stuff
         hClose h
         return parsed
   e <- parseBitCodeLazyFromFile file `X.catch` handler
   case e of
     Left err -> X.throwIO (ParseError err)
     Right m  -> do
-      parsed <- printToTempFile "ll" (ppLLVM (ppModule m))
+      parsed <- printToTempFile "ll" (show (ppLLVM (ppModule m)))
       -- stripComments parsed
       if optRoundtrip
       then do
