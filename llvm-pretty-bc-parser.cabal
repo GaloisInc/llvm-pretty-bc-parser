@@ -27,7 +27,9 @@ Source-repository head
 Library
   Hs-source-dirs:      src
   Exposed-modules:     Data.LLVM.CFG,
-                       Data.LLVM.BitCode
+                       Data.LLVM.BitCode,
+                       -- for testing:
+                       Data.LLVM.Internal
 
   Default-language:    Haskell2010
 
@@ -59,6 +61,7 @@ Library
                        cereal     >= 0.3.5.2,
                        bytestring >= 0.9.1,
                        utf8-string>= 1.0,
+                       uniplate   >= 1.6,
                        llvm-pretty>= 0.7.4
 
 Executable llvm-disasm
@@ -78,6 +81,27 @@ Executable llvm-disasm
                        llvm-pretty>= 0.7.4,
                        pretty-show>= 1.6,
                        llvm-pretty-bc-parser
+
+test-suite unit-test
+    type:                exitcode-stdio-1.0
+    main-is:             Main.hs
+    other-modules:       Tests.Instances,
+                         Tests.Metadata
+    hs-source-dirs:      unit-test
+    default-language:    Haskell2010
+    ghc-options:         -W -Wcompat
+                         -Wunrecognised-warning-flags
+                         -threaded
+    -- other-extensions:    OverloadedStrings, ...
+    build-depends: base -any,
+                   HUnit -any,
+                   QuickCheck -any,
+                   generic-random -any,
+                   tasty -any,
+                   tasty-hunit -any,
+                   tasty-quickcheck -any,
+                   llvm-pretty -any,
+                   llvm-pretty-bc-parser
 
 Test-suite disasm-test
   type:                exitcode-stdio-1.0
