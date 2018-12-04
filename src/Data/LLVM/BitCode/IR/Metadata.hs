@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ExplicitForAll #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -11,6 +13,7 @@ module Data.LLVM.BitCode.IR.Metadata (
   , PartialUnnamedMd(..)
   , finalizePartialUnnamedMd
   , finalizePValMd
+  , dedupMetadata
   , InstrMdAttachments
   , PFnMdAttachments
   , PKindMd
@@ -25,21 +28,25 @@ import           Text.LLVM.AST
 import           Text.LLVM.Labels
 
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
+import           Control.Applicative ((<|>))
 import           Control.Exception (throw)
 import           Control.Monad (foldM,guard,mplus,when)
-import           Control.Applicative ((<|>))
 import           Data.Bits (shiftR, testBit, shiftL)
-
+import           Data.Data (Data)
+import           Data.Typeable (Typeable)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as Char8 (unpack)
 import           Data.Either (partitionEithers)
 import           Data.Functor.Compose (Compose(..), getCompose)
-import           Data.List (mapAccumL)
+import           Data.Generics.Uniplate.Data
+import           Data.List (mapAccumL, foldl')
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import GHC.Stack (HasCallStack, callStack)
 import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Word (Word32,Word64)
+
+import           GHC.Generics (Generic)
+import           GHC.Stack (HasCallStack, callStack)
 
 
 
@@ -92,7 +99,7 @@ addString str pm =
         }
 
 addStrings :: [String] -> PartialMetadata -> PartialMetadata
-addStrings strs pm = foldl (flip addString) pm strs
+addStrings strs pm = foldl' (flip addString) pm strs
 
 addLoc :: Bool -> PDebugLoc -> MetadataTable -> MetadataTable
 addLoc isDistinct loc mt = nameNode False isDistinct ix mt'
@@ -243,6 +250,46 @@ nameMetadata val pm = case pmNextName pm of
     }
   Nothing -> fail "Expected a metadata name"
 
+-- De-duplicating ---------------------------------------------------------------
+
+-- | This function generically traverses the given unnamed metadata values.
+-- When it encounters one with a 'PValMd' inside of it, it looks up that
+-- value in the list. If found, it replaces the value with a reference to it.
+--
+-- Such de-duplication is necessary because the @fallback@ of
+-- 'mdForwardRefOrNull' is often called when it is in fact unnecessary, just
+-- because the appropriate references aren't available yet.
+--
+-- This function is concise at the cost of efficiency: In the worst case, every
+-- metadata node contains a reference to every other metadata node, and the
+-- cost is O(n^2*log(n)) where
+-- * n^2 comes from looking at every 'PValMd' inside every 'PartialUnnamedMd'
+-- * log(n) is the cost of looking them up in a 'Map'.
+dedupMetadata :: [PartialUnnamedMd] -> [PartialUnnamedMd]
+dedupMetadata pumd = map (helper (mkPartialUnnamedMdMap pumd)) pumd
+  where helper pumdMap pum =
+          let pumdMap' = Map.delete (pumValues pum) pumdMap -- don't self-reference
+          in pum { pumValues = maybeTransform pumdMap' (pumValues pum) }
+
+        -- | We avoid erroneously recursing into ValMdValues and exit early on
+        -- a few other constructors de-duplication wouldn't affect.
+        maybeTransform :: Map PValMd Int -> PValMd -> PValMd
+        maybeTransform pumdMap v@(ValMdNode _)      = transform (trans pumdMap) v
+        maybeTransform pumdMap v@(ValMdLoc _)       = transform (trans pumdMap) v
+        maybeTransform pumdMap v@(ValMdDebugInfo _) = transform (trans  pumdMap) v
+        maybeTransform _       v                    = v
+
+        trans :: Map PValMd Int -> PValMd -> PValMd
+        trans pumdMap v = case Map.lookup v pumdMap of
+                            Just idex -> ValMdRef idex
+                            Nothing   -> v
+
+        mkPartialUnnamedMdMap :: [PartialUnnamedMd] -> Map PValMd Int
+        mkPartialUnnamedMdMap =
+          foldl' (\mp part -> Map.insert (pumValues part) (pumIndex part) mp) Map.empty
+
+-- Finalizing ---------------------------------------------------------------
+
 namedEntries :: PartialMetadata -> [NamedMd]
 namedEntries  = map (uncurry NamedMd)
               . Map.toList
@@ -252,7 +299,7 @@ data PartialUnnamedMd = PartialUnnamedMd
   { pumIndex    :: Int
   , pumValues   :: PValMd
   , pumDistinct :: Bool
-  } deriving (Show)
+  } deriving (Data, Eq, Ord, Generic, Show, Typeable)
 
 finalizePartialUnnamedMd :: PartialUnnamedMd -> Parse UnnamedMd
 finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` finalizePValMd (pumValues pum)

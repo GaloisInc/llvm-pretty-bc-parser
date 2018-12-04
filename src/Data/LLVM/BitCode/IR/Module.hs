@@ -69,7 +69,7 @@ finalizeModule pm = label "finalizeModule" $ do
   globals  <- T.mapM finalizeGlobal       (partialGlobals pm)
   declares <- T.mapM finalizeDeclare      (partialDeclares pm)
   aliases  <- T.mapM finalizePartialAlias (partialAliases pm)
-  unnamed  <- T.mapM finalizePartialUnnamedMd (partialUnnamedMd pm)
+  unnamed  <- T.mapM finalizePartialUnnamedMd (dedupMetadata (partialUnnamedMd pm))
   types    <- resolveTypeDecls
   let lkp = lookupBlockName (partialDefines pm)
   defines <- T.mapM (finalizePartialDefine lkp) (partialDefines pm)
