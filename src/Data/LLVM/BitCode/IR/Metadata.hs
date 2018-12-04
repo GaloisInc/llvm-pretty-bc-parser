@@ -32,13 +32,16 @@ import           Data.Bits (shiftR, testBit, shiftL)
 
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as Char8 (unpack)
+import           Data.Either (partitionEithers)
 import           Data.Functor.Compose (Compose(..), getCompose)
 import           Data.List (mapAccumL)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import GHC.Stack (HasCallStack, callStack)
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Word (Word32,Word64)
+
+
 
 -- Parsing State ---------------------------------------------------------------
 
@@ -265,25 +268,24 @@ finalizePValMd = relabel (const requireBbEntryName)
 
 -- | Partition unnamed entries into global and function local unnamed entries.
 unnamedEntries :: PartialMetadata -> ([PartialUnnamedMd],[PartialUnnamedMd])
-unnamedEntries pm = foldl resolveNode ([],[]) (Map.toList (mtNodes mt))
+unnamedEntries pm = partitionEithers (mapMaybe resolveNode (Map.toList (mtNodes mt)))
   where
   mt = pmEntries pm
 
-  resolveNode (gs,fs) (ref,(fnLocal,d,ix)) = case lookupNode ref d ix of
-    Just pum | fnLocal   -> (gs,pum:fs)
-             | otherwise -> (pum:gs,fs)
+  -- TODO: is this silently eating errors with metadata that's not in the
+  -- value table (when the lookupValueTableAbs fails)?
+  resolveNode (ref,(fnLocal,d,ix)) =
+    ((if fnLocal then Right else Left) <$> lookupNode ref d ix)
 
-    -- TODO: is this silently eating errors with metadata that's not in the
-    -- value table?
-    Nothing              -> (gs,fs)
-
-  lookupNode ref d ix = do
-    Typed { typedValue = ValMd v } <- lookupValueTableAbs ref (mtEntries mt)
-    return PartialUnnamedMd
-      { pumIndex  = ix
-      , pumValues = v
-      , pumDistinct = d
-      }
+  lookupNode ref d ix = flip fmap (lookupValueTableAbs ref (mtEntries mt)) $
+    \case
+      Typed { typedValue = ValMd v } ->
+        PartialUnnamedMd
+          { pumIndex    = ix
+          , pumValues   = v
+          , pumDistinct = d
+          }
+      _ -> error "Impossible: Only ValMds are stored in mtEntries"
 
 type InstrMdAttachments = Map.Map Int [(KindMd,PValMd)]
 
