@@ -19,7 +19,10 @@
 # generate the program, and then tests only that program regardless of
 # the -n argument, showing the full output of llvm-disasm.
 
-while getopts "kn:s:" opt; do
+# If an -w argument is given, all files will go in that directory.
+# (Useful for building from read-only filesystems, e.g. in Docker.)
+
+while getopts "kn:s:w:" opt; do
     case $opt in
         k)
             KEEP=yes
@@ -30,39 +33,56 @@ while getopts "kn:s:" opt; do
         s)
             SEED=${OPTARG}
             ;;
+        w)
+            WORKDIR=${OPTARG}
+            ;;
         \?)
             echo "Invalid option: -$OPTARG" >&2
             ;;
   esac
 done
 
-trap 'if [ -z ${KEEP} ]; then rm fuzz-temp-test.c fuzz-temp-test.bc; fi' EXIT
+if [ -z WORKDIR ]; then
+  WORKDIR=$PWD
+fi
+
+trap 'if [ -z ${KEEP} ]; then rm ${WORKDIR}/fuzz-temp-test.c ${WORKDIR}/fuzz-temp-test.bc; fi' EXIT
+
+echo "Beginning fuzzing..."
 
 if [ ${SEED+x} ]; then
-    csmith -s ${SEED} > fuzz-temp-test.c;
-    clang -I${CSMITH_PATH} -O -g -w -c -emit-llvm fuzz-temp-test.c -o fuzz-temp-test.bc;
+    csmith -s ${SEED} > ${WORKDIR}/fuzz-temp-test.c;
+    clang -I${CSMITH_PATH} -O -g -w \
+          -c -emit-llvm ${WORKDIR}/fuzz-temp-test.c \
+          -o ${WORKDIR}/fuzz-temp-test.bc;
     set -e
-    llvm-disasm fuzz-temp-test.bc
+    llvm-disasm ${WORKDIR}/fuzz-temp-test.bc
     exit
 fi
 
-RESULT_DIR=${PWD}/fuzz-results
+echo "..."
+
+RESULT_DIR=${WORKDIR}/fuzz-results
 if [ -n "${KEEP}" ]; then
-    mkdir fuzz-results;
+    mkdir ${WORKDIR}/fuzz-results;
 fi
+
+echo "..."
 
 RESULT=0
 for i in `seq 1 ${NUMTESTS:-100}`;
 do
-    csmith > fuzz-temp-test.c;
-    clang -I${CSMITH_PATH} -O -g -w -c -emit-llvm fuzz-temp-test.c -o fuzz-temp-test.bc;
-    llvm-disasm fuzz-temp-test.bc &> /dev/null
+    csmith > ${WORKDIR}/fuzz-temp-test.c;
+    clang -I${CSMITH_PATH} -O -g -w \
+          -c -emit-llvm ${WORKDIR}/fuzz-temp-test.c \
+          -o ${WORKDIR}/fuzz-temp-test.bc;
+    llvm-disasm ${WORKDIR}/fuzz-temp-test.bc &> /dev/null
     if [ $? -ne 0 ]; then
         RESULT=1
-        SEED=$(grep '^ \* Seed:\s*\([0-9]*\)' fuzz-temp-test.c | grep -o '[0-9]*$')
+        SEED=$(grep '^ \* Seed:\s*\([0-9]*\)' ${WORKDIR}/fuzz-temp-test.c | grep -o '[0-9]*$')
         echo ${SEED}
         if [ -n "${KEEP}" ]; then
-            cp fuzz-temp-test.c ${RESULT_DIR}/${SEED}.c;
+            cp ${WORKDIR}/fuzz-temp-test.c ${RESULT_DIR}/${SEED}.c;
         fi
     fi
 done
