@@ -641,39 +641,54 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     21 -> label "METADATA_SUBPROGRAM" $ do
       -- this one is a bit funky:
       -- https://github.com/llvm-mirror/llvm/blob/release_50/lib/Bitcode/Reader/MetadataLoader.cpp#L1382
+
+      -- A "version" is encoded in the high-order bits of the isDistinct field.
+      -- We parse it once here as a numeric value, and later as a Bool.
+      version <- parseField r 0 numeric
       assertRecordSizeBetween 18 21
       let recordSize = length (recordFields r)
           adj i | recordSize == 19 = i + 1
                 | otherwise        = i
           hasThisAdjustment = recordSize >= 20
           hasThrownTypes    = recordSize >= 21
+          hasUnit           = version >= (2 :: Int) -- avoid default type
 
-      ctx        <- getContext
-      isDistinct <- parseField r 0 nonzero -- isDistinct
-      disp       <- DISubprogram
+      ctx          <- getContext
+
+      -- See https://github.com/elliottt/llvm-pretty/issues/47
+      -- and the corresponding LLVM code in MetadataLoader.cpp (parseOneMetadata)
+      isDefinition <- parseField r 8 nonzero                       -- dispIsDefinition
+      isDistinct   <- (isDefinition ||) <$> parseField r 0 nonzero -- isDistinct
+
+      -- Forward references that depend on the 'version'
+      let optFwdRef b = if b
+                        then mdForwardRefOrNull ctx mt
+                        else const Nothing
+
+      disp         <- DISubprogram
         <$> (mdForwardRefOrNull ctx mt <$> parseField r 1 numeric)        -- dispScope
-        <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)            -- dispName
-        <*> (mdStringOrNull     ctx pm <$> parseField r 3 numeric)            -- dispLinkageName
+        <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)        -- dispName
+        <*> (mdStringOrNull     ctx pm <$> parseField r 3 numeric)        -- dispLinkageName
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 4 numeric)        -- dispFile
-        <*> parseField r 5 numeric                                        -- dispLine
+        <*>                                parseField r 5 numeric         -- dispLine
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 6 numeric)        -- dispType
-        <*> parseField r 7 nonzero                                        -- dispIsLocal
-        <*> parseField r 8 nonzero                                        -- dispIsDefinition
-        <*> parseField r 9 numeric                                        -- dispScopeLine
+        <*>                                parseField r 7 nonzero         -- dispIsLocal
+        <*>                                pure isDefinition              -- dispIsDefinition
+        <*>                                parseField r 9 numeric         -- dispScopeLine
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 10 numeric)       -- dispContainingType
-        <*> parseField r 11 numeric                                       -- dispVirtuality
-        <*> parseField r 12 numeric                                       -- dispVirtualIndex
+        <*>                                parseField r 11 numeric        -- dispVirtuality
+        <*>                                parseField r 12 numeric        -- dispVirtualIndex
         <*> (if hasThisAdjustment
             then parseField r 19 numeric
             else return 0)                                                -- dispThisAdjustment
-        <*> (if hasThrownTypes
-            then mdForwardRefOrNull ctx mt <$> parseField r 20 numeric
-            else return Nothing)                                          -- dispThrownTypes
         <*> parseField r 13 numeric                                       -- dispFlags
         <*> parseField r 14 nonzero                                       -- dispIsOptimized
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r (adj 15) numeric) -- dispTemplateParams
+        <*> (optFwdRef hasUnit         <$> parseField r 15 numeric)       -- dispUnit
+        <*> (optFwdRef (not hasUnit)   <$> parseField r (adj 15) numeric) -- dispTemplateParams
         <*> (mdForwardRefOrNull ctx mt <$> parseField r (adj 16) numeric) -- dispDeclaration
         <*> (mdForwardRefOrNull ctx mt <$> parseField r (adj 17) numeric) -- dispVariables
+        -- Indices 18-19 seem unused.
+        <*> (optFwdRef hasThrownTypes  <$> parseField r 20 numeric)       -- dispThrownTypes
       -- TODO: in the LLVM parser, it then goes into the metadata table
       -- and updates function entries to point to subprograms. Is that
       -- neccessary for us?
