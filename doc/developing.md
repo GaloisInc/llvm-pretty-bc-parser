@@ -73,15 +73,11 @@ nix-shell --pure -p llvm_6 --run "./dist/build/disasm-test/disasm-test ./disasm-
 
 ### `regression-test`
 
-To compare the behavior of two different versions of `llvm-disasm`, run
-```bash
-cabal build
-./dist/build/regression-test/regression-test --rev1=HEAD --rev2=HEAD~1
-```
-To see all the options,
-```bash
-./dist/build/regression-test/regression-test --help
-```
+See [the README in that directory](../regression-test/README.md).
+
+### `fuzzing`
+
+See [the README in that directory](../fuzzing/README.md).
 
 ### `unit-test`
 
