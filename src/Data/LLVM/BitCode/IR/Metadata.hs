@@ -661,9 +661,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       isDistinct   <- (isDefinition ||) <$> parseField r 0 nonzero -- isDistinct
 
       -- Forward references that depend on the 'version'
-      let optFwdRef b = if b
-                        then mdForwardRefOrNull ctx mt
-                        else const Nothing
+      let optFwdRef b n =
+            if b
+            then mdForwardRefOrNull ctx mt <$> parseField r n numeric
+            else pure Nothing
 
       disp         <- DISubprogram
         <$> (mdForwardRefOrNull ctx mt <$> parseField r 1 numeric)        -- dispScope
@@ -683,12 +684,12 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
             else return 0)                                                -- dispThisAdjustment
         <*> parseField r 13 numeric                                       -- dispFlags
         <*> parseField r 14 nonzero                                       -- dispIsOptimized
-        <*> (optFwdRef hasUnit         <$> parseField r 15 numeric)       -- dispUnit
-        <*> (optFwdRef (not hasUnit)   <$> parseField r (adj 15) numeric) -- dispTemplateParams
+        <*> (optFwdRef hasUnit       15)                                  -- dispUnit
+        <*> (optFwdRef (not hasUnit) (adj 15))                            -- dispTemplateParams
         <*> (mdForwardRefOrNull ctx mt <$> parseField r (adj 16) numeric) -- dispDeclaration
         <*> (mdForwardRefOrNull ctx mt <$> parseField r (adj 17) numeric) -- dispVariables
         -- Indices 18-19 seem unused.
-        <*> (optFwdRef hasThrownTypes  <$> parseField r 20 numeric)       -- dispThrownTypes
+        <*> (optFwdRef hasThrownTypes 20)                                 -- dispThrownTypes
       -- TODO: in the LLVM parser, it then goes into the metadata table
       -- and updates function entries to point to subprograms. Is that
       -- neccessary for us?
