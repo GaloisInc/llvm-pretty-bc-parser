@@ -3,8 +3,8 @@
 The assembly files were generated using the `generate.sh` script, which details
 which versions of `clang++` and `llvm-as` they are expected to work with.
 
-Passing:
+Passes roundtrip:
  - `return0.ll`
 
-Failing:
+Parses, but fails roundtrip:
  - `iostream.ll`

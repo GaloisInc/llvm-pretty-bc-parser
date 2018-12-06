@@ -839,10 +839,13 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       isDistinct <- parseField r 0 nonzero
       diie       <- DIImportedEntity
         <$> parseField r 1 numeric                                 -- diieTag
-        <*> (mdString cxt pm           <$> parseField r 5 numeric) -- diieName
         <*> (mdForwardRefOrNull cxt mt <$> parseField r 2 numeric) -- diieScope
         <*> (mdForwardRefOrNull cxt mt <$> parseField r 3 numeric) -- diieEntity
+        <*> (if length (recordFields r) >= 7
+             then mdForwardRefOrNull cxt mt <$> parseField r 6 numeric
+             else pure Nothing)                                    -- diieFile
         <*> parseField r 4 numeric                                 -- diieLine
+        <*> (mdStringOrNull cxt pm     <$> parseField r 5 numeric) -- diieName
 
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoImportedEntity diie)) pm
