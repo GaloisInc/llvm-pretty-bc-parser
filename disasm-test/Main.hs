@@ -42,7 +42,7 @@ defaultOptions :: Options
 defaultOptions  = Options { optTests     = []
                           , optLlvmAs    = "llvm-as"
                           , optLlvmDis   = "llvm-dis"
-                          , optRoundtrip = False
+                          , optRoundtrip = True
                           , optKeep      = False
                           , optHelp      = False
                           }
@@ -54,7 +54,7 @@ options  =
   , Option "" ["with-llvm-dis"] (ReqArg setLlvmDis "FILEPATH")
     "path to llvm-dis"
   , Option "r" ["roundtrip"] (NoArg setRoundtrip)
-    "enable roundtrip tests (AST/AST diff)"
+    "disable roundtrip tests (AST/AST diff)"
   , Option "k" ["keep"] (NoArg setKeep)
     "keep all generated files for manual inspection"
   , Option "h" ["help"] (NoArg setHelp)
@@ -62,7 +62,7 @@ options  =
   ]
   where setLlvmAs str  = Endo (\opt -> opt { optLlvmAs    = str })
         setLlvmDis str = Endo (\opt -> opt { optLlvmDis   = str })
-        setRoundtrip   = Endo (\opt -> opt { optRoundtrip = True })
+        setRoundtrip   = Endo (\opt -> opt { optRoundtrip = False })
         setKeep        = Endo (\opt -> opt { optKeep      = True })
         setHelp        = Endo (\opt -> opt { optHelp      = True })
 
