@@ -115,6 +115,7 @@ Test-suite disasm-test
                        bytestring,
                        filepath,
                        pretty-show>= 1.6,
+                       syb        >= 0.7,
                        llvm-pretty>= 0.7.4,
                        llvm-pretty-bc-parser
 
