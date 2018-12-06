@@ -728,8 +728,6 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
             then mdForwardRefOrNull ctx mt <$> parseField r n numeric
             else pure Nothing
 
-      ctx        <- getContext
-      isDistinct <- parseField r 0 nonzero -- isDistinct
       disp       <- DISubprogram
         <$> (diTypeRefOrNull    ctx mt <$> parseField r 1 numeric)        -- dispScope
         <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)        -- dispName
@@ -810,7 +808,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       cxt <- getContext
       isDistinct <- parseField r 0 nonzero
       dittp <- DITemplateTypeParameter
-        <$> (mdString cxt pm        <$> parseField r 1 numeric) -- dittpName
+        <$> (mdStringOrNull cxt pm        <$> parseField r 1 numeric) -- dittpName
         <*> (fromMaybe (error "TEMPLATE_TYPE") . diTypeRefOrNull cxt mt <$>
                parseField r 2 numeric) -- dittpType
       return $! updateMetadataTable
