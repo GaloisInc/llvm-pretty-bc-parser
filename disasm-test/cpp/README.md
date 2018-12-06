@@ -8,3 +8,4 @@ Passes roundtrip:
 
 Parses, but fails roundtrip:
  - `iostream.ll`
+ - `templates.ll`
