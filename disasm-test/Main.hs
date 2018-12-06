@@ -3,26 +3,28 @@
 
 module Main where
 
-import Data.LLVM.BitCode (parseBitCodeLazyFromFile,Error(..),formatError)
-import Text.LLVM.AST (Module)
-import Text.LLVM.PP (ppLLVM,ppModule)
+import           Data.LLVM.BitCode (parseBitCodeLazyFromFile,Error(..),formatError)
+import qualified Text.LLVM.AST as AST
+import           Text.LLVM.PP (ppLLVM,ppModule)
 
-import Control.Monad (when)
-import Data.Char (ord,isSpace,chr)
-import Data.Monoid ( mconcat, Endo(..) )
-import Data.Typeable (Typeable)
-import System.Console.GetOpt
+import qualified Control.Exception as X
+import           Control.Monad (when)
+import qualified Data.ByteString.Lazy as L
+import           Data.Char (ord,isSpace,chr)
+import           Data.Generics (everywhere, mkT) -- SYB
+import           Data.List (sort)
+import           Data.Monoid ( mconcat, Endo(..) )
+import           Data.Typeable (Typeable)
+import           System.Console.GetOpt
            ( ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo )
-import System.Directory (getTemporaryDirectory, listDirectory, removeFile)
-import System.Environment (getArgs,getProgName)
-import System.Exit (exitFailure,exitSuccess,ExitCode(..))
-import System.FilePath ((<.>),dropExtension,takeFileName)
-import System.IO
+import           System.Directory (getTemporaryDirectory, listDirectory, removeFile)
+import           System.Environment (getArgs,getProgName)
+import           System.Exit (exitFailure,exitSuccess,ExitCode(..))
+import           System.FilePath ((<.>),dropExtension,takeFileName)
+import           System.IO
     (openBinaryTempFile,hClose,openTempFile,hPutStrLn)
 import qualified System.Process as Proc
-import Text.Show.Pretty (ppShow)
-import qualified Control.Exception as X
-import qualified Data.ByteString.Lazy as L
+import           Text.Show.Pretty (ppShow)
 
 
 -- Option Parsing --------------------------------------------------------------
@@ -31,6 +33,7 @@ data Options = Options { optTests     :: [FilePath] -- ^ Tests
                        , optLlvmAs    :: String     -- ^ llvm-as  name
                        , optLlvmDis   :: String     -- ^ llvm-dis name
                        , optRoundtrip :: Bool
+                       , optKeep      :: Bool
                        , optHelp      :: Bool
                        } deriving (Show)
 
@@ -40,6 +43,7 @@ defaultOptions  = Options { optTests     = []
                           , optLlvmAs    = "llvm-as"
                           , optLlvmDis   = "llvm-dis"
                           , optRoundtrip = True
+                          , optKeep      = False
                           , optHelp      = False
                           }
 
@@ -51,12 +55,15 @@ options  =
     "path to llvm-dis"
   , Option "r" ["roundtrip"] (NoArg setRoundtrip)
     "enable roundtrip tests (AST/AST diff)"
+  , Option "k" ["keep"] (NoArg setKeep)
+    "keep all generated files for manual inspection"
   , Option "h" ["help"] (NoArg setHelp)
     "display this message"
   ]
   where setLlvmAs str  = Endo (\opt -> opt { optLlvmAs    = str })
         setLlvmDis str = Endo (\opt -> opt { optLlvmDis   = str })
         setRoundtrip   = Endo (\opt -> opt { optRoundtrip = True })
+        setKeep        = Endo (\opt -> opt { optKeep      = True })
         setHelp        = Endo (\opt -> opt { optHelp      = True })
 
 addTest :: String -> Endo Options
@@ -124,12 +131,18 @@ runTest opts file =
     case ast of               -- this Maybe also encodes the data of optRoundtrip
       Nothing   -> return ()
       Just ast1 -> do
-        (parsed2, Just ast2) <- processLL parsed1 -- Re-assemble and re-disassemble
-        diff ast1 ast2                            -- Ensure that the ASTs match
-        diff parsed1 parsed2                      -- Ensure that the disassembled files match
+        (_, Just ast2) <- processLL parsed1 -- Re-assemble and re-disassemble
+        diff ast1 ast2                      -- Ensure that the ASTs match
+        -- Ensure that the disassembled files match.
+        -- This is usually too strict (and doesn't really provide more info).
+        -- We normalize the AST (see below) to ensure that the ASTs match modulo
+        -- metadata numbering, but the equivalent isn't possible for the
+        -- assembly: we need llvm-as to be able to re-assemble it.
+        -- diff parsed1 parsed2
   where pfx   = dropExtension (takeFileName file)
         exitF l = mapM_ putStrLn l >> exitFailure
-        withFile iofile f = X.bracket iofile (\_ -> return ()) f
+        withFile iofile f =
+          X.bracket iofile (if optKeep opts then const (pure ()) else removeFile) f
         logError (ParseError msg) = do
           putStrLn "failure"
           putStrLn (unlines (map ("; " ++) (lines (formatError msg))))
@@ -164,11 +177,29 @@ normalizeBitCode Options { .. } pfx file = do
   -- stripComments norm
   return norm
 
+-- | Usually, the ASTs aren't "on the nose" identical.
+-- The big thing is that the metadata numbering differs, so we zero out all
+-- metadata indices and sort the unnamed metadata list.
+-- Done with SYB (Scrap Your Boilerplate).
+normalizeModule :: AST.Module -> AST.Module
+normalizeModule = sorted . everywhere (mkT zeroValMdRef)
+                         . everywhere (mkT zeroNamedMd)
+  where sorted m = m { AST.modUnnamedMd =
+                         sort (map (\um -> um { AST.umIndex = 0 })
+                                   (AST.modUnnamedMd m)) }
+        -- Zero out all ValMdRefs
+        zeroValMdRef (AST.ValMdRef _) = AST.ValMdRef 0
+        zeroValMdRef a                = (a :: AST.ValMd) -- avoid ambiguous type
+
+        -- Reduce all named metadata
+        zeroNamedMd (AST.NamedMd x _) = AST.NamedMd x []
+
+
 -- | Parse a bitcode file using llvm-pretty, failing the test if the parser
 -- fails.
 processBitCode :: Options -> FilePath -> FilePath -> IO (FilePath, Maybe FilePath)
 processBitCode Options { .. } pfx file = do
-  let handler :: X.SomeException -> IO (Either Error Module)
+  let handler :: X.SomeException -> IO (Either Error AST.Module)
       handler se = return (Left (Error [] (show se)))
       printToTempFile sufx stuff = do
         tmp        <- getTemporaryDirectory
@@ -184,16 +215,16 @@ processBitCode Options { .. } pfx file = do
       -- stripComments parsed
       if optRoundtrip
       then do
-        tmp2 <- printToTempFile "ast" (ppShow m)
+        tmp2 <- printToTempFile "ast" (ppShow (normalizeModule m))
         return (parsed, Just tmp2)
       else return (parsed, Nothing)
 
 -- | Remove comments from a .ll file, stripping everything including the
 -- semi-colon.
-stripComments :: FilePath -> IO ()
-stripComments path = do
+stripComments :: Options -> FilePath -> IO ()
+stripComments Options { .. } path = do
   bytes <- L.readFile path
-  removeFile path
+  when (not optKeep) (removeFile path)
   mapM_ (writeLine . dropComments) (bsLines bytes)
   where
   writeLine bs | L.null bs = return ()
