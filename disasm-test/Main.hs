@@ -42,7 +42,7 @@ defaultOptions :: Options
 defaultOptions  = Options { optTests     = []
                           , optLlvmAs    = "llvm-as"
                           , optLlvmDis   = "llvm-dis"
-                          , optRoundtrip = True
+                          , optRoundtrip = False
                           , optKeep      = False
                           , optHelp      = False
                           }
