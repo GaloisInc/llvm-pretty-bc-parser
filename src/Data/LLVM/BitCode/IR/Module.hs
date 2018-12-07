@@ -224,28 +224,10 @@ parseModuleBlockEntry pm (moduleCodeSectionname -> Just r) = do
 parseModuleBlockEntry pm (moduleCodeComdat -> Just r) = do
   -- MODULE_CODE_COMDAT
   when (length (recordFields r) < 2) (fail "Invalid record (MODULE_CODE_COMDAT)")
-  v <- getModVersion
-  (kindVal, name) <- if | v >= 2 -> do
-                            kindVal <- parseField r 0 numeric
-                            name <- UTF8.decode <$> parseFields r 2 char
-                            return (kindVal, name)
-                        | otherwise -> do
-                            offset <- parseField r 0 numeric
-                            len <- parseField r 1 numeric
-                            kindVal <- parseField r 2 numeric
-                            mst <- getStringTable
-                            let msg = "No string table for new-style COMDAT."
-                            st <- maybe (fail msg) return mst
-                            let Symbol name = resolveStrtabSymbol st offset len
-                            return (kindVal, name)
-  kind <- case kindVal :: Int of
-            1  -> pure ComdatAny
-            2  -> pure ComdatExactMatch
-            3  -> pure ComdatLargest
-            4  -> pure ComdatNoDuplicates
-            5  -> pure ComdatSameSize
-            _  -> pure ComdatAny -- This matches the C++ code as of 7d085b607d
-  return pm { partialComdat = partialComdat pm Seq.|> (name,kind) }
+  -- This was last updated in 0fc96d5, but the implementation appeared a bit
+  -- buggy for clang++ 3.8. Since no known downstream consumer uses it, it was
+  -- removed.
+  return pm
 
 parseModuleBlockEntry pm (moduleCodeVSTOffset -> Just _) = do
   -- MODULE_CODE_VSTOFFSET
