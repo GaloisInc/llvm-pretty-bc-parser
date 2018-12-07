@@ -62,7 +62,7 @@ Library
                        bytestring >= 0.9.1,
                        utf8-string>= 1.0,
                        uniplate   >= 1.6,
-                       llvm-pretty>= 0.7.6
+                       llvm-pretty>= 0.7.7
 
 Executable llvm-disasm
   Main-is:             LLVMDis.hs
@@ -78,7 +78,7 @@ Executable llvm-disasm
                        fgl        >= 5.5,
                        fgl-visualize >= 0.1,
                        cereal     >= 0.3.5.2,
-                       llvm-pretty>= 0.7.6,
+                       llvm-pretty>= 0.7.7,
                        pretty-show>= 1.6,
                        llvm-pretty-bc-parser
 
@@ -116,7 +116,7 @@ Test-suite disasm-test
                        filepath,
                        pretty-show>= 1.6,
                        syb        >= 0.7,
-                       llvm-pretty>= 0.7.6,
+                       llvm-pretty>= 0.7.7,
                        llvm-pretty-bc-parser
 
 Executable regression-test
@@ -130,7 +130,7 @@ Executable regression-test
                        foldl,
                        text,
                        turtle,
-                       llvm-pretty>= 0.7.6,
+                       llvm-pretty>= 0.7.7,
                        llvm-pretty-bc-parser
 
 Executable fuzz-llvm-disasm
@@ -152,7 +152,7 @@ Executable fuzz-llvm-disasm
                        abstract-par,
                        monad-par,
                        transformers,
-                       llvm-pretty>= 0.7.6,
+                       llvm-pretty>= 0.7.7,
                        llvm-pretty-bc-parser
   if flag(fuzz)
       Buildable:       True

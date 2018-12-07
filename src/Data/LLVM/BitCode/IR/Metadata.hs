@@ -808,9 +808,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       cxt <- getContext
       isDistinct <- parseField r 0 nonzero
       dittp <- DITemplateTypeParameter
-        <$> (mdStringOrNull cxt pm        <$> parseField r 1 numeric) -- dittpName
-        <*> (fromMaybe (error "TEMPLATE_TYPE") . diTypeRefOrNull cxt mt <$>
-               parseField r 2 numeric) -- dittpType
+        <$> (mdStringOrNull cxt pm   <$> parseField r 1 numeric) -- dittpName
+        <*> (diTypeRefOrNull cxt mt  <$> parseField r 2 numeric) -- dittpType
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoTemplateTypeParameter dittp)) pm
 
@@ -819,10 +818,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
       ditvp      <- DITemplateValueParameter
-        <$> (mdString cxt pm     <$> parseField r 1 numeric) -- ditvpName
-        <*> (mdForwardRef cxt mt <$> parseField r 2 numeric) -- ditvpType
-        <*> (fromMaybe (error "TEMPLATE_VALUE") . diTypeRefOrNull cxt mt <$>
-               parseField r 3 numeric) -- ditvpValue
+        <$> (                           parseField r 1 numeric) -- ditvpTag
+        <*> (mdStringOrNull cxt pm  <$> parseField r 2 numeric) -- ditvpName
+        <*> (diTypeRefOrNull cxt mt <$> parseField r 3 numeric) -- ditvpName
+        <*> (mdForwardRef cxt mt    <$> parseField r 4 numeric) -- ditvpValue
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoTemplateValueParameter ditvp)) pm
 
