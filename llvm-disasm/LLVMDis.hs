@@ -1,4 +1,6 @@
 {-# LANGUAGE ImplicitParams #-}
+{-# LANGUAGE MultiWayIf #-}
+
 import Data.LLVM.BitCode (parseBitCode, formatError)
 import Data.LLVM.CFG (buildCFG, CFG(..), blockId)
 import Text.LLVM.AST (defBody, modDefines,Module)
@@ -97,23 +99,22 @@ disasm opts file = do
 
 renderLLVM :: Options -> Module -> IO ()
 renderLLVM opts m = do
-  let s = style { lineLength = maxBound, ribbonsPerLine = 1.0 }
-  case optLLVMVersion opts of
-    -- try the 3.5 style for 3.4
-    "3.4" -> putStrLn (renderStyle s (ppLLVM35 (ppModule m)))
-    "3.5" -> putStrLn (renderStyle s (ppLLVM35 (ppModule m)))
-    "3.6" -> putStrLn (renderStyle s (ppLLVM36 (ppModule m)))
-    "3.7" -> putStrLn (renderStyle s (ppLLVM37 (ppModule m)))
-    "3.8" -> putStrLn (renderStyle s (ppLLVM38 (ppModule m)))
-    -- try the 3.8 style for 3.9
-    "3.9" -> putStrLn (renderStyle s (ppLLVM38 (ppModule m)))
-    -- try the 3.8 style for 4.0
-    "4.0" -> putStrLn (renderStyle s (ppLLVM38 (ppModule m)))
-    -- try the 3.8 style for 5.0
-    "5.0" -> putStrLn (renderStyle s (ppLLVM38 (ppModule m)))
-    -- try the 3.8 style for 6.0
-    "6.0" -> putStrLn (renderStyle s (ppLLVM38 (ppModule m)))
-    v -> printUsage ["unsupported LLVM version: " ++ v] >> exitFailure
+  let s         = style { lineLength = maxBound, ribbonsPerLine = 1.0 }
+  let v         = optLLVMVersion opts
+  let putRender = putStrLn . renderStyle s
+  if -- try the 3.5 style for 3.4
+     | v == "3.4"            -> putRender (ppLLVM35 (ppModule m))
+     | v == "3.5"            -> putRender (ppLLVM35 (ppModule m))
+     | v == "3.6"            -> putRender (ppLLVM36 (ppModule m))
+     | v == "3.7"            -> putRender (ppLLVM37 (ppModule m))
+     | v == "3.8"            -> putRender (ppLLVM38 (ppModule m))
+     -- try the 3.8 style for 3.9-7.0
+     | v == "3.9"            -> putRender (ppLLVM38 (ppModule m))
+     | v `elem` ["4", "4.0"] -> putRender (ppLLVM38 (ppModule m))
+     | v `elem` ["5", "5.0"] -> putRender (ppLLVM38 (ppModule m))
+     | v `elem` ["6", "6.0"] -> putRender (ppLLVM38 (ppModule m))
+     | v `elem` ["7", "7.0"] -> putRender (ppLLVM38 (ppModule m))
+     | otherwise -> printUsage ["unsupported LLVM version: " ++ v] >> exitFailure
   when (optDoCFG opts) $ do
     let cfgs  = map (buildCFG . defBody) $ modDefines m
         fixup = nmap (show . blockId) . emap (const "")
