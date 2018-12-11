@@ -404,18 +404,21 @@ parseMetadataBlock globals vt es = label "METADATA_BLOCK" $ do
 parseMetadataEntry :: ValueTable -> MetadataTable -> PartialMetadata -> Entry
                    -> Parse PartialMetadata
 parseMetadataEntry vt mt pm (fromEntry -> Just r) =
-  let assertRecordSizeBetween lb ub =
+  let msg = [ "Are you sure you're using a supported version of LLVM/Clang?"
+            , "Check here: https://github.com/GaloisInc/llvm-pretty-bc-parser"
+            ]
+      assertRecordSizeBetween lb ub =
         let len = length (recordFields r)
         in when (len < lb || ub < len) $
-             fail $ unlines [ "Invalid record size: " ++ show len
-                            , "Expected size between " ++ show lb ++ " and " ++ show ub
-                            ]
+             fail $ unlines $ [ "Invalid record size: " ++ show len
+                              , "Expected size between " ++ show lb ++ " and " ++ show ub
+                              ] ++ msg
       assertRecordSizeIn ns =
         let len = length (recordFields r)
         in when (not (len `elem` ns)) $
-             fail $ unlines [ "Invalid record size: " ++ show len
-                            , "Expected one of: " ++ show ns
-                            ]
+             fail $ unlines $ [ "Invalid record size: " ++ show len
+                              , "Expected one of: " ++ show ns
+                              ] ++ msg
   in case recordCode r of
     -- [values]
     1 -> label "METADATA_STRING" $ do
@@ -571,25 +574,28 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoDerivedType didt)) pm
 
     18 -> label "METADATA_COMPOSITE_TYPE" $ do
-      assertRecordSizeIn [16]
+      assertRecordSizeBetween 16 17
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       dict       <- DICompositeType
-        <$> parseField r 1 numeric                                  -- dictTag
-        <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)  -- dictName
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 3 numeric)  -- dictFile
-        <*> parseField r 4 numeric                                  -- dictLine
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 5 numeric)  -- dictScope
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 6 numeric)  -- dictBaseType
-        <*> parseField r 7 numeric                                  -- dictSize
-        <*> parseField r 8 numeric                                  -- dictAlign
-        <*> parseField r 9 numeric                                  -- dictOffset
-        <*> parseField r 10 numeric                                 -- dictFlags
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 11 numeric) -- dictElements
-        <*> parseField r 12 numeric                                 -- dictRuntimeLang
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 13 numeric) -- dictVTableHolder
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 14 numeric) -- dictTemplateParams
-        <*> (mdStringOrNull     ctx pm <$> parseField r 15 numeric) -- dictIdentifier
+        <$> parseField r 1 numeric                                     -- dictTag
+        <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)     -- dictName
+        <*> (mdForwardRefOrNull ctx mt <$> parseField r 3 numeric)     -- dictFile
+        <*> parseField r 4 numeric                                     -- dictLine
+        <*> (mdForwardRefOrNull ctx mt <$> parseField r 5 numeric)     -- dictScope
+        <*> (mdForwardRefOrNull ctx mt <$> parseField r 6 numeric)     -- dictBaseType
+        <*> parseField r 7 numeric                                     -- dictSize
+        <*> parseField r 8 numeric                                     -- dictAlign
+        <*> parseField r 9 numeric                                     -- dictOffset
+        <*> parseField r 10 numeric                                    -- dictFlags
+        <*> (mdForwardRefOrNull ctx mt <$> parseField r 11 numeric)    -- dictElements
+        <*> parseField r 12 numeric                                    -- dictRuntimeLang
+        <*> (mdForwardRefOrNull ctx mt <$> parseField r 13 numeric)    -- dictVTableHolder
+        <*> (mdForwardRefOrNull ctx mt <$> parseField r 14 numeric)    -- dictTemplateParams
+        <*> (mdStringOrNull     ctx pm <$> parseField r 15 numeric)    -- dictIdentifier
+        <*> if length (recordFields r) <= 16
+            then pure Nothing
+            else mdForwardRefOrNull ctx mt <$> parseField r 16 numeric -- dictDiscriminator
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoCompositeType dict)) pm
 
