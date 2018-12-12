@@ -1,6 +1,7 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Data.LLVM.BitCode.IR.Function where
@@ -709,11 +710,31 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   37 -> label "FUNC_CODE_INST_CMPXCHG" $ do
     notImplemented
 
-  -- [ptrty,ptr,val, operation,
-  --  align, vol,
-  --  ordering,synchscope]
+  -- LLVM 6.0: [ptrty, ptr, val, operation, vol, ordering, ssid]
+  -- https://github.com/llvm-mirror/llvm/blob/release_60/lib/Bitcode/Reader/BitcodeReader.cpp#L4420
   38 -> label "FUNC_CODE_INST_ATOMICRMW" $ do
-    notImplemented
+    -- TODO: parse sync scope (ssid)
+    (ptr, _)  <- getValueTypePair t r 0
+
+    -- TODO: set ix based on the return value of getTypeValuePair, then
+    -- enable this assertion. Is getTypeValuePair returning the wrong value?
+    let ix = length (recordFields r) - 4
+    -- when (length (recordFields r) /= ix + 4) $ do
+    --   fail $ "Invalid record size: " ++ show (length (recordFields r))
+
+    operation <- getDecodedAtomicRWOp =<< parseField r ix numeric
+    volatile  <- parseField r (ix + 1) nonzero
+    ordering  <- parseField r (ix + 2) unsigned >>= getDecodedOrdering >>=
+      \case
+        Just ordering -> pure ordering
+        Nothing       -> fail $ "`atomicrmw` requires ordering: ix == " ++ show ix
+
+    val <-
+      case typedType ptr of
+        PtrTo ty -> getValue t ty =<< nextValueId
+        ty       -> fail $ "Expected pointer type, found " ++ show ty
+
+    effect (AtomicRW volatile operation ptr val Nothing ordering) d
 
   -- [opval]
   39 -> label "FUNC_CODE_RESUME" $ do
@@ -745,8 +766,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
                  return (ty, ix)
 
     ordval <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
-    when (ordval `elem` [ Nothing, Just Release, Just AcqRel ])
-         (fail "Invalid record")
+    when (ordval `elem` Nothing:map Just [Release, AcqRel]) $
+      fail $ "Invalid atomic ordering: " ++ show ordval
 
     aval    <- parseField r ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
@@ -773,8 +794,29 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
               | otherwise = Nothing
     effect (Store val ptr align) d
 
+  -- LLVM 6: [ptrty, ptr, val, align, vol, ordering, ssid]
   45 -> label "FUNC_CODE_INST_STOREATOMIC" $ do
-    notImplemented
+    (ptr, ix)  <- getValueTypePair t r 0
+    (val, ix') <- getValueTypePair t r ix -- 1
+
+    when (length (recordFields r) /= ix' + 4) $ do
+      fail $ "Invalid record size: " ++ show (length (recordFields r))
+
+    -- TODO: Port typecheckLoadStoreInst, share code with LOADATOMIC
+
+    -- TODO: There's no spot in the AST for this ordering. Should there be?
+    ordering <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
+    when (ordering `elem` Nothing:map Just [Acquire, AcqRel]) $
+      fail $ "Invalid atomic ordering: " ++ show ordering
+
+    -- TODO: parse sync scope (ssid)
+
+    -- copy-pasted from LOADATOMIC
+    aval    <- parseField r ix' numeric
+    let align | aval > 0  = Just (bit aval `shiftR` 1)
+              | otherwise = Nothing
+
+    result (typedType val) (Store val ptr align) d
 
   46 -> label "FUNC_CODE_CMPXCHG" $ do
     notImplemented
@@ -1176,3 +1218,21 @@ getDecodedOrdering 4 = return (Just Release)
 getDecodedOrdering 5 = return (Just AcqRel)
 getDecodedOrdering 6 = return (Just SeqCst)
 getDecodedOrdering i = fail ("Unknown atomic ordering: " ++ show i)
+
+
+-- https://github.com/llvm-mirror/llvm/blob/release_60/include/llvm/Bitcode/LLVMBitCodes.h#L377
+getDecodedAtomicRWOp :: Integer -> Parse AtomicRWOp
+getDecodedAtomicRWOp 0  = pure AtomicXchg
+getDecodedAtomicRWOp 1  = pure AtomicXchg
+getDecodedAtomicRWOp 2  = pure AtomicAdd
+getDecodedAtomicRWOp 3  = pure AtomicSub
+getDecodedAtomicRWOp 4  = pure AtomicAnd
+getDecodedAtomicRWOp 5  = pure AtomicNand
+getDecodedAtomicRWOp 6  = pure AtomicOr
+getDecodedAtomicRWOp 7  = pure AtomicXor
+getDecodedAtomicRWOp 8  = pure AtomicMax
+getDecodedAtomicRWOp 9  = pure AtomicMin
+getDecodedAtomicRWOp 10 = pure AtomicUMax
+getDecodedAtomicRWOp 11 = pure AtomicUMin
+getDecodedAtomicRWOp _  = fail "Unknown atomic RWOp"
+
