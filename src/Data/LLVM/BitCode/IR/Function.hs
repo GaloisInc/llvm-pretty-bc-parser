@@ -1233,6 +1233,6 @@ getDecodedAtomicRWOp 7  = pure AtomicXor
 getDecodedAtomicRWOp 8  = pure AtomicMax
 getDecodedAtomicRWOp 9  = pure AtomicMin
 getDecodedAtomicRWOp 10 = pure AtomicUMax
-getDecodedAtomicRWOp 11 = pure AtomicUMin
+getDecodedAtomicRWOp 11 = pure AcomicUMin
 getDecodedAtomicRWOp _  = fail "Unknown atomic RWOp"
 
