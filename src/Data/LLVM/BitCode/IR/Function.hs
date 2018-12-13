@@ -1,6 +1,7 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Data.LLVM.BitCode.IR.Function where
@@ -26,7 +27,6 @@ import qualified Data.Foldable as F
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Traversable as T
-
 
 -- Function Aliases ------------------------------------------------------------
 
@@ -597,7 +597,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     aval     <- field (ix+1) numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
-    effect (Store val ptr align) d
+    effect (Store val ptr Nothing align) d
 
   -- 25 is unused
 
@@ -709,11 +709,41 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   37 -> label "FUNC_CODE_INST_CMPXCHG" $ do
     notImplemented
 
-  -- [ptrty,ptr,val, operation,
-  --  align, vol,
-  --  ordering,synchscope]
+  -- LLVM 6.0: [ptrty, ptr, val, operation, vol, ordering, ssid]
+  -- https://github.com/llvm-mirror/llvm/blob/release_60/lib/Bitcode/Reader/BitcodeReader.cpp#L4420
   38 -> label "FUNC_CODE_INST_ATOMICRMW" $ do
-    notImplemented
+    -- TODO: parse sync scope (ssid)
+    (ptr, ix')  <- getValueTypePair t r 0
+
+    -- TODO: set ix based on the return value of getTypeValuePair, then
+    -- enable this assertion. Is getTypeValuePair returning the wrong value?
+    let ix = length (recordFields r) - 4
+    -- when (length (recordFields r) /= ix + 4) $ do
+    --   fail $ "Invalid record size: " ++ show (length (recordFields r))
+
+    operation <- getDecodedAtomicRWOp =<< parseField r ix numeric
+    volatile  <- parseField r (ix + 1) nonzero
+    ordering  <- parseField r (ix + 2) unsigned >>= getDecodedOrdering >>=
+      \case
+        Just ordering -> pure ordering
+        Nothing       -> fail $ "`atomicrmw` requires ordering: ix == " ++ show ix
+
+    val <-
+      case typedType ptr of
+        PtrTo ty -> do
+          -- "NextValueNo" in the C++ becomes "ix'" here, as in INST_BINOP
+          typed <- getValue t ty ix'
+          if ty /= (typedType typed)
+          then fail $ unlines $ [ "Wrong type of value retrieved from value table"
+                                , "Expected: " ++ show (ty)
+                                , "Got: " ++ show (typedType typed)
+                                ]
+          else pure typed
+
+        ty       -> fail $ "Expected pointer type, found " ++ show ty
+
+
+    result (typedType ptr) (AtomicRW volatile operation ptr val Nothing ordering) d
 
   -- [opval]
   39 -> label "FUNC_CODE_RESUME" $ do
@@ -744,9 +774,11 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
                            `mplus` fail "invalid type to INST_LOADATOMIC"
                  return (ty, ix)
 
+    typecheckLoadStoreInst (typedType tv) (PtrTo ret)
+
     ordval <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
-    when (ordval `elem` [ Nothing, Just Release, Just AcqRel ])
-         (fail "Invalid record")
+    when (ordval `elem` Nothing:map Just [Release, AcqRel]) $
+      fail $ "Invalid atomic ordering: " ++ show ordval
 
     aval    <- parseField r ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
@@ -771,10 +803,32 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     aval      <- field ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
-    effect (Store val ptr align) d
+    effect (Store val ptr Nothing align) d
 
+  -- LLVM 6: [ptrty, ptr, val, align, vol, ordering, ssid]
   45 -> label "FUNC_CODE_INST_STOREATOMIC" $ do
-    notImplemented
+    (ptr, ix)  <- getValueTypePair t r 0
+    (val, ix') <- getValueTypePair t r ix
+
+    when (length (recordFields r) /= ix' + 4) $ do
+      fail $ "Invalid record size: " ++ show (length (recordFields r))
+
+    -- The PtrTo is eliminated in the case of LOADATOMIC
+    -- typecheckLoadStoreInst (PtrTo (typedType val)) (typedType ptr)
+
+    -- TODO: There's no spot in the AST for this ordering. Should there be?
+    ordering <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
+    when (ordering `elem` Nothing:map Just [Acquire, AcqRel]) $
+      fail $ "Invalid atomic ordering: " ++ show ordering
+
+    -- TODO: parse sync scope (ssid)
+
+    -- copy-pasted from LOADATOMIC
+    aval    <- parseField r ix' numeric
+    let align | aval > 0  = Just (bit aval `shiftR` 1)
+              | otherwise = Nothing
+
+    effect (Store val ptr ordering align) d
 
   46 -> label "FUNC_CODE_CMPXCHG" $ do
     notImplemented
@@ -1166,6 +1220,18 @@ parseClauses t r = loop
         1 -> return (Filter val : cs)
         _ -> fail ("Invalid clause type: " ++ show cty)
 
+-- | Ensure that the type of the load/store value matches the type being pointed
+-- to by the pointer.
+--
+-- See: https://github.com/llvm-mirror/llvm/blob/release_60/lib/Bitcode/Reader/BitcodeReader.cpp#L3328
+typecheckLoadStoreInst :: Type -> Type -> Parse ()
+typecheckLoadStoreInst valTy ptrTy = do
+  when (valTy /= ptrTy) $ fail $ unlines
+    [ "Load/store type does not patch type of pointer."
+    , "Pointer type: " ++ show ptrTy
+    , "Value type: " ++ show valTy
+    ]
+
 
 getDecodedOrdering :: Word32 -> Parse (Maybe AtomicOrdering)
 getDecodedOrdering 0 = return Nothing
@@ -1176,3 +1242,19 @@ getDecodedOrdering 4 = return (Just Release)
 getDecodedOrdering 5 = return (Just AcqRel)
 getDecodedOrdering 6 = return (Just SeqCst)
 getDecodedOrdering i = fail ("Unknown atomic ordering: " ++ show i)
+
+
+-- https://github.com/llvm-mirror/llvm/blob/release_60/include/llvm/Bitcode/LLVMBitCodes.h#L377
+getDecodedAtomicRWOp :: Integer -> Parse AtomicRWOp
+getDecodedAtomicRWOp 0  = pure AtomicXchg
+getDecodedAtomicRWOp 1  = pure AtomicAdd
+getDecodedAtomicRWOp 2  = pure AtomicSub
+getDecodedAtomicRWOp 3  = pure AtomicAnd
+getDecodedAtomicRWOp 4  = pure AtomicNand
+getDecodedAtomicRWOp 5  = pure AtomicOr
+getDecodedAtomicRWOp 6  = pure AtomicXor
+getDecodedAtomicRWOp 7  = pure AtomicMax
+getDecodedAtomicRWOp 8  = pure AtomicMin
+getDecodedAtomicRWOp 9  = pure AtomicUMax
+getDecodedAtomicRWOp 10 = pure AcomicUMin
+getDecodedAtomicRWOp _  = fail "Unknown atomic RWOp"
