@@ -5,26 +5,27 @@
 
 module Data.LLVM.BitCode.IR.Constants where
 
-import Data.LLVM.BitCode.Bitstream
-import Data.LLVM.BitCode.IR.Values
-import Data.LLVM.BitCode.Match
-import Data.LLVM.BitCode.Parse
-import Data.LLVM.BitCode.Record
-import Text.LLVM.AST
+import qualified Data.LLVM.BitCode.Assert as Assert
+import           Data.LLVM.BitCode.Bitstream
+import           Data.LLVM.BitCode.IR.Values
+import           Data.LLVM.BitCode.Match
+import           Data.LLVM.BitCode.Parse
+import           Data.LLVM.BitCode.Record
+import           Text.LLVM.AST
 
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
-import Control.Monad (mplus,mzero,foldM,(<=<),when)
-import Control.Monad.ST (runST,ST)
-import Data.Array.ST (newArray,readArray,MArray,STUArray)
-import Data.Bits (shiftL,shiftR,testBit)
-import Data.Maybe (fromMaybe, isJust)
-import Data.Word (Word32,Word64)
+import           Control.Monad (mplus,mzero,foldM,(<=<))
+import           Control.Monad.ST (runST,ST)
+import           Data.Array.ST (newArray,readArray,MArray,STUArray)
+import           Data.Bits (shiftL,shiftR,testBit)
 import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe, isJust)
+import           Data.Word (Word32,Word64)
 
 #if __GLASGOW_HASKELL__ >= 704
-import Data.Array.Unsafe (castSTUArray)
+import           Data.Array.Unsafe (castSTUArray)
 #else
-import Data.Array.ST (castSTUArray)
+import           Data.Array.ST (castSTUArray)
 #endif
 
 
@@ -388,7 +389,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
       Integer 64       -> build ValInteger
       FloatType Float  -> build ValFloat
       FloatType Double -> build ValDouble
-      _                -> fail "unknown element type in CE_DATA"
+      x                -> Assert.unknownEntity "element type" x
 
   23 -> label "CST_CODE_INLINEASM" $ do
     let field = parseField r
@@ -399,14 +400,11 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
         isAlignStack   = test 1
         _asmDialect    = mask `shiftR` 2
 
-    let len = length (recordFields r)
     asmStrSize <- field 1 numeric
-    when (2 + asmStrSize >= len)
-         (fail "Invalid record")
+    Assert.recordSizeGreater r (1 + asmStrSize)
 
     constStrSize <- field (2 + asmStrSize) numeric
-    when (3 + asmStrSize + constStrSize > len)
-         (fail "Invalid record")
+    Assert.recordSizeGreater r (2 + asmStrSize + constStrSize)
 
     asmStr   <- fmap UTF8.decode $ parseSlice r  2               asmStrSize   char
     constStr <- fmap UTF8.decode $ parseSlice r (3 + asmStrSize) constStrSize char
@@ -427,7 +425,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
 
 
 
-  code -> fail ("unknown constant record code: " ++ show code)
+  code -> Assert.unknownEntity "constant record code" code
 
 parseConstantEntry _ st (abbrevDef -> Just _) =
   -- ignore abbreviation definitions
