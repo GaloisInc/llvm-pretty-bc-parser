@@ -33,7 +33,8 @@ Library
 
   Default-language:    Haskell2010
 
-  Other-modules:       Data.LLVM.BitCode.BitString,
+  Other-modules:       Data.LLVM.BitCode.Assert,
+                       Data.LLVM.BitCode.BitString,
                        Data.LLVM.BitCode.Bitstream,
                        Data.LLVM.BitCode.GetBits,
                        Data.LLVM.BitCode.IR,

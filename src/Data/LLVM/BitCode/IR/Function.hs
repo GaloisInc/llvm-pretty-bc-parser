@@ -6,23 +6,25 @@
 
 module Data.LLVM.BitCode.IR.Function where
 
-import Data.LLVM.BitCode.Bitstream
-import Data.LLVM.BitCode.IR.Blocks
-import Data.LLVM.BitCode.IR.Constants
-import Data.LLVM.BitCode.IR.Metadata
-import Data.LLVM.BitCode.IR.Values
-import Data.LLVM.BitCode.Match
-import Data.LLVM.BitCode.Parse
-import Data.LLVM.BitCode.Record
-import Text.LLVM.AST
-import Text.LLVM.Labels
-import Text.LLVM.PP
+import qualified Data.LLVM.BitCode.Assert as Assert
+import           Data.LLVM.BitCode.Bitstream
+import           Data.LLVM.BitCode.IR.Blocks
+import           Data.LLVM.BitCode.IR.Constants
+import           Data.LLVM.BitCode.IR.Metadata
+import           Data.LLVM.BitCode.IR.Values
+import           Data.LLVM.BitCode.Match
+import           Data.LLVM.BitCode.Parse
+import           Data.LLVM.BitCode.Record
 
-import Control.Monad (when,unless,mplus,mzero,foldM,(<=<),msum)
-import Data.Bits (shiftR,bit,shiftL,testBit,(.&.),(.|.),complement)
-import Data.Int (Int32)
-import Data.Maybe (isJust)
-import Data.Word (Word32)
+import           Text.LLVM.AST
+import           Text.LLVM.Labels
+import           Text.LLVM.PP
+
+import           Control.Monad (when,unless,mplus,mzero,foldM,(<=<),msum)
+import           Data.Bits (shiftR,bit,shiftL,testBit,(.&.),(.|.),complement)
+import           Data.Int (Int32)
+import           Data.Maybe (isJust)
+import           Data.Word (Word32)
 import qualified Data.Foldable as F
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
@@ -356,7 +358,8 @@ parseFunctionBlockEntry _ _ d (constantsBlockId -> Just es) = do
 parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [n]
-  1 -> label "FUNC_CODE_DECLARE_BLOCKS" (return d)
+  1 -> label "FUNC_CODE_DECLARE_BLOCKS"
+             (Assert.recordSizeGreater r 0 >> return d)
 
   -- [opval,ty,opval,opcode]
   2 -> label "FUNC_CODE_INST_BINOP" $ do
@@ -374,6 +377,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   3 -> label "FUNC_CODE_INST_CAST" $ do
     let field = parseField r
     (tv,ix) <- getValueTypePair t r 0
+    Assert.recordSizeIn r [ix + 2]
     resty   <- getType =<< field ix numeric
     cast'   <-             field (ix+1) castOp
     result resty (cast' tv resty) d
@@ -424,11 +428,13 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   10 -> label "FUNC_CODE_INST_RET" $ case length (recordFields r) of
     0 -> effect RetVoid d
     _ -> do
-      (tv,_) <- getValueTypePair t r 0
+      (tv, ix) <- getValueTypePair t r 0
+      Assert.recordSizeIn r [ix]
       effect (Ret tv) d
 
   -- [bb#,bb#,cond] or [bb#]
   11 -> label "FUNC_CODE_INST_BR" $ do
+    Assert.recordSizeIn r [1, 3]
     let field = parseField r
     bb1 <- field 0 numeric
     let jump   = effect (Jump bb1) d
@@ -483,6 +489,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [attrs,cc,normBB,unwindBB,fnty,op0,op1..]
   13 -> label "FUNC_CODE_INST_INVOKE" $ do
+    Assert.recordSizeGreater r 3
     let field = parseField r
     ccinfo      <- field 1 unsigned
     normal      <- field 2 numeric
@@ -532,8 +539,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [instty,opty,op,align]
   19 -> label "FUNC_CODE_INST_ALLOCA" $ do
-    unless (length (recordFields r) == 4)
-        (fail "Invalid ALLOCA record")
+    Assert.recordSizeIn r [4]
+
     let field = parseField r
 
     instty <- getType           =<< field 0 numeric -- pointer type
@@ -562,6 +569,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   -- [opty,op,align,vol]
   20 -> label "FUNC_CODE_INST_LOAD" $ do
     (tv,ix) <- getValueTypePair t r 0
+    Assert.recordSizeIn r [ix + 2, ix + 3]
 
     (ret,ix') <-
       if length (recordFields r) == ix + 3
@@ -581,6 +589,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   -- 22 is unused
 
   23 -> label "FUNC_CODE_INST_VAARG" $ do
+    Assert.recordSizeGreater r 2
     let field = parseField r
     ty    <- getType     =<< field 0 numeric
     op    <- getValue t ty =<< field 1 numeric
@@ -640,6 +649,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [paramattrs, cc, mb fmf, mb fnty, fnid, arg0 .. arg n, varargs]
   34 -> label "FUNC_CODE_INST_CALL" $ do
+    Assert.recordSizeGreater r 2
     let field = parseField r
 
     -- pal <- field 0 numeric -- N.B. skipping param attributes
@@ -673,6 +683,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [Line,Col,ScopeVal, IAVal]
   35 -> label "FUNC_CODE_DEBUG_LOC" $ do
+    Assert.recordSizeGreater r 3
+
     let field = parseField r
     line    <- field 0 numeric
     col     <- field 1 numeric
@@ -698,6 +710,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [ordering, synchscope]
   36 -> label "FUNC_CODE_INST_FENCE" $ do
+    Assert.recordSizeIn r [2]
     mordval <- getDecodedOrdering =<< parseField r 0 unsigned
     -- TODO: parse scope
     case mordval of
@@ -752,6 +765,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [ty,val,val,num,id0,val0...]
   40 -> label "FUNC_CODE_LANDINGPAD_OLD" $ do
+    Assert.recordSizeGreater r 3
     let field = parseField r
     ty          <- getType =<< field 0 numeric
     (persFn,ix) <- getValueTypePair t r 1
@@ -764,6 +778,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   -- [opty, op, align, vol, ordering, synchscope]
   41 -> label "FUNC_CODE_LOADATOMIC" $ do
     (tv,ix) <- getValueTypePair t r 0
+
+    Assert.recordSizeIn r [ix + 4, ix+ 5]
 
     (ret,ix') <-
       if length (recordFields r) == ix + 5
@@ -800,6 +816,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     let field = parseField r
     (ptr,ix)  <- getValueTypePair t r 0
     (val,ix') <- getValueTypePair t r ix
+    Assert.recordSizeIn r [ix' + 2]
     aval      <- field ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
@@ -810,8 +827,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (ptr, ix)  <- getValueTypePair t r 0
     (val, ix') <- getValueTypePair t r ix
 
-    when (length (recordFields r) /= ix' + 4) $ do
-      fail $ "Invalid record size: " ++ show (length (recordFields r))
+    Assert.recordSizeIn r [ix' + 4]
 
     -- The PtrTo is eliminated in the case of LOADATOMIC
     -- typecheckLoadStoreInst (PtrTo (typedType val)) (typedType ptr)
@@ -834,6 +850,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     notImplemented
 
   47 -> label "FUNC_CODE_LANDINGPAD" $ do
+    Assert.recordSizeGreater r 2
     let field = parseField r
     ty         <- getType =<< field 0 numeric
     isCleanup  <- (/=(0::Int)) <$> field 1 numeric
@@ -842,18 +859,22 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     result ty (LandingPad ty Nothing isCleanup clauses) d
 
   48 -> label "FUNC_CODE_CLEANUPRET" $ do
+    -- Assert.recordSizeIn r [1, 2]
     notImplemented
 
   49 -> label "FUNC_CODE_CATCHRET" $ do
+    -- Assert.recordSizeIn r [2]
     notImplemented
 
   50 -> label "FUNC_CODE_CATCHPAD" $ do
     notImplemented
 
   51 -> label "FUNC_CODE_CLEANUPPAD" $ do
+    -- Assert.recordSizeGreater r [1]
     notImplemented
 
   52 -> label "FUNC_CODE_CATCHSWITCH" $ do
+    -- Assert.recordSizeGreater r [1]
     notImplemented
 
   -- 53 is unused
@@ -1241,7 +1262,7 @@ getDecodedOrdering 3 = return (Just Acquire)
 getDecodedOrdering 4 = return (Just Release)
 getDecodedOrdering 5 = return (Just AcqRel)
 getDecodedOrdering 6 = return (Just SeqCst)
-getDecodedOrdering i = fail ("Unknown atomic ordering: " ++ show i)
+getDecodedOrdering i = Assert.unknownEntity "atomic ordering" i
 
 
 -- https://github.com/llvm-mirror/llvm/blob/release_60/include/llvm/Bitcode/LLVMBitCodes.h#L377
@@ -1257,4 +1278,4 @@ getDecodedAtomicRWOp 7  = pure AtomicMax
 getDecodedAtomicRWOp 8  = pure AtomicMin
 getDecodedAtomicRWOp 9  = pure AtomicUMax
 getDecodedAtomicRWOp 10 = pure AcomicUMin
-getDecodedAtomicRWOp _  = fail "Unknown atomic RWOp"
+getDecodedAtomicRWOp v  = Assert.unknownEntity "atomic RWOp" v
