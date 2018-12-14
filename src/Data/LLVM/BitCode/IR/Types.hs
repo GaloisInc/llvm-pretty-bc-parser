@@ -5,18 +5,19 @@ module Data.LLVM.BitCode.IR.Types (
   , parseTypeBlock
   ) where
 
-import Data.LLVM.BitCode.Bitstream
-import Data.LLVM.BitCode.Match
-import Data.LLVM.BitCode.Parse
-import Data.LLVM.BitCode.Record
-import Text.LLVM.AST
+import qualified Data.LLVM.BitCode.Assert as Assert
+import           Data.LLVM.BitCode.Bitstream
+import           Data.LLVM.BitCode.Match
+import           Data.LLVM.BitCode.Parse
+import           Data.LLVM.BitCode.Record
+import           Text.LLVM.AST
 
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
-import Control.Monad (when,unless,mplus,(<=<))
-import Data.List (sortBy)
-import Data.Maybe (catMaybes)
-import Data.Ord (comparing)
+import           Control.Monad (when,unless,mplus,(<=<))
+import           Data.List (sortBy)
 import qualified Data.Map as Map
+import           Data.Maybe (catMaybes)
+import           Data.Ord (comparing)
 
 
 -- Type Block ------------------------------------------------------------------
@@ -188,7 +189,7 @@ parseTypeBlockEntry (fromEntry -> Just r) = case recordCode r of
       rty:ptys -> addType (FunTy rty ptys vararg)
       []       -> fail "function expects a return type"
 
-  code -> fail ("unknown type code " ++ show code)
+  code -> Assert.unknownEntity "type code " code
 
 -- skip blocks
 parseTypeBlockEntry (block -> Just _) =
