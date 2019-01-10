@@ -1278,5 +1278,5 @@ getDecodedAtomicRWOp 6  = pure AtomicXor
 getDecodedAtomicRWOp 7  = pure AtomicMax
 getDecodedAtomicRWOp 8  = pure AtomicMin
 getDecodedAtomicRWOp 9  = pure AtomicUMax
-getDecodedAtomicRWOp 10 = pure AcomicUMin
+getDecodedAtomicRWOp 10 = pure AtomicUMin
 getDecodedAtomicRWOp v  = Assert.unknownEntity "atomic RWOp" v
