@@ -8,24 +8,26 @@
 
 module Data.LLVM.BitCode.Parse where
 
-import Text.LLVM.AST
-import Text.LLVM.PP
+import           Text.LLVM.AST
+import           Text.LLVM.PP
 
-import Control.Applicative (Alternative(..))
-import Control.Monad.Fix (MonadFix)
-import Data.Maybe (fromMaybe)
-import Data.Semigroup
-import Data.Typeable (Typeable)
-import Data.Word ( Word32 )
-import MonadLib
+import           Control.Applicative (Alternative(..))
+import           Control.Monad.Fix (MonadFix)
+import           Control.Monad.Fail (MonadFail)
+import qualified Control.Monad.Fail -- makes fail visible for instance
+import           Data.Maybe (fromMaybe)
+import           Data.Semigroup
+import           Data.Typeable (Typeable)
+import           Data.Word ( Word32 )
+import           MonadLib
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import qualified Control.Exception as X
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
-import GHC.Stack (HasCallStack, CallStack, callStack, prettyCallStack)
+import           GHC.Stack (HasCallStack, CallStack, callStack, prettyCallStack)
 
-import Prelude
+import           Prelude
 
 
 -- Error Collection Parser -----------------------------------------------------
@@ -55,6 +57,9 @@ instance Monad Parse where
   Parse m >>= f = Parse (m >>= unParse . f)
 
   {-# INLINE fail #-}
+  fail = failWithContext
+
+instance MonadFail Parse where
   fail = failWithContext
 
 instance Alternative Parse where

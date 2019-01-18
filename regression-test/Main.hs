@@ -11,6 +11,7 @@ import           Data.LLVM.BitCode (Error(..))
 
 import           Control.Monad (when, forM, forM_, filterM)
 import           Control.Monad.IO.Class (liftIO)
+import qualified Control.Foldl as Foldl
 import           Data.List (nub)
 import           Data.Maybe (fromMaybe, listToMaybe)
 import           Data.Semigroup hiding ( Option )
@@ -22,6 +23,8 @@ import qualified System.Directory as Dir
 import           System.Environment (getArgs, getProgName, getExecutablePath)
 import           System.Exit (exitFailure, exitSuccess)
 import           System.FilePath (takeDirectory)
+import           Data.List (maximumBy)
+import           Data.Ord (comparing)
 import qualified Turtle as T
 
 import           Prelude
@@ -35,6 +38,7 @@ data Options = Options { optTests   :: [FilePath] -- ^ Tests
                        , optRev1    :: Text       -- ^ Git revision 1
                        , optRev2    :: Text       -- ^ Git revision 2
                        , optAST     :: Bool       -- ^ Compare generated ASTs?
+                       , optNew     :: Bool       -- ^ Use cabal new-build?
                        , optHelp    :: Bool
                        } deriving (Eq, Ord, Show)
 
@@ -44,6 +48,7 @@ defaultOptions  = Options { optTests   = ["disasm-test/tests/factorial2.ll"]
                           , optRev1    = "HEAD"
                           , optRev2    = "HEAD~1"
                           , optAST     = False
+                          , optNew     = False
                           , optHelp    = False
                           }
 
@@ -53,12 +58,14 @@ options  =
   , Option ""  ["rev1"]    (ReqArg setRev1 "REV")    "first git revision to compare"
   , Option ""  ["rev2"]    (ReqArg setRev2 "REV")    "second git revision to compare"
   , Option ""  ["ast"]     (NoArg setAST)            "compare generated ASTs, rather than disassembled bitcode"
+  , Option ""  ["new"]     (NoArg setNew)            "use cabal new-build"
   , Option "h" ["help"]    (NoArg setHelp)           "display this message"
   ]
   where setLlvmAs str = Endo $ \opt -> opt { optLlvmAs = Text.pack str }
         setRev1   str = Endo $ \opt -> opt { optRev1   = Text.pack str }
         setRev2   str = Endo $ \opt -> opt { optRev2   = Text.pack str }
         setAST        = Endo $ \opt -> opt { optAST    = True          }
+        setNew        = Endo $ \opt -> opt { optNew    = True          }
         setHelp       = Endo $ \opt -> opt { optHelp   = True          }
 
 addTest :: String -> Endo Options
@@ -174,15 +181,21 @@ main = T.runManaged $ do
     echoText $ "Compiling: " <> rev
 
     -- (i)
-    (code, stdout, stderr) <- T.procStrictWithErr "git" ["reset", "--hard", rev] (pure "")
+    (code, stdout, stderr) <- T.procStrictWithErr "git" ["checkout", rev] (pure "")
     exitWithMsg ("Couldn't checkout rev " <> rev) code stdout stderr
 
     -- (ii)
-    (code, stdout, stderr) <- T.procStrictWithErr "cabal" ["build"] (pure "")
-    exitWithMsg ("Couldn't `cabal build` rev " <> rev) code stdout stderr
+    let build = (if optNew opts then "new-" else "") <> "build"
+    (code, stdout, stderr) <- T.procStrictWithErr "cabal" [build, "llvm-disasm"] (pure "")
+    exitWithMsg ("Couldn't `cabal " <> build <> "` revision " <> rev)
+                code stdout stderr
 
     -- (iii)
-    T.cp (T.fromText "dist/build/llvm-disasm/llvm-disasm")
+    -- A bit hacky: some directories contain this text, assume the longest
+    -- filepath is the binary
+    let dist = "dist" <> if optNew opts then "-newstyle" else ""
+    paths <- T.fold (T.find (T.has "llvm-disasm") (T.fromText dist)) Foldl.list
+    T.cp (maximumBy (comparing (length . T.encodeString)) paths)
          (outputDir T.</> T.fromText ("llvm-disasm-" <> rev))
 
   -- (6)
