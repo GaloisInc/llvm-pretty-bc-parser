@@ -730,15 +730,18 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         Nothing -> fail "Invalid record: scope field not present"
 
     24 -> label "METADATA_NAMESPACE" $ do
-      isNew <- case length (recordFields r) of
-                3 -> return True
-                5 -> return False
-                _ -> fail "Invalid METADATA_NAMESPACE record"
+      assertRecordSizeIn [3, 5]
+      let isNew =
+            case length (recordFields r) of
+              3 -> True
+              5 -> False
+              _ -> error "Impossible (METADATA_NAMESPACE)" -- see assertion
+      let nameIdx = if isNew then 2 else 3
+
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
-      let nameIdx = if isNew then 2 else 3
       dins       <- DINameSpace
-        <$> (mdString cxt pm         <$> parseField r nameIdx numeric) -- dinsName
+        <$> (mdStringOrNull cxt pm   <$> parseField r nameIdx numeric) -- dinsName
         <*> (mdForwardRef cxt mt     <$> parseField r 1 numeric)       -- dinsScope
         <*> (if isNew
             then return (ValMdString "")
