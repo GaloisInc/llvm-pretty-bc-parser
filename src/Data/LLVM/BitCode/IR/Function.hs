@@ -741,17 +741,17 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
         Just ordering -> pure ordering
         Nothing       -> fail $ "`atomicrmw` requires ordering: ix == " ++ show ix
 
-    val <-
-      case typedType ptr of
-        PtrTo ty@(PrimType prim) -> do
+    case typedType ptr of
+      PtrTo ty@(PrimType prim) -> do
 
-          -- Catch pointers of the wrong type
-          when (case prim of
-                  Integer   _ -> False
-                  FloatType _ -> False
-                  _           -> True) $
-            fail $ "Expected pointer to integer or float, found " ++ show ty
+        -- Catch pointers of the wrong type
+        when (case prim of
+                Integer   _ -> False
+                FloatType _ -> False
+                _           -> True) $
+          fail $ "Expected pointer to integer or float, found " ++ show ty
 
+        val <- do
           typed <- getValue t ty =<< parseField r ix' numeric
           if ty /= (typedType typed)
           then fail $ unlines $ [ "Wrong type of value retrieved from value table"
@@ -760,9 +760,10 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
                                 ]
           else pure typed
 
-        ty -> fail $ "Expected pointer to integer or float, found " ++ show ty
+        result ty (AtomicRW volatile operation ptr val Nothing ordering) d
 
-    result (typedType ptr) (AtomicRW volatile operation ptr val Nothing ordering) d
+      ty -> fail $ "Expected pointer to integer or float, found " ++ show ty
+
 
   -- [opval]
   39 -> label "FUNC_CODE_RESUME" $ do
