@@ -825,7 +825,13 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (val,ix') <- getValueTypePair t r ix
 
     -- Typecheck the instruction
-    -- typecheckLoadStoreInst val ptr
+    when (PtrTo (typedType val) /= typedType ptr) $ fail $ unlines
+      [ "Store value type does not patch type of pointer."
+      , "Pointer type: "  ++ show (typedType ptr)
+      , "Value type:   "  ++ show (typedType val)
+      , "Pointer value: " ++ show (typedValue ptr)
+      , "Value value:   " ++ show (typedValue val)
+      ]
 
     Assert.recordSizeIn r [ix' + 2]
 
