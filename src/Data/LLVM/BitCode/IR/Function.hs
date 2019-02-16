@@ -741,23 +741,29 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
         Just ordering -> pure ordering
         Nothing       -> fail $ "`atomicrmw` requires ordering: ix == " ++ show ix
 
-    val <-
-      case typedType ptr of
-        PtrTo ty -> do
-          -- "NextValueNo" in the C++ becomes "ix'" here, as in INST_BINOP
-          getValue t ty ix'
-          -- The following check gives false negatives. Not sure why.
-          -- if ty /= (typedType typed)
-          -- then fail $ unlines $ [ "Wrong type of value retrieved from value table"
-          --                       , "Expected: " ++ show (ty)
-          --                       , "Got: " ++ show (typedType typed)
-          --                       ]
-          -- else pure typed
+    case typedType ptr of
+      PtrTo ty@(PrimType prim) -> do
 
-        ty       -> fail $ "Expected pointer type, found " ++ show ty
+        -- Catch pointers of the wrong type
+        when (case prim of
+                Integer   _ -> False
+                FloatType _ -> False
+                _           -> True) $
+          fail $ "Expected pointer to integer or float, found " ++ show ty
 
+        val <- do
+          typed <- getValue t ty =<< parseField r ix' numeric
+          if ty /= (typedType typed)
+          then fail $ unlines $ [ "Wrong type of value retrieved from value table"
+                                , "Expected: " ++ show (ty)
+                                , "Got: " ++ show (typedType typed)
+                                ]
+          else pure typed
 
-    result (typedType ptr) (AtomicRW volatile operation ptr val Nothing ordering) d
+        result ty (AtomicRW volatile operation ptr val Nothing ordering) d
+
+      ty -> fail $ "Expected pointer to integer or float, found " ++ show ty
+
 
   -- [opval]
   39 -> label "FUNC_CODE_RESUME" $ do
@@ -791,7 +797,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
                            `mplus` fail "invalid type to INST_LOADATOMIC"
                  return (ty, ix)
 
-    typecheckLoadStoreInst (typedType tv) (PtrTo ret)
+    typecheckLoadStoreInst (Typed (PtrTo ret) ()) tv
 
     ordval <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
     when (ordval `elem` Nothing:map Just [Release, AcqRel]) $
@@ -817,7 +823,18 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     let field = parseField r
     (ptr,ix)  <- getValueTypePair t r 0
     (val,ix') <- getValueTypePair t r ix
+
+    -- Typecheck the instruction
+    when (PtrTo (typedType val) /= typedType ptr) $ fail $ unlines
+      [ "Store value type does not patch type of pointer."
+      , "Pointer type: "  ++ show (typedType ptr)
+      , "Value type:   "  ++ show (typedType val)
+      , "Pointer value: " ++ show (typedValue ptr)
+      , "Value value:   " ++ show (typedValue val)
+      ]
+
     Assert.recordSizeIn r [ix' + 2]
+
     aval      <- field ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
@@ -830,8 +847,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
     Assert.recordSizeIn r [ix' + 4]
 
-    -- The PtrTo is eliminated in the case of LOADATOMIC
-    -- typecheckLoadStoreInst (PtrTo (typedType val)) (typedType ptr)
+    -- Typecheck the instruction
+    typecheckLoadStoreInst val ptr
 
     -- TODO: There's no spot in the AST for this ordering. Should there be?
     ordering <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
@@ -1246,12 +1263,14 @@ parseClauses t r = loop
 -- to by the pointer.
 --
 -- See: https://github.com/llvm-mirror/llvm/blob/release_60/lib/Bitcode/Reader/BitcodeReader.cpp#L3328
-typecheckLoadStoreInst :: Type -> Type -> Parse ()
-typecheckLoadStoreInst valTy ptrTy = do
-  when (valTy /= ptrTy) $ fail $ unlines
+typecheckLoadStoreInst :: (Show a, Show b) => Typed a -> Typed b -> Parse ()
+typecheckLoadStoreInst val ptr = do
+  when (typedType val /= typedType ptr) $ fail $ unlines
     [ "Load/store type does not patch type of pointer."
-    , "Pointer type: " ++ show ptrTy
-    , "Value type: " ++ show valTy
+    , "Pointer type: "  ++ show (typedType ptr)
+    , "Value type:   "  ++ show (typedType val)
+    , "Pointer value: " ++ show (typedValue ptr)
+    , "Value value:   " ++ show (typedValue val)
     ]
 
 
