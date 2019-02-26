@@ -20,6 +20,10 @@ Flag fuzz
   Description:         Enable fuzzing harness
   Default:             False
 
+Flag regressions
+  Description:         Enable regression testing build
+  Default:             False
+
 Source-repository head
   type:                git
   location:            http://github.com/galoisinc/llvm-pretty-bc-parser
@@ -133,6 +137,10 @@ Executable regression-test
                        turtle,
                        llvm-pretty== 0.10.*,
                        llvm-pretty-bc-parser
+  if flag(regressions)
+      Buildable:       True
+  else
+      Buildable:       False
 
 Executable fuzz-llvm-disasm
   Main-is:             Main.hs
