@@ -861,7 +861,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     Assert.recordSizeIn r [ix' + 4]
 
     -- Typecheck the instruction
-    typecheckLoadStoreInst val ptr
+    typecheckLoadStoreInst (Typed (PtrTo (typedType val)) ()) ptr
 
     -- TODO: There's no spot in the AST for this ordering. Should there be?
     ordering <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
