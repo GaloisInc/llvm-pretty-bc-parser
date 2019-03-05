@@ -601,7 +601,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     let field = parseField r
     (ptr,ix) <- getValueTypePair t r 0
     ty       <- elimPtrTo (typedType ptr)
-                  `mplus` fail "invalid type to INST_STORE"
+                  `mplus` fail "invalid type to INST_STORE_OLD"
     val      <- getValue t ty =<< field ix numeric
     aval     <- field (ix+1) numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
@@ -610,15 +610,28 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- 25 is unused
 
-  -- [opty, opval, n x indices]
+  -- LLVM 6: [opty, opval, n x indices]
   26 -> label "FUNC_CODE_INST_EXTRACTVAL" $ do
-    (tv,ix) <- getValueTypePair t r 0
-    ixs     <- parseIndexes r ix
-    ret     <- interpValueIndex (typedType tv) ixs
-    result ret (ExtractValue tv ixs) d
+    (tv, ix) <- getValueTypePair t r 0
+
+    when (length (recordFields r) == ix) $
+      fail "`extractval` instruction had zero indices"
+
+    ixs <- parseIndexes r ix
+    let instr = ExtractValue tv ixs
+
+    -- The return type of this instruction depends on the given indices into the
+    -- type.
+    ret      <- interpValueIndex (typedType tv) ixs
+    result ret instr d
 
   27 -> label "FUNC_CODE_INST_INSERTVAL" $ do
     (tv,ix)   <- getValueTypePair t r 0
+
+    -- See comment in FUNC_CODE_INST_EXTRACTVAL
+    when (length (recordFields r) == ix) $
+      fail "Invalid instruction with zero indices"
+
     (elt,ix') <- getValueTypePair t r ix
     ixs       <- parseIndexes r ix'
     result (typedType tv) (InsertValue tv elt ixs) d
@@ -719,7 +732,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [ptrty,ptr,cmp,new, align, vol,
   --  ordering, synchscope]
-  37 -> label "FUNC_CODE_INST_CMPXCHG" $ do
+  37 -> label "FUNC_CODE_INST_CMPXCHG_OLD" $ do
     notImplemented
 
   -- LLVM 6.0: [ptrty, ptr, val, operation, vol, ordering, ssid]
@@ -848,7 +861,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     Assert.recordSizeIn r [ix' + 4]
 
     -- Typecheck the instruction
-    typecheckLoadStoreInst val ptr
+    typecheckLoadStoreInst (Typed (PtrTo (typedType val)) ()) ptr
 
     -- TODO: There's no spot in the AST for this ordering. Should there be?
     ordering <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
@@ -864,8 +877,72 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
     effect (Store val ptr ordering align) d
 
-  46 -> label "FUNC_CODE_CMPXCHG" $ do
-    notImplemented
+  -- LLVM 6: [ptrty, ptr, cmp, new, vol, successordering, ssid,
+  --          failureordering?, isweak?]
+  46 -> label "FUNC_CODE_INST_CMPXCHG" $ do
+    (ptr, ix)  <- getValueTypePair t r 0
+    (val, ix') <- getValueTypePair t r ix
+    new        <- getValue t (typedType val) =<< parseField r ix' numeric
+    let ix''   = ix' + 1 -- TODO: is this right?
+
+    -- TODO: record size assertion
+    -- Assert.recordSizeGreater r (ix'' + 5)
+
+    case typedType ptr of
+      PtrTo ptrTo ->
+        when (ptrTo /= typedType val) $ fail $ unlines $
+          [ "Types don't match:"
+          , "Pointer type: " ++ show (typedType ptr)
+          , "Value type: " ++ show (typedType val)
+          ]
+      _ -> fail $ "Expected pointer type, found " ++ show (typedType ptr)
+
+    when (typedType val /= typedType new) $ fail $ unlines $
+      [ "Mismatched value types:"
+      , "cmp value: " ++ show (typedValue val)
+      , "new value: " ++ show (typedValue new)
+      , "cmp type:  " ++ show (typedType val)
+      , "new type:  " ++ show (typedType new)
+      ]
+
+    volatile <- parseField r ix'' boolean
+
+    successOrdering_ <- getDecodedOrdering =<< parseField r (ix'' + 1) unsigned
+    let successOrderMsg ord = "Invalid success ordering: " ++ show ord
+    successOrdering  <-
+      case successOrdering_ of
+        Nothing        -> fail (successOrderMsg successOrdering_)
+        Just Unordered -> fail (successOrderMsg successOrdering_)
+        Just ordering  -> pure ordering
+
+    -- TODO: parse sync scope (ssid)
+    -- ssid <- parseField r (ix'' + 2) ssid
+
+    let len = length (recordFields r)
+    failureOrdering_ <-
+      if len < 7
+      -- Implementation of getStrongestFailureOrdering in llvm/IR/Instructions.h:
+      then case successOrdering of
+             Release   -> pure (Just Monotonic)
+             Monotonic -> pure (Just Monotonic)
+             Acquire   -> pure (Just Acquire)   -- TODO: AcquireRelease?
+             SeqCst    -> pure (Just SeqCst)
+             _         -> fail (successOrderMsg successOrdering)
+      else getDecodedOrdering =<< parseField r (ix'' + 3) unsigned
+    failureOrdering  <-
+      case failureOrdering_ of
+        Nothing  -> fail "Invalid failure ordering (Nothing)"
+        Just ord -> pure ord
+
+    weak <-
+      if len < 8
+      then fail "Not yet implemented: old-style cmpxchg instruction (weak)"
+      else parseField r (ix'' + 4) boolean
+
+    -- The return type of cmpxchg is: the value that was present in the memory
+    -- location and a boolean indicating whether it was overwritten.
+    let ty = Struct [typedType val, PrimType (Integer 1)]
+    result ty (CmpXchg weak volatile ptr val new Nothing successOrdering failureOrdering) d
 
   47 -> label "FUNC_CODE_LANDINGPAD" $ do
     Assert.recordSizeGreater r 2
@@ -1138,7 +1215,10 @@ interpGep ty vs = check (resolveGep ty vs)
   where
   check res = case res of
     HasType rty -> return (PtrTo rty)
-    Invalid     -> fail "unable to determine the type of getelementptr"
+    Invalid -> fail $ unlines $
+      [ "Unable to determine the type of getelementptr"
+      , "Input type: " ++ show ty
+      ]
     Resolve i k -> do
       ty' <- getType' =<< getTypeId i
       check (k ty')
@@ -1152,11 +1232,19 @@ parseIndexes r = loop
     rest <- loop (n+1) `mplus` return []
     return (ix:rest)
 
-interpValueIndex :: Type -> [Int32] -> Parse Type
+interpValueIndex :: Type    -- ^ Aggregate (struct/array) type to index into
+                 -> [Int32] -- ^ Indices
+                 -> Parse Type
 interpValueIndex ty is = check (resolveValueIndex ty is)
   where
   check res = case res of
-    Invalid     -> fail "unable to determine the type of (extract/insert)value"
+    Invalid ->
+      fail $ unlines $
+        [ "Unable to determine the return type of `extractvalue`"
+        , "Hint: The input type should be an aggregate type (struct or array)"
+        , "Input type: " ++ show ty
+        , "Indices: " ++ show is
+        ]
     HasType rty -> return rty
     Resolve i k -> do
       ty' <- getType' =<< getTypeId i
@@ -1274,6 +1362,7 @@ typecheckLoadStoreInst val ptr = do
     ]
 
 
+-- | 'Nothing' corresponds to @NotAtomic@ in the LLVM source
 getDecodedOrdering :: Word32 -> Parse (Maybe AtomicOrdering)
 getDecodedOrdering 0 = return Nothing
 getDecodedOrdering 1 = return (Just Unordered)
