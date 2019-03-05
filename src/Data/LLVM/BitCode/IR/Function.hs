@@ -505,8 +505,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (f,ix')      <- getValueTypePair t r ix
 
     -- NOTE: mbFTy should be the same as the type of f
-    calleeTy <- elimPtrTo (typedType f)
-                `mplus` fail "Callee is not a pointer"
+    calleeTy <- Assert.elimPtrTo "Callee is not a pointer" (typedType f)
 
     fty <- case mbFTy of
              Just ty | calleeTy == ty -> return ty
@@ -560,9 +559,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
         ity = if explicitType then PtrTo instty else instty
 
     ret <- if explicitType
-              then return instty
-              else elimPtrTo instty
-                      `mplus` fail "invalid return type in INST_ALLOCA"
+           then return instty
+           else Assert.elimPtrTo "In return type:" instty
 
     result ity (Alloca ret sval (Just aval)) d
 
@@ -576,8 +574,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
          then do ty <- getType =<< parseField r ix numeric
                  return (ty,ix+1)
 
-         else do ty <- elimPtrTo (typedType tv)
-                           `mplus` fail "invalid type to INST_LOAD"
+         else do ty <- Assert.elimPtrTo "" (typedType tv)
                  return (ty,ix)
 
     aval    <- parseField r ix' numeric
@@ -600,8 +597,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   24 -> label "FUNC_CODE_INST_STORE_OLD" $ do
     let field = parseField r
     (ptr,ix) <- getValueTypePair t r 0
-    ty       <- elimPtrTo (typedType ptr)
-                  `mplus` fail "invalid type to INST_STORE_OLD"
+    ty       <- Assert.elimPtrTo "" (typedType ptr)
     val      <- getValue t ty =<< field ix numeric
     aval     <- field (ix+1) numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
@@ -676,7 +672,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (Typed opTy fn, ix2) <- getValueTypePair t r ix1
                                 `mplus` fail "Invalid record"
 
-    op <- elimPtrTo opTy `mplus` fail "Callee is not a pointer type"
+    op <- Assert.elimPtrTo "Callee is not a pointer type" opTy
 
     fnty <- case mbFnTy of
              Just ty | ty == op  -> return op
@@ -806,11 +802,10 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
          then do ty <- getType =<< parseField r ix numeric
                  return (ty, ix + 1)
 
-         else do ty <- elimPtrTo (typedType tv)
-                           `mplus` fail "invalid type to INST_LOADATOMIC"
+         else do ty <- Assert.elimPtrTo "" (typedType tv)
                  return (ty, ix)
 
-    typecheckLoadStoreInst (Typed (PtrTo ret) ()) tv
+    Assert.ptrTo "load atomic : <ty>, <ty>*" tv (Typed ret ())
 
     ordval <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
     when (ordval `elem` Nothing:map Just [Release, AcqRel]) $
@@ -837,16 +832,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (ptr,ix)  <- getValueTypePair t r 0
     (val,ix') <- getValueTypePair t r ix
 
-    -- Typecheck the instruction
-    when (PtrTo (typedType val) /= typedType ptr) $ fail $ unlines
-      [ "Store value type does not patch type of pointer."
-      , "Pointer type: "  ++ show (typedType ptr)
-      , "Value type:   "  ++ show (typedType val)
-      , "Pointer value: " ++ show (typedValue ptr)
-      , "Value value:   " ++ show (typedValue val)
-      ]
-
     Assert.recordSizeIn r [ix' + 2]
+    Assert.ptrTo "store : <ty> <value>, <ty>* <pointer>" ptr val
 
     aval      <- field ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
@@ -859,9 +846,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (val, ix') <- getValueTypePair t r ix
 
     Assert.recordSizeIn r [ix' + 4]
-
-    -- Typecheck the instruction
-    typecheckLoadStoreInst (Typed (PtrTo (typedType val)) ()) ptr
+    Assert.ptrTo "store atomic : <ty> <value>, <ty>* <pointer>" ptr val
 
     -- TODO: There's no spot in the AST for this ordering. Should there be?
     ordering <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
@@ -888,15 +873,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     -- TODO: record size assertion
     -- Assert.recordSizeGreater r (ix'' + 5)
 
-    case typedType ptr of
-      PtrTo ptrTo ->
-        when (ptrTo /= typedType val) $ fail $ unlines $
-          [ "Types don't match:"
-          , "Pointer type: " ++ show (typedType ptr)
-          , "Value type: " ++ show (typedType val)
-          ]
-      _ -> fail $ "Expected pointer type, found " ++ show (typedType ptr)
-
+    Assert.ptrTo "cmpxchg : <ty>* <pointer>, <ty> <cmp>, <ty> <new> " ptr val
     when (typedType val /= typedType new) $ fail $ unlines $
       [ "Mismatched value types:"
       , "cmp value: " ++ show (typedValue val)
@@ -1346,20 +1323,6 @@ parseClauses t r = loop
         0 -> return (Catch  val : cs)
         1 -> return (Filter val : cs)
         _ -> fail ("Invalid clause type: " ++ show cty)
-
--- | Ensure that the type of the load/store value matches the type being pointed
--- to by the pointer.
---
--- See: https://github.com/llvm-mirror/llvm/blob/release_60/lib/Bitcode/Reader/BitcodeReader.cpp#L3328
-typecheckLoadStoreInst :: (Show a, Show b) => Typed a -> Typed b -> Parse ()
-typecheckLoadStoreInst val ptr = do
-  when (typedType val /= typedType ptr) $ fail $ unlines
-    [ "Load/store type does not patch type of pointer."
-    , "Pointer type: "  ++ show (typedType ptr)
-    , "Value type:   "  ++ show (typedType val)
-    , "Pointer value: " ++ show (typedValue ptr)
-    , "Value value:   " ++ show (typedValue val)
-    ]
 
 
 -- | 'Nothing' corresponds to @NotAtomic@ in the LLVM source
