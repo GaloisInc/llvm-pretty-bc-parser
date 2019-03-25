@@ -366,19 +366,11 @@ parsedMetadata pm =
        => (a -> b) -> (f (g a)) -> Compose f g b
 h <$$> x = h <$> Compose x
 
-(<**>) :: forall f g a b. (Applicative f, Applicative g)
-       => Compose f g (a -> b) -> (f (g a)) -> Compose f g b
-h <**> x = h <*> Compose x
-
 -- | These are useful for avoiding writing 'pure'
 -- (i.e. only some parts of your long applicative chain use both effects)
 (<<*>) :: forall f g a b. (Applicative f, Applicative g)
        => Compose f g (a -> b) -> (f a) -> Compose f g b
 h <<*> x = h <*> Compose (pure <$> x)
-
-(<*>>) :: forall f g a b. (Applicative f, Applicative g)
-       => Compose f g (a -> b) -> (g a) -> Compose f g b
-h <*>> x = h <*> Compose (pure x)
 
 -- Metadata Parsing ------------------------------------------------------------
 
