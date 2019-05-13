@@ -26,8 +26,8 @@ import           Data.Word ( Word32 )
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import qualified Control.Exception as X
 import qualified Data.ByteString as BS
-import qualified Data.Map as Map
 import qualified Data.IntMap as IntMap
+import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import           GHC.Stack (HasCallStack, CallStack, callStack, prettyCallStack)
 
@@ -115,7 +115,7 @@ emptyParseState  = ParseState
   , psValueTable    = emptyValueTable False
   , psStringTable   = Nothing
   , psMdTable       = emptyValueTable False
-  , psMdRefs        = Map.empty
+  , psMdRefs        = IntMap.empty
   , psFunProtos     = Seq.empty
   , psNextResultId  = 0
   , psTypeName      = Nothing
@@ -285,16 +285,16 @@ type PInstr = Instr' Int
 
 data ValueTable = ValueTable
   { valueNextId  :: !Int
-  , valueEntries :: Map.Map Int (Typed PValue)
-  , strtabEntries :: Map.Map Int (Int, Int)
+  , valueEntries :: IntMap.IntMap (Typed PValue)
+  , strtabEntries :: IntMap.IntMap (Int, Int)
   , valueRelIds  :: Bool
   } deriving (Show)
 
 emptyValueTable :: Bool -> ValueTable
 emptyValueTable rel = ValueTable
   { valueNextId  = 0
-  , valueEntries = Map.empty
-  , strtabEntries = Map.empty
+  , valueEntries = IntMap.empty
+  , strtabEntries = IntMap.empty
   , valueRelIds  = rel
   }
 
@@ -306,7 +306,7 @@ addValue' tv vs = (valueNextId vs,vs')
   where
   vs' = vs
     { valueNextId  = valueNextId vs + 1
-    , valueEntries = Map.insert (valueNextId vs) tv (valueEntries vs)
+    , valueEntries = IntMap.insert (valueNextId vs) tv (valueEntries vs)
     }
 
 -- | Push a value into the value table, and return its index.
@@ -339,7 +339,7 @@ translateValueId vt n | valueRelIds vt = fromIntegral adjusted
 
 -- | Lookup an absolute address in the value table.
 lookupValueTableAbs :: Int -> ValueTable -> Maybe (Typed PValue)
-lookupValueTableAbs n values = Map.lookup n (valueEntries values)
+lookupValueTableAbs n values = IntMap.lookup n (valueEntries values)
 
 -- | When you know you have an absolute index.
 lookupValueAbs :: Int -> Parse (Maybe (Typed PValue))
@@ -426,16 +426,16 @@ resolveMd :: Int -> ParseState -> Maybe (Typed PValue)
 resolveMd ix ps = nodeRef `mplus` mdValue
   where
   reference = Typed (PrimType Metadata) . ValMd . ValMdRef
-  nodeRef   = reference `fmap` Map.lookup ix (psMdRefs ps)
+  nodeRef   = reference `fmap` IntMap.lookup ix (psMdRefs ps)
   mdValue   = lookupValueTableAbs ix (psMdTable ps)
 
 
-type MdRefTable = Map.Map Int Int
+type MdRefTable = IntMap.IntMap Int
 
 setMdRefs :: MdRefTable -> Parse ()
 setMdRefs refs = Parse $ do
   ps <- get
-  put $! ps { psMdRefs = refs `Map.union` psMdRefs ps }
+  put $! ps { psMdRefs = refs `IntMap.union` psMdRefs ps }
 
 
 -- Function Prototypes ---------------------------------------------------------
@@ -550,7 +550,7 @@ failWithContext msg = Parse $ do
 getType :: Int -> Parse Type
 getType ref = do
   symtab <- getTypeSymtab
-  case Map.lookup ref (tsById symtab) of
+  case IntMap.lookup ref (tsById symtab) of
     Just i  -> return (Alias i)
     Nothing -> getType' ref
 
@@ -639,19 +639,19 @@ requireBbEntryName n = do
 -- Type Symbol Tables ----------------------------------------------------------
 
 data TypeSymtab = TypeSymtab
-  { tsById   :: Map.Map Int Ident
+  { tsById   :: IntMap.IntMap Ident
   , tsByName :: Map.Map Ident Int
   } deriving Show
 
 instance Semigroup TypeSymtab where
   l <> r = TypeSymtab
-    { tsById   = tsById   l `Map.union` tsById r
+    { tsById   = tsById   l `IntMap.union` tsById r
     , tsByName = tsByName l `Map.union` tsByName r
     }
 
 instance Monoid TypeSymtab where
   mempty = TypeSymtab
-    { tsById   = Map.empty
+    { tsById   = IntMap.empty
     , tsByName = Map.empty
     }
 
@@ -659,7 +659,7 @@ instance Monoid TypeSymtab where
 
 addTypeSymbol :: Int -> Ident -> TypeSymtab -> TypeSymtab
 addTypeSymbol ix n ts = ts
-  { tsById   = Map.insert ix n (tsById ts)
+  { tsById   = IntMap.insert ix n (tsById ts)
   , tsByName = Map.insert n ix (tsByName ts)
   }
 
@@ -667,12 +667,12 @@ addTypeSymbol ix n ts = ts
 -- Metadata Kind Table ---------------------------------------------------------
 
 data KindTable = KindTable
-  { ktNames :: Map.Map Int String
+  { ktNames :: IntMap.IntMap String
   } deriving (Show)
 
 emptyKindTable :: KindTable
 emptyKindTable  = KindTable
-  { ktNames = Map.fromList
+  { ktNames = IntMap.fromList
     [ (0, "dbg"   )
     , (1, "tbaa"  )
     , (2, "prof"  )
@@ -685,13 +685,13 @@ addKind :: Int -> String -> Parse ()
 addKind kind name = Parse $ do
   ps <- get
   let KindTable { .. } = psKinds ps
-  put $! ps { psKinds = KindTable { ktNames = Map.insert kind name ktNames } }
+  put $! ps { psKinds = KindTable { ktNames = IntMap.insert kind name ktNames } }
 
 getKind :: Int -> Parse String
 getKind kind = Parse $ do
   ps <- get
   let KindTable { .. } = psKinds ps
-  case Map.lookup kind ktNames of
+  case IntMap.lookup kind ktNames of
     Just name -> return name
     Nothing   -> fail ("Unknown kind id: " ++ show kind ++ "\nKind table: " ++ show (psKinds ps))
 

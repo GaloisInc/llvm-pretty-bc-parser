@@ -16,7 +16,6 @@ import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import           Control.Monad (when,unless,mplus,(<=<))
 import qualified Data.IntMap as IntMap
 import           Data.List (sortBy)
-import qualified Data.Map as Map
 import           Data.Maybe (catMaybes)
 import           Data.Ord (comparing)
 
@@ -30,7 +29,7 @@ numEntry  = hasRecordCode 1 <=< fromUnabbrev <=< unabbrev
 resolveTypeDecls :: Parse [TypeDecl]
 resolveTypeDecls  = do
   symtab <- getTypeSymtab
-  decls  <- mapM mkTypeDecl (Map.toList (tsById symtab))
+  decls  <- mapM mkTypeDecl (IntMap.toList (tsById symtab))
   return (sortBy (comparing typeName) decls)
   where
   mkTypeDecl (ix,alias) = do
@@ -78,7 +77,7 @@ deriveTypeTables cxt tys = (tt,sym)
   -- symbol table.  if the index entry doesn't exist, throw an error, as that
   -- should be impossible.
   tt = IntMap.fromList [ (ix, updateAliases resolve ty) | (ix, (ty, _)) <- ixs ]
-  resolve ix = case Map.lookup ix (tsById sym) of
+  resolve ix = case IntMap.lookup ix (tsById sym) of
     Nothing    -> lookupTypeRef cxt ix tt
     Just ident -> Alias ident
 
