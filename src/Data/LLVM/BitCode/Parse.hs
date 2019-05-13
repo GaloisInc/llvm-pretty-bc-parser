@@ -27,6 +27,7 @@ import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import qualified Control.Exception as X
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map
+import qualified Data.IntMap as IntMap
 import qualified Data.Sequence as Seq
 import           GHC.Stack (HasCallStack, CallStack, callStack, prettyCallStack)
 
@@ -109,7 +110,7 @@ data ParseState = ParseState
 -- | The initial parsing state.
 emptyParseState :: ParseState
 emptyParseState  = ParseState
-  { psTypeTable     = Map.empty
+  { psTypeTable     = IntMap.empty
   , psTypeTableSize = 0
   , psValueTable    = emptyValueTable False
   , psStringTable   = Nothing
@@ -186,11 +187,11 @@ enterFunctionDef m = Parse $ do
 
 -- Type Table ------------------------------------------------------------------
 
-type TypeTable = Map.Map Int Type
+type TypeTable = IntMap.IntMap Type
 
 -- | Generate a type table, and a type symbol table.
 mkTypeTable :: [Type] -> TypeTable
-mkTypeTable  = Map.fromList . zip [0 ..]
+mkTypeTable  = IntMap.fromList . zip [0 ..]
 
 -- | Exceptions contain a callstack, parsing context, explanation, and index
 data BadForwardRef
@@ -221,7 +222,7 @@ lookupTypeRef :: HasCallStack
               => [String] -> Int -> TypeTable -> Type
 lookupTypeRef cxt n =
   let explanation = "Bad reference into type table"
-  in fromMaybe (X.throw (BadTypeRef callStack cxt explanation n)) . Map.lookup n
+  in fromMaybe (X.throw (BadTypeRef callStack cxt explanation n)) . IntMap.lookup n
 
 setTypeTable :: TypeTable -> Parse ()
 setTypeTable table = Parse $ do
@@ -265,7 +266,7 @@ getType' ref = do
 
 -- | Test to see if the type table has been added to already.
 isTypeTableEmpty :: Parse Bool
-isTypeTableEmpty  = Parse (Map.null . psTypeTable <$> get)
+isTypeTableEmpty  = Parse (IntMap.null . psTypeTable <$> get)
 
 setStringTable :: StringTable -> Parse ()
 setStringTable st = Parse $ do
