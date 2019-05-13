@@ -30,7 +30,7 @@ import           Text.LLVM.Labels
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import           Control.Applicative ((<|>))
 import           Control.Exception (throw)
-import           Control.Monad (foldM,guard,mplus,when)
+import           Control.Monad (foldM, guard, mplus, when)
 import           Data.Bits (shiftR, testBit, shiftL)
 import           Data.Data (Data)
 import           Data.Typeable (Typeable)
@@ -302,7 +302,7 @@ data PartialUnnamedMd = PartialUnnamedMd
   , pumDistinct :: Bool
   } deriving (Data, Eq, Ord, Generic, Show, Typeable)
 
-finalizePartialUnnamedMd :: PartialUnnamedMd -> Parse UnnamedMd
+finalizePartialUnnamedMd :: PartialUnnamedMd -> Finalize UnnamedMd
 finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` finalizePValMd (pumValues pum)
   where
   mkUnnamedMd v = UnnamedMd
@@ -311,7 +311,7 @@ finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` finalizePValMd (pumValues pum)
     , umDistinct = pumDistinct pum
     }
 
-finalizePValMd :: PValMd -> Parse ValMd
+finalizePValMd :: PValMd -> Finalize ValMd
 finalizePValMd = relabel (const requireBbEntryName)
 
 -- | Partition unnamed entries into global and function local unnamed entries.

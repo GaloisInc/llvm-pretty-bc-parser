@@ -520,8 +520,8 @@ withValueSymtab :: ValueSymtab -> Parse a -> Parse a
 withValueSymtab symtab = withSymtab (mempty { symValueSymtab = symtab })
 
 -- | Retrieve the value symbol table.
-getValueSymtab :: Parse ValueSymtab
-getValueSymtab  = Parse (symValueSymtab . envSymtab <$> ask)
+getValueSymtab :: Finalize ValueSymtab
+getValueSymtab = Finalize (symValueSymtab . envSymtab <$> ask)
 
 -- | Run a computation with an extended type symbol table.
 withTypeSymtab :: TypeSymtab -> Parse a -> Parse a
@@ -617,7 +617,7 @@ addFwdFNEntry i o t = t { fnSymtab = IntMap.insert i (Right o) (fnSymtab t) }
 -- | Lookup the name of an entry. Returns @Nothing@ when it's not present.
 entryNameMb :: Int -> Parse (Maybe String)
 entryNameMb n = do
-  symtab <- getValueSymtab
+  symtab <- liftFinalize getValueSymtab
   return $! fmap renderName
          $  IntMap.lookup n (valSymtab symtab) `mplus`
             IntMap.lookup n (fnSymtab symtab)
@@ -630,20 +630,20 @@ entryName n = do
     Just name -> return name
     Nothing   ->
       do isRel  <- getRelIds
-         symtab <- getValueSymtab
+         symtab <- liftFinalize getValueSymtab
          fail $ unlines
            [ "entry " ++ show n ++ (if isRel then " (relative)" else "")
               ++ " is missing from the symbol table"
            , show symtab ]
 
 -- | Lookup the name of a basic block.
-bbEntryName :: Int -> Parse (Maybe BlockLabel)
+bbEntryName :: Int -> Finalize (Maybe BlockLabel)
 bbEntryName n = do
   symtab <- getValueSymtab
   return (mkBlockLabel <$> IntMap.lookup n (bbSymtab symtab))
 
 -- | Lookup the name of a basic block.
-requireBbEntryName :: Int -> Parse BlockLabel
+requireBbEntryName :: Int -> Finalize BlockLabel
 requireBbEntryName n = do
   mb <- bbEntryName n
   case mb of
@@ -724,3 +724,53 @@ mkStrtab = Strtab
 resolveStrtabSymbol :: StringTable -> Int -> Int -> Symbol
 resolveStrtabSymbol (Strtab bs) start len =
   Symbol $ UTF8.decode $ BS.unpack $ BS.take len $ BS.drop start bs
+
+-- Finalize Monad --------------------------------------------------------------
+
+newtype Finalize a = Finalize
+  { unFinalize :: ReaderT Env (Except Error) a
+  } deriving (Functor, Applicative)
+
+instance Monad Finalize where
+  {-# INLINE return #-}
+  return  = Finalize . return
+
+  {-# INLINE (>>=) #-}
+  Finalize m >>= f = Finalize (m >>= unFinalize . f)
+
+  {-# INLINE fail #-}
+  fail = failWithContext'
+
+instance MonadFail Finalize where
+  fail = failWithContext'
+
+instance Alternative Finalize where
+  {-# INLINE empty #-}
+  empty = failWithContext' "empty"
+
+  {-# INLINE (<|>) #-}
+  a <|> b = Finalize $ catchError (unFinalize a) (const (unFinalize b))
+
+instance MonadPlus Finalize where
+  {-# INLINE mzero #-}
+  mzero = failWithContext' "mzero"
+
+  {-# INLINE mplus #-}
+  mplus = (<|>)
+
+-- | Fail, taking into account the current context.
+failWithContext' :: String -> Finalize a
+failWithContext' msg =
+  Finalize $
+  do env <- ask
+     throwError Error
+       { errMessage = msg
+       , errContext = envContext env
+       }
+
+liftFinalize :: Finalize a -> Parse a
+liftFinalize (Finalize m) =
+  do env <- Parse ask
+     case runExcept (runReaderT m env) of
+       Left err -> Parse (throwError err)
+       Right a -> return a
