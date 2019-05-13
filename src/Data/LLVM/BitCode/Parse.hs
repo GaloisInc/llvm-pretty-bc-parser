@@ -15,11 +15,14 @@ import           Control.Applicative (Alternative(..))
 import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.Fail (MonadFail)
 import qualified Control.Monad.Fail -- makes fail visible for instance
+import           Control.Monad.Except
+import           Control.Monad.Reader
+import           Control.Monad.State.Strict
 import           Data.Maybe (fromMaybe)
 import           Data.Semigroup
 import           Data.Typeable (Typeable)
 import           Data.Word ( Word32 )
-import           MonadLib
+
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import qualified Control.Exception as X
 import qualified Data.ByteString as BS
@@ -46,8 +49,8 @@ formatError err
                           : map ('\t' :) (errContext err)
 
 newtype Parse a = Parse
-  { unParse :: ReaderT Env (StateT ParseState (ExceptionT Error Lift)) a
-  } deriving (Functor,Applicative,MonadFix)
+  { unParse :: ReaderT Env (StateT ParseState (Except Error)) a
+  } deriving (Functor, Applicative, MonadFix)
 
 instance Monad Parse where
   {-# INLINE return #-}
@@ -67,7 +70,7 @@ instance Alternative Parse where
   empty = failWithContext "empty"
 
   {-# INLINE (<|>) #-}
-  a <|> b = Parse (either (const (unParse b)) return =<< try (unParse a))
+  a <|> b = Parse $ catchError (unParse a) (const (unParse b))
 
 instance MonadPlus Parse where
   {-# INLINE mzero #-}
@@ -77,9 +80,10 @@ instance MonadPlus Parse where
   mplus = (<|>)
 
 runParse :: Parse a -> Either Error a
-runParse (Parse m) = case runM m emptyEnv emptyParseState of
-  Left err    -> Left err
-  Right (a,_) -> Right a
+runParse (Parse m) =
+  case runExcept (runStateT (runReaderT m emptyEnv) emptyParseState) of
+    Left err     -> Left err
+    Right (a, _) -> Right a
 
 notImplemented :: Parse a
 notImplemented  = fail "not implemented"
@@ -124,7 +128,7 @@ emptyParseState  = ParseState
 nextResultId :: Parse Int
 nextResultId  = Parse $ do
   ps <- get
-  set ps { psNextResultId = psNextResultId ps + 1 }
+  put ps { psNextResultId = psNextResultId ps + 1 }
   return (psNextResultId ps)
 
 type PDebugLoc = DebugLoc' Int
@@ -132,12 +136,12 @@ type PDebugLoc = DebugLoc' Int
 setLastLoc :: PDebugLoc -> Parse ()
 setLastLoc loc = Parse $ do
   ps <- get
-  set $! ps { psLastLoc = Just loc }
+  put $! ps { psLastLoc = Just loc }
 
 setRelIds :: Bool -> Parse ()
 setRelIds b = Parse $ do
   ps <- get
-  set $! ps { psValueTable = (psValueTable ps) { valueRelIds = b }}
+  put $! ps { psValueTable = (psValueTable ps) { valueRelIds = b }}
 
 getRelIds :: Parse Bool
 getRelIds  = Parse $ do
@@ -154,7 +158,7 @@ getLastLoc  = Parse $ do
 setModVersion :: Int -> Parse ()
 setModVersion v = Parse $ do
   ps <- get
-  set $! ps { psModVersion = v }
+  put $! ps { psModVersion = v }
 
 getModVersion :: Parse Int
 getModVersion = Parse $ do
@@ -166,12 +170,12 @@ getModVersion = Parse $ do
 enterFunctionDef :: Parse a -> Parse a
 enterFunctionDef m = Parse $ do
   ps  <- get
-  set ps
+  put ps
     { psNextResultId = 0
     }
   res <- unParse m
   ps' <- get
-  set ps'
+  put ps'
     { psValueTable = psValueTable ps
     , psMdTable    = psMdTable ps
     , psMdRefs     = psMdRefs ps
@@ -222,7 +226,7 @@ lookupTypeRef cxt n =
 setTypeTable :: TypeTable -> Parse ()
 setTypeTable table = Parse $ do
   ps <- get
-  set ps { psTypeTable = table }
+  put ps { psTypeTable = table }
 
 getTypeTable :: Parse TypeTable
 getTypeTable  = Parse (psTypeTable <$> get)
@@ -230,7 +234,7 @@ getTypeTable  = Parse (psTypeTable <$> get)
 setTypeTableSize :: Int -> Parse ()
 setTypeTableSize n = Parse $ do
   ps <- get
-  set ps { psTypeTableSize = n }
+  put ps { psTypeTableSize = n }
 
 -- | Retrieve the current type name, failing if it hasn't been set.
 getTypeName :: Parse Ident
@@ -238,17 +242,17 @@ getTypeName  = Parse $ do
   ps  <- get
   str <- case psTypeName ps of
     Just tn -> do
-      set ps { psTypeName = Nothing }
+      put ps { psTypeName = Nothing }
       return tn
     Nothing -> do
-      set ps { psNextTypeId = psNextTypeId ps + 1 }
+      put ps { psNextTypeId = psNextTypeId ps + 1 }
       return (show (psNextTypeId ps))
   return (Ident str)
 
 setTypeName :: String -> Parse ()
 setTypeName name = Parse $ do
   ps <- get
-  set ps { psTypeName = Just name }
+  put ps { psTypeName = Just name }
 
 -- | Lookup the value of a type; don't attempt to resolve to an alias.
 getType' :: Int -> Parse Type
@@ -266,7 +270,7 @@ isTypeTableEmpty  = Parse (Map.null . psTypeTable <$> get)
 setStringTable :: StringTable -> Parse ()
 setStringTable st = Parse $ do
   ps <- get
-  set ps { psStringTable = Just st }
+  put ps { psStringTable = Just st }
 
 getStringTable :: Parse (Maybe StringTable)
 getStringTable = Parse (psStringTable <$> get)
@@ -309,7 +313,7 @@ pushValue :: Typed PValue -> Parse Int
 pushValue tv = Parse $ do
   ps <- get
   let vt = psValueTable ps
-  set ps { psValueTable = addValue tv vt }
+  put ps { psValueTable = addValue tv vt }
   return (valueNextId vt)
 
 -- | Get the index for the next value.
@@ -379,7 +383,7 @@ getNextId  = valueNextId <$> getValueTable
 setValueTable :: ValueTable -> Parse ()
 setValueTable vt = Parse $ do
   ps <- get
-  set ps { psValueTable = vt }
+  put ps { psValueTable = vt }
 
 -- | Update the value table, giving a lazy reference to the final table.
 fixValueTable :: (ValueTable -> Parse (a,[Typed PValue])) -> Parse a
@@ -406,7 +410,7 @@ getMdTable  = Parse (psMdTable <$> get)
 setMdTable :: MdTable -> Parse ()
 setMdTable md = Parse $ do
   ps <- get
-  set $! ps { psMdTable = md }
+  put $! ps { psMdTable = md }
 
 getMetadata :: Int -> Parse (Typed PValMd)
 getMetadata ix = do
@@ -430,7 +434,7 @@ type MdRefTable = Map.Map Int Int
 setMdRefs :: MdRefTable -> Parse ()
 setMdRefs refs = Parse $ do
   ps <- get
-  set $! ps { psMdRefs = refs `Map.union` psMdRefs ps }
+  put $! ps { psMdRefs = refs `Map.union` psMdRefs ps }
 
 
 -- Function Prototypes ---------------------------------------------------------
@@ -449,7 +453,7 @@ data FunProto = FunProto
 pushFunProto :: FunProto -> Parse ()
 pushFunProto p = Parse $ do
   ps <- get
-  set ps { psFunProtos = psFunProtos ps Seq.|> p }
+  put ps { psFunProtos = psFunProtos ps Seq.|> p }
 
 -- | Take a single function prototype off of the prototype stack.
 popFunProto :: Parse FunProto
@@ -458,7 +462,7 @@ popFunProto  = do
   case Seq.viewl (psFunProtos ps) of
     Seq.EmptyL   -> fail "empty function prototype stack"
     p Seq.:< ps' -> do
-      Parse (set ps { psFunProtos = ps' })
+      Parse (put ps { psFunProtos = ps' })
       return p
 
 
@@ -508,8 +512,7 @@ instance Monoid Symtab where
 
 withSymtab :: Symtab -> Parse a -> Parse a
 withSymtab symtab body = Parse $ do
-  env <- ask
-  local (extendSymtab symtab env) (unParse body)
+  local (extendSymtab symtab) (unParse body)
 
 -- | Run a computation with an extended value symbol table.
 withValueSymtab :: ValueSymtab -> Parse a -> Parse a
@@ -530,14 +533,13 @@ getTypeSymtab  = Parse (symTypeSymtab . envSymtab <$> ask)
 -- | Label a sub-computation with its context.
 label :: String -> Parse a -> Parse a
 label l m = Parse $ do
-  env <- ask
-  local (addLabel l env) (unParse m)
+  local (addLabel l) (unParse m)
 
 -- | Fail, taking into account the current context.
 failWithContext :: String -> Parse a
 failWithContext msg = Parse $ do
   env <- ask
-  raise Error
+  throwError Error
     { errMessage = msg
     , errContext = envContext env
     }
@@ -682,7 +684,7 @@ addKind :: Int -> String -> Parse ()
 addKind kind name = Parse $ do
   ps <- get
   let KindTable { .. } = psKinds ps
-  set $! ps { psKinds = KindTable { ktNames = Map.insert kind name ktNames } }
+  put $! ps { psKinds = KindTable { ktNames = Map.insert kind name ktNames } }
 
 getKind :: Int -> Parse String
 getKind kind = Parse $ do
