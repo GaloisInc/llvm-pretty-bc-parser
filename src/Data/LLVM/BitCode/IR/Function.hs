@@ -26,6 +26,7 @@ import           Data.Int (Int32)
 import           Data.Maybe (isJust)
 import           Data.Word (Word32)
 import qualified Data.Foldable as F
+import qualified Data.IntMap as IntMap
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Traversable as T
@@ -197,7 +198,7 @@ lookupBlockName dl = lkp
   syms = Map.fromList [ (partialName d, partialSymtab d) | d <- F.toList dl ]
   lkp fn bid = case Map.lookup fn syms of
     Nothing -> fail ("symbol " ++ show (ppLLVM (ppSymbol fn)) ++ " is not defined")
-    Just st -> case Map.lookup (SymTabBBEntry bid) st of
+    Just st -> case IntMap.lookup bid (bbSymtab st) of
       Nothing -> fail ("block id " ++ show bid ++ " does not exist")
       Just sn -> return (mkBlockLabel sn)
 
@@ -329,7 +330,7 @@ parseFunctionBlock unnamedGlobals ents =
     mb <- match (findMatch valueSymtabBlockId) ents
     case mb of
       Just es -> parseValueSymbolTableBlock es
-      Nothing -> return Map.empty
+      Nothing -> return mempty
 
   -- pop the function prototype off of the internal stack
   proto <- popFunProto
@@ -342,7 +343,7 @@ parseFunctionBlock unnamedGlobals ents =
         vt  <- getValueTable
 
     -- merge the symbol table with the anonymous symbol table
-    return pd' { partialSymtab = partialSymtab pd' `Map.union` symtab }
+    return pd' { partialSymtab = partialSymtab pd' <> symtab }
 
 -- | Parse the members of the function block
 parseFunctionBlockEntry ::

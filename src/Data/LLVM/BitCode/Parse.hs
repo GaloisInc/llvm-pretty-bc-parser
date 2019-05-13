@@ -499,7 +499,7 @@ data Symtab = Symtab
 
 instance Semigroup Symtab where
   l <> r = Symtab
-    { symValueSymtab = symValueSymtab l `Map.union` symValueSymtab r
+    { symValueSymtab = symValueSymtab l <> symValueSymtab r
     , symTypeSymtab  = symTypeSymtab  l <> symTypeSymtab  r
     }
 
@@ -567,13 +567,27 @@ getTypeId n = do
 
 type SymName = Either String Int
 
-type ValueSymtab = Map.Map SymTabEntry SymName
+data ValueSymtab =
+  ValueSymtab
+  { valSymtab :: IntMap.IntMap SymName
+  , bbSymtab  :: IntMap.IntMap SymName
+  , fnSymtab  :: IntMap.IntMap SymName
+  } deriving (Show)
 
-data SymTabEntry
-  = SymTabEntry !Int
-  | SymTabBBEntry !Int
-  | SymTabFNEntry !Int
-    deriving (Eq,Ord,Show)
+instance Semigroup ValueSymtab where
+  l <> r = ValueSymtab
+    { valSymtab = valSymtab l `IntMap.union` valSymtab r
+    , bbSymtab  = bbSymtab l  `IntMap.union` bbSymtab r
+    , fnSymtab  = fnSymtab l  `IntMap.union` fnSymtab r
+    }
+
+instance Monoid ValueSymtab where
+  mappend = (<>)
+  mempty = ValueSymtab
+    { valSymtab = IntMap.empty
+    , bbSymtab  = IntMap.empty
+    , fnSymtab  = IntMap.empty
+    }
 
 renderName :: SymName -> String
 renderName  = either id show
@@ -582,31 +596,31 @@ mkBlockLabel :: SymName -> BlockLabel
 mkBlockLabel  = either (Named . Ident) Anon
 
 emptyValueSymtab :: ValueSymtab
-emptyValueSymtab  = Map.empty
+emptyValueSymtab  = mempty
 
 addEntry :: Int -> String -> ValueSymtab -> ValueSymtab
-addEntry i n = Map.insert (SymTabEntry i) (Left n)
+addEntry i n t = t { valSymtab = IntMap.insert i (Left n) (valSymtab t) }
 
 addBBEntry :: Int -> String -> ValueSymtab -> ValueSymtab
-addBBEntry i n = Map.insert (SymTabBBEntry i) (Left n)
+addBBEntry i n t = t { bbSymtab = IntMap.insert i (Left n) (bbSymtab t) }
 
 addBBAnon :: Int -> Int -> ValueSymtab -> ValueSymtab
-addBBAnon i n = Map.insert (SymTabBBEntry i) (Right n)
+addBBAnon i n t = t { bbSymtab = IntMap.insert i (Right n) (bbSymtab t) }
 
 addFNEntry :: Int -> Int -> String -> ValueSymtab -> ValueSymtab
 -- TODO: do we ever need to be able to look up the offset?
-addFNEntry i _o n = Map.insert (SymTabFNEntry i) (Left n)
+addFNEntry i _o n t = t { fnSymtab = IntMap.insert i (Left n) (fnSymtab t) }
 
 addFwdFNEntry :: Int -> Int -> ValueSymtab -> ValueSymtab
-addFwdFNEntry i o = Map.insert (SymTabFNEntry i) (Right o)
+addFwdFNEntry i o t = t { fnSymtab = IntMap.insert i (Right o) (fnSymtab t) }
 
 -- | Lookup the name of an entry. Returns @Nothing@ when it's not present.
 entryNameMb :: Int -> Parse (Maybe String)
 entryNameMb n = do
   symtab <- getValueSymtab
   return $! fmap renderName
-         $  Map.lookup (SymTabEntry n) symtab `mplus`
-            Map.lookup (SymTabFNEntry n) symtab
+         $  IntMap.lookup n (valSymtab symtab) `mplus`
+            IntMap.lookup n (fnSymtab symtab)
 
 -- | Lookup the name of an entry.
 entryName :: Int -> Parse String
@@ -626,7 +640,7 @@ entryName n = do
 bbEntryName :: Int -> Parse (Maybe BlockLabel)
 bbEntryName n = do
   symtab <- getValueSymtab
-  return (mkBlockLabel <$> Map.lookup (SymTabBBEntry n) symtab)
+  return (mkBlockLabel <$> IntMap.lookup n (bbSymtab symtab))
 
 -- | Lookup the name of a basic block.
 requireBbEntryName :: Int -> Parse BlockLabel

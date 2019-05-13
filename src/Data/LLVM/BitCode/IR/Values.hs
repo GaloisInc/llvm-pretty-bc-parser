@@ -2,7 +2,7 @@
 
 module Data.LLVM.BitCode.IR.Values (
     getValueTypePair
-  , getConstantFwdRef, getConstantFwdRefAdjustedId 
+  , getConstantFwdRef, getConstantFwdRefAdjustedId
   , getValue
   , getFnValueById, getFnValueById'
   , parseValueSymbolTableBlock
@@ -15,7 +15,6 @@ import Data.LLVM.BitCode.Record
 import Text.LLVM.AST
 
 import Control.Monad ((<=<),foldM)
-import qualified Data.Map as Map
 
 
 -- Value Table -----------------------------------------------------------------
@@ -112,7 +111,7 @@ vstCodeFNEntry  = hasRecordCode 3 <=< fromEntry
 -- Value Symbol Table Parsing --------------------------------------------------
 
 parseValueSymbolTableBlock :: [Entry] -> Parse ValueSymtab
-parseValueSymbolTableBlock  = foldM parseValueSymbolTableBlockEntry Map.empty
+parseValueSymbolTableBlock  = foldM parseValueSymbolTableBlockEntry mempty
 
 parseValueSymbolTableBlockEntry :: ValueSymtab -> Entry -> Parse ValueSymtab
 
