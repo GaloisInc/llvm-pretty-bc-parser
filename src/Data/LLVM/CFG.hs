@@ -29,10 +29,10 @@ import           Control.Applicative
 
 import           Control.Arrow
 
+import           Data.Functor.Identity (runIdentity)
 import qualified Data.Graph.Inductive.Query.Dominators as Dom
 import qualified Data.Graph.Inductive                  as G
 import qualified Data.Map                              as M
-import           MonadLib (runId)
 
 import           Text.LLVM                             hiding (BB)
 import qualified Text.LLVM.Labels                      as L
@@ -171,7 +171,7 @@ buildCFG bs = cfg
 
     nodeByName = fmap (\(BBId n, _) -> n) bbIds
 
-    fixLabels stmts = runId (mapM (L.relabel f) stmts)
+    fixLabels stmts = runIdentity (mapM (L.relabel f) stmts)
       where
       -- This should be fine, as there shouldn't be references to labels that
       -- aren't defined.

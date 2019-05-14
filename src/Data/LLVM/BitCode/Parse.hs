@@ -15,14 +15,18 @@ import           Control.Applicative (Alternative(..))
 import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.Fail (MonadFail)
 import qualified Control.Monad.Fail -- makes fail visible for instance
+import           Control.Monad.Except
+import           Control.Monad.Reader
+import           Control.Monad.State.Strict
 import           Data.Maybe (fromMaybe)
 import           Data.Semigroup
 import           Data.Typeable (Typeable)
 import           Data.Word ( Word32 )
-import           MonadLib
+
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import qualified Control.Exception as X
 import qualified Data.ByteString as BS
+import qualified Data.IntMap as IntMap
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import           GHC.Stack (HasCallStack, CallStack, callStack, prettyCallStack)
@@ -46,8 +50,8 @@ formatError err
                           : map ('\t' :) (errContext err)
 
 newtype Parse a = Parse
-  { unParse :: ReaderT Env (StateT ParseState (ExceptionT Error Lift)) a
-  } deriving (Functor,Applicative,MonadFix)
+  { unParse :: ReaderT Env (StateT ParseState (Except Error)) a
+  } deriving (Functor, Applicative, MonadFix)
 
 instance Monad Parse where
   {-# INLINE return #-}
@@ -67,7 +71,7 @@ instance Alternative Parse where
   empty = failWithContext "empty"
 
   {-# INLINE (<|>) #-}
-  a <|> b = Parse (either (const (unParse b)) return =<< try (unParse a))
+  a <|> b = Parse $ catchError (unParse a) (const (unParse b))
 
 instance MonadPlus Parse where
   {-# INLINE mzero #-}
@@ -77,9 +81,10 @@ instance MonadPlus Parse where
   mplus = (<|>)
 
 runParse :: Parse a -> Either Error a
-runParse (Parse m) = case runM m emptyEnv emptyParseState of
-  Left err    -> Left err
-  Right (a,_) -> Right a
+runParse (Parse m) =
+  case runExcept (runStateT (runReaderT m emptyEnv) emptyParseState) of
+    Left err     -> Left err
+    Right (a, _) -> Right a
 
 notImplemented :: Parse a
 notImplemented  = fail "not implemented"
@@ -105,12 +110,12 @@ data ParseState = ParseState
 -- | The initial parsing state.
 emptyParseState :: ParseState
 emptyParseState  = ParseState
-  { psTypeTable     = Map.empty
+  { psTypeTable     = IntMap.empty
   , psTypeTableSize = 0
   , psValueTable    = emptyValueTable False
   , psStringTable   = Nothing
   , psMdTable       = emptyValueTable False
-  , psMdRefs        = Map.empty
+  , psMdRefs        = IntMap.empty
   , psFunProtos     = Seq.empty
   , psNextResultId  = 0
   , psTypeName      = Nothing
@@ -124,7 +129,7 @@ emptyParseState  = ParseState
 nextResultId :: Parse Int
 nextResultId  = Parse $ do
   ps <- get
-  set ps { psNextResultId = psNextResultId ps + 1 }
+  put ps { psNextResultId = psNextResultId ps + 1 }
   return (psNextResultId ps)
 
 type PDebugLoc = DebugLoc' Int
@@ -132,12 +137,12 @@ type PDebugLoc = DebugLoc' Int
 setLastLoc :: PDebugLoc -> Parse ()
 setLastLoc loc = Parse $ do
   ps <- get
-  set $! ps { psLastLoc = Just loc }
+  put $! ps { psLastLoc = Just loc }
 
 setRelIds :: Bool -> Parse ()
 setRelIds b = Parse $ do
   ps <- get
-  set $! ps { psValueTable = (psValueTable ps) { valueRelIds = b }}
+  put $! ps { psValueTable = (psValueTable ps) { valueRelIds = b }}
 
 getRelIds :: Parse Bool
 getRelIds  = Parse $ do
@@ -154,7 +159,7 @@ getLastLoc  = Parse $ do
 setModVersion :: Int -> Parse ()
 setModVersion v = Parse $ do
   ps <- get
-  set $! ps { psModVersion = v }
+  put $! ps { psModVersion = v }
 
 getModVersion :: Parse Int
 getModVersion = Parse $ do
@@ -166,12 +171,12 @@ getModVersion = Parse $ do
 enterFunctionDef :: Parse a -> Parse a
 enterFunctionDef m = Parse $ do
   ps  <- get
-  set ps
+  put ps
     { psNextResultId = 0
     }
   res <- unParse m
   ps' <- get
-  set ps'
+  put ps'
     { psValueTable = psValueTable ps
     , psMdTable    = psMdTable ps
     , psMdRefs     = psMdRefs ps
@@ -182,11 +187,11 @@ enterFunctionDef m = Parse $ do
 
 -- Type Table ------------------------------------------------------------------
 
-type TypeTable = Map.Map Int Type
+type TypeTable = IntMap.IntMap Type
 
 -- | Generate a type table, and a type symbol table.
 mkTypeTable :: [Type] -> TypeTable
-mkTypeTable  = Map.fromList . zip [0 ..]
+mkTypeTable  = IntMap.fromList . zip [0 ..]
 
 -- | Exceptions contain a callstack, parsing context, explanation, and index
 data BadForwardRef
@@ -217,12 +222,12 @@ lookupTypeRef :: HasCallStack
               => [String] -> Int -> TypeTable -> Type
 lookupTypeRef cxt n =
   let explanation = "Bad reference into type table"
-  in fromMaybe (X.throw (BadTypeRef callStack cxt explanation n)) . Map.lookup n
+  in fromMaybe (X.throw (BadTypeRef callStack cxt explanation n)) . IntMap.lookup n
 
 setTypeTable :: TypeTable -> Parse ()
 setTypeTable table = Parse $ do
   ps <- get
-  set ps { psTypeTable = table }
+  put ps { psTypeTable = table }
 
 getTypeTable :: Parse TypeTable
 getTypeTable  = Parse (psTypeTable <$> get)
@@ -230,7 +235,7 @@ getTypeTable  = Parse (psTypeTable <$> get)
 setTypeTableSize :: Int -> Parse ()
 setTypeTableSize n = Parse $ do
   ps <- get
-  set ps { psTypeTableSize = n }
+  put ps { psTypeTableSize = n }
 
 -- | Retrieve the current type name, failing if it hasn't been set.
 getTypeName :: Parse Ident
@@ -238,17 +243,17 @@ getTypeName  = Parse $ do
   ps  <- get
   str <- case psTypeName ps of
     Just tn -> do
-      set ps { psTypeName = Nothing }
+      put ps { psTypeName = Nothing }
       return tn
     Nothing -> do
-      set ps { psNextTypeId = psNextTypeId ps + 1 }
+      put ps { psNextTypeId = psNextTypeId ps + 1 }
       return (show (psNextTypeId ps))
   return (Ident str)
 
 setTypeName :: String -> Parse ()
 setTypeName name = Parse $ do
   ps <- get
-  set ps { psTypeName = Just name }
+  put ps { psTypeName = Just name }
 
 -- | Lookup the value of a type; don't attempt to resolve to an alias.
 getType' :: Int -> Parse Type
@@ -261,12 +266,12 @@ getType' ref = do
 
 -- | Test to see if the type table has been added to already.
 isTypeTableEmpty :: Parse Bool
-isTypeTableEmpty  = Parse (Map.null . psTypeTable <$> get)
+isTypeTableEmpty  = Parse (IntMap.null . psTypeTable <$> get)
 
 setStringTable :: StringTable -> Parse ()
 setStringTable st = Parse $ do
   ps <- get
-  set ps { psStringTable = Just st }
+  put ps { psStringTable = Just st }
 
 getStringTable :: Parse (Maybe StringTable)
 getStringTable = Parse (psStringTable <$> get)
@@ -280,16 +285,16 @@ type PInstr = Instr' Int
 
 data ValueTable = ValueTable
   { valueNextId  :: !Int
-  , valueEntries :: Map.Map Int (Typed PValue)
-  , strtabEntries :: Map.Map Int (Int, Int)
+  , valueEntries :: IntMap.IntMap (Typed PValue)
+  , strtabEntries :: IntMap.IntMap (Int, Int)
   , valueRelIds  :: Bool
   } deriving (Show)
 
 emptyValueTable :: Bool -> ValueTable
 emptyValueTable rel = ValueTable
   { valueNextId  = 0
-  , valueEntries = Map.empty
-  , strtabEntries = Map.empty
+  , valueEntries = IntMap.empty
+  , strtabEntries = IntMap.empty
   , valueRelIds  = rel
   }
 
@@ -301,7 +306,7 @@ addValue' tv vs = (valueNextId vs,vs')
   where
   vs' = vs
     { valueNextId  = valueNextId vs + 1
-    , valueEntries = Map.insert (valueNextId vs) tv (valueEntries vs)
+    , valueEntries = IntMap.insert (valueNextId vs) tv (valueEntries vs)
     }
 
 -- | Push a value into the value table, and return its index.
@@ -309,7 +314,7 @@ pushValue :: Typed PValue -> Parse Int
 pushValue tv = Parse $ do
   ps <- get
   let vt = psValueTable ps
-  set ps { psValueTable = addValue tv vt }
+  put ps { psValueTable = addValue tv vt }
   return (valueNextId vt)
 
 -- | Get the index for the next value.
@@ -334,7 +339,7 @@ translateValueId vt n | valueRelIds vt = fromIntegral adjusted
 
 -- | Lookup an absolute address in the value table.
 lookupValueTableAbs :: Int -> ValueTable -> Maybe (Typed PValue)
-lookupValueTableAbs n values = Map.lookup n (valueEntries values)
+lookupValueTableAbs n values = IntMap.lookup n (valueEntries values)
 
 -- | When you know you have an absolute index.
 lookupValueAbs :: Int -> Parse (Maybe (Typed PValue))
@@ -379,7 +384,7 @@ getNextId  = valueNextId <$> getValueTable
 setValueTable :: ValueTable -> Parse ()
 setValueTable vt = Parse $ do
   ps <- get
-  set ps { psValueTable = vt }
+  put ps { psValueTable = vt }
 
 -- | Update the value table, giving a lazy reference to the final table.
 fixValueTable :: (ValueTable -> Parse (a,[Typed PValue])) -> Parse a
@@ -406,7 +411,7 @@ getMdTable  = Parse (psMdTable <$> get)
 setMdTable :: MdTable -> Parse ()
 setMdTable md = Parse $ do
   ps <- get
-  set $! ps { psMdTable = md }
+  put $! ps { psMdTable = md }
 
 getMetadata :: Int -> Parse (Typed PValMd)
 getMetadata ix = do
@@ -421,16 +426,16 @@ resolveMd :: Int -> ParseState -> Maybe (Typed PValue)
 resolveMd ix ps = nodeRef `mplus` mdValue
   where
   reference = Typed (PrimType Metadata) . ValMd . ValMdRef
-  nodeRef   = reference `fmap` Map.lookup ix (psMdRefs ps)
+  nodeRef   = reference `fmap` IntMap.lookup ix (psMdRefs ps)
   mdValue   = lookupValueTableAbs ix (psMdTable ps)
 
 
-type MdRefTable = Map.Map Int Int
+type MdRefTable = IntMap.IntMap Int
 
 setMdRefs :: MdRefTable -> Parse ()
 setMdRefs refs = Parse $ do
   ps <- get
-  set $! ps { psMdRefs = refs `Map.union` psMdRefs ps }
+  put $! ps { psMdRefs = refs `IntMap.union` psMdRefs ps }
 
 
 -- Function Prototypes ---------------------------------------------------------
@@ -449,7 +454,7 @@ data FunProto = FunProto
 pushFunProto :: FunProto -> Parse ()
 pushFunProto p = Parse $ do
   ps <- get
-  set ps { psFunProtos = psFunProtos ps Seq.|> p }
+  put ps { psFunProtos = psFunProtos ps Seq.|> p }
 
 -- | Take a single function prototype off of the prototype stack.
 popFunProto :: Parse FunProto
@@ -458,7 +463,7 @@ popFunProto  = do
   case Seq.viewl (psFunProtos ps) of
     Seq.EmptyL   -> fail "empty function prototype stack"
     p Seq.:< ps' -> do
-      Parse (set ps { psFunProtos = ps' })
+      Parse (put ps { psFunProtos = ps' })
       return p
 
 
@@ -494,7 +499,7 @@ data Symtab = Symtab
 
 instance Semigroup Symtab where
   l <> r = Symtab
-    { symValueSymtab = symValueSymtab l `Map.union` symValueSymtab r
+    { symValueSymtab = symValueSymtab l <> symValueSymtab r
     , symTypeSymtab  = symTypeSymtab  l <> symTypeSymtab  r
     }
 
@@ -508,16 +513,15 @@ instance Monoid Symtab where
 
 withSymtab :: Symtab -> Parse a -> Parse a
 withSymtab symtab body = Parse $ do
-  env <- ask
-  local (extendSymtab symtab env) (unParse body)
+  local (extendSymtab symtab) (unParse body)
 
 -- | Run a computation with an extended value symbol table.
 withValueSymtab :: ValueSymtab -> Parse a -> Parse a
 withValueSymtab symtab = withSymtab (mempty { symValueSymtab = symtab })
 
 -- | Retrieve the value symbol table.
-getValueSymtab :: Parse ValueSymtab
-getValueSymtab  = Parse (symValueSymtab . envSymtab <$> ask)
+getValueSymtab :: Finalize ValueSymtab
+getValueSymtab = Finalize (symValueSymtab . envSymtab <$> ask)
 
 -- | Run a computation with an extended type symbol table.
 withTypeSymtab :: TypeSymtab -> Parse a -> Parse a
@@ -530,14 +534,13 @@ getTypeSymtab  = Parse (symTypeSymtab . envSymtab <$> ask)
 -- | Label a sub-computation with its context.
 label :: String -> Parse a -> Parse a
 label l m = Parse $ do
-  env <- ask
-  local (addLabel l env) (unParse m)
+  local (addLabel l) (unParse m)
 
 -- | Fail, taking into account the current context.
 failWithContext :: String -> Parse a
 failWithContext msg = Parse $ do
   env <- ask
-  raise Error
+  throwError Error
     { errMessage = msg
     , errContext = envContext env
     }
@@ -547,7 +550,7 @@ failWithContext msg = Parse $ do
 getType :: Int -> Parse Type
 getType ref = do
   symtab <- getTypeSymtab
-  case Map.lookup ref (tsById symtab) of
+  case IntMap.lookup ref (tsById symtab) of
     Just i  -> return (Alias i)
     Nothing -> getType' ref
 
@@ -564,13 +567,27 @@ getTypeId n = do
 
 type SymName = Either String Int
 
-type ValueSymtab = Map.Map SymTabEntry SymName
+data ValueSymtab =
+  ValueSymtab
+  { valSymtab :: IntMap.IntMap SymName
+  , bbSymtab  :: IntMap.IntMap SymName
+  , fnSymtab  :: IntMap.IntMap SymName
+  } deriving (Show)
 
-data SymTabEntry
-  = SymTabEntry !Int
-  | SymTabBBEntry !Int
-  | SymTabFNEntry !Int
-    deriving (Eq,Ord,Show)
+instance Semigroup ValueSymtab where
+  l <> r = ValueSymtab
+    { valSymtab = valSymtab l `IntMap.union` valSymtab r
+    , bbSymtab  = bbSymtab l  `IntMap.union` bbSymtab r
+    , fnSymtab  = fnSymtab l  `IntMap.union` fnSymtab r
+    }
+
+instance Monoid ValueSymtab where
+  mappend = (<>)
+  mempty = ValueSymtab
+    { valSymtab = IntMap.empty
+    , bbSymtab  = IntMap.empty
+    , fnSymtab  = IntMap.empty
+    }
 
 renderName :: SymName -> String
 renderName  = either id show
@@ -579,31 +596,31 @@ mkBlockLabel :: SymName -> BlockLabel
 mkBlockLabel  = either (Named . Ident) Anon
 
 emptyValueSymtab :: ValueSymtab
-emptyValueSymtab  = Map.empty
+emptyValueSymtab  = mempty
 
 addEntry :: Int -> String -> ValueSymtab -> ValueSymtab
-addEntry i n = Map.insert (SymTabEntry i) (Left n)
+addEntry i n t = t { valSymtab = IntMap.insert i (Left n) (valSymtab t) }
 
 addBBEntry :: Int -> String -> ValueSymtab -> ValueSymtab
-addBBEntry i n = Map.insert (SymTabBBEntry i) (Left n)
+addBBEntry i n t = t { bbSymtab = IntMap.insert i (Left n) (bbSymtab t) }
 
 addBBAnon :: Int -> Int -> ValueSymtab -> ValueSymtab
-addBBAnon i n = Map.insert (SymTabBBEntry i) (Right n)
+addBBAnon i n t = t { bbSymtab = IntMap.insert i (Right n) (bbSymtab t) }
 
 addFNEntry :: Int -> Int -> String -> ValueSymtab -> ValueSymtab
 -- TODO: do we ever need to be able to look up the offset?
-addFNEntry i _o n = Map.insert (SymTabFNEntry i) (Left n)
+addFNEntry i _o n t = t { fnSymtab = IntMap.insert i (Left n) (fnSymtab t) }
 
 addFwdFNEntry :: Int -> Int -> ValueSymtab -> ValueSymtab
-addFwdFNEntry i o = Map.insert (SymTabFNEntry i) (Right o)
+addFwdFNEntry i o t = t { fnSymtab = IntMap.insert i (Right o) (fnSymtab t) }
 
 -- | Lookup the name of an entry. Returns @Nothing@ when it's not present.
 entryNameMb :: Int -> Parse (Maybe String)
 entryNameMb n = do
-  symtab <- getValueSymtab
+  symtab <- liftFinalize getValueSymtab
   return $! fmap renderName
-         $  Map.lookup (SymTabEntry n) symtab `mplus`
-            Map.lookup (SymTabFNEntry n) symtab
+         $  IntMap.lookup n (valSymtab symtab) `mplus`
+            IntMap.lookup n (fnSymtab symtab)
 
 -- | Lookup the name of an entry.
 entryName :: Int -> Parse String
@@ -613,20 +630,20 @@ entryName n = do
     Just name -> return name
     Nothing   ->
       do isRel  <- getRelIds
-         symtab <- getValueSymtab
+         symtab <- liftFinalize getValueSymtab
          fail $ unlines
            [ "entry " ++ show n ++ (if isRel then " (relative)" else "")
               ++ " is missing from the symbol table"
            , show symtab ]
 
 -- | Lookup the name of a basic block.
-bbEntryName :: Int -> Parse (Maybe BlockLabel)
+bbEntryName :: Int -> Finalize (Maybe BlockLabel)
 bbEntryName n = do
   symtab <- getValueSymtab
-  return (mkBlockLabel <$> Map.lookup (SymTabBBEntry n) symtab)
+  return (mkBlockLabel <$> IntMap.lookup n (bbSymtab symtab))
 
 -- | Lookup the name of a basic block.
-requireBbEntryName :: Int -> Parse BlockLabel
+requireBbEntryName :: Int -> Finalize BlockLabel
 requireBbEntryName n = do
   mb <- bbEntryName n
   case mb of
@@ -636,19 +653,19 @@ requireBbEntryName n = do
 -- Type Symbol Tables ----------------------------------------------------------
 
 data TypeSymtab = TypeSymtab
-  { tsById   :: Map.Map Int Ident
+  { tsById   :: IntMap.IntMap Ident
   , tsByName :: Map.Map Ident Int
   } deriving Show
 
 instance Semigroup TypeSymtab where
   l <> r = TypeSymtab
-    { tsById   = tsById   l `Map.union` tsById r
+    { tsById   = tsById   l `IntMap.union` tsById r
     , tsByName = tsByName l `Map.union` tsByName r
     }
 
 instance Monoid TypeSymtab where
   mempty = TypeSymtab
-    { tsById   = Map.empty
+    { tsById   = IntMap.empty
     , tsByName = Map.empty
     }
 
@@ -656,7 +673,7 @@ instance Monoid TypeSymtab where
 
 addTypeSymbol :: Int -> Ident -> TypeSymtab -> TypeSymtab
 addTypeSymbol ix n ts = ts
-  { tsById   = Map.insert ix n (tsById ts)
+  { tsById   = IntMap.insert ix n (tsById ts)
   , tsByName = Map.insert n ix (tsByName ts)
   }
 
@@ -664,12 +681,12 @@ addTypeSymbol ix n ts = ts
 -- Metadata Kind Table ---------------------------------------------------------
 
 data KindTable = KindTable
-  { ktNames :: Map.Map Int String
+  { ktNames :: IntMap.IntMap String
   } deriving (Show)
 
 emptyKindTable :: KindTable
 emptyKindTable  = KindTable
-  { ktNames = Map.fromList
+  { ktNames = IntMap.fromList
     [ (0, "dbg"   )
     , (1, "tbaa"  )
     , (2, "prof"  )
@@ -682,13 +699,13 @@ addKind :: Int -> String -> Parse ()
 addKind kind name = Parse $ do
   ps <- get
   let KindTable { .. } = psKinds ps
-  set $! ps { psKinds = KindTable { ktNames = Map.insert kind name ktNames } }
+  put $! ps { psKinds = KindTable { ktNames = IntMap.insert kind name ktNames } }
 
 getKind :: Int -> Parse String
 getKind kind = Parse $ do
   ps <- get
   let KindTable { .. } = psKinds ps
-  case Map.lookup kind ktNames of
+  case IntMap.lookup kind ktNames of
     Just name -> return name
     Nothing   -> fail ("Unknown kind id: " ++ show kind ++ "\nKind table: " ++ show (psKinds ps))
 
@@ -707,3 +724,53 @@ mkStrtab = Strtab
 resolveStrtabSymbol :: StringTable -> Int -> Int -> Symbol
 resolveStrtabSymbol (Strtab bs) start len =
   Symbol $ UTF8.decode $ BS.unpack $ BS.take len $ BS.drop start bs
+
+-- Finalize Monad --------------------------------------------------------------
+
+newtype Finalize a = Finalize
+  { unFinalize :: ReaderT Env (Except Error) a
+  } deriving (Functor, Applicative)
+
+instance Monad Finalize where
+  {-# INLINE return #-}
+  return  = Finalize . return
+
+  {-# INLINE (>>=) #-}
+  Finalize m >>= f = Finalize (m >>= unFinalize . f)
+
+  {-# INLINE fail #-}
+  fail = failWithContext'
+
+instance MonadFail Finalize where
+  fail = failWithContext'
+
+instance Alternative Finalize where
+  {-# INLINE empty #-}
+  empty = failWithContext' "empty"
+
+  {-# INLINE (<|>) #-}
+  a <|> b = Finalize $ catchError (unFinalize a) (const (unFinalize b))
+
+instance MonadPlus Finalize where
+  {-# INLINE mzero #-}
+  mzero = failWithContext' "mzero"
+
+  {-# INLINE mplus #-}
+  mplus = (<|>)
+
+-- | Fail, taking into account the current context.
+failWithContext' :: String -> Finalize a
+failWithContext' msg =
+  Finalize $
+  do env <- ask
+     throwError Error
+       { errMessage = msg
+       , errContext = envContext env
+       }
+
+liftFinalize :: Finalize a -> Parse a
+liftFinalize (Finalize m) =
+  do env <- Parse ask
+     case runExcept (runReaderT m env) of
+       Left err -> Parse (throwError err)
+       Right a -> return a

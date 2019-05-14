@@ -30,7 +30,7 @@ import           Text.LLVM.Labels
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import           Control.Applicative ((<|>))
 import           Control.Exception (throw)
-import           Control.Monad (foldM,guard,mplus,when)
+import           Control.Monad (foldM, guard, mplus, when)
 import           Data.Bits (shiftR, testBit, shiftL)
 import           Data.Data (Data)
 import           Data.Typeable (Typeable)
@@ -39,6 +39,7 @@ import qualified Data.ByteString.Char8 as Char8 (unpack)
 import           Data.Either (partitionEithers)
 import           Data.Functor.Compose (Compose(..), getCompose)
 import           Data.Generics.Uniplate.Data
+import qualified Data.IntMap as IntMap
 import           Data.List (mapAccumL, foldl')
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -55,7 +56,7 @@ import           GHC.Stack (HasCallStack, callStack)
 data MetadataTable = MetadataTable
   { mtEntries   :: MdTable
   , mtNextNode  :: !Int
-  , mtNodes     :: Map.Map Int (Bool,Bool,Int)
+  , mtNodes     :: IntMap.IntMap (Bool, Bool, Int)
                    -- ^ The entries in the map are: is the entry function local,
                    -- is the entry distinct, and the implicit id for the node.
   } deriving (Show)
@@ -66,7 +67,7 @@ emptyMetadataTable ::
 emptyMetadataTable globals es = MetadataTable
   { mtEntries   = es
   , mtNextNode  = globals
-  , mtNodes     = Map.empty
+  , mtNodes     = IntMap.empty
   }
 
 metadata :: PValMd -> Typed PValue
@@ -87,7 +88,7 @@ addMdValue tv mt = mt { mtEntries = addValue tv' (mtEntries mt) }
 
 nameNode :: Bool -> Bool -> Int -> MetadataTable -> MetadataTable
 nameNode fnLocal isDistinct ix mt = mt
-  { mtNodes    = Map.insert ix (fnLocal,isDistinct,mtNextNode mt) (mtNodes mt)
+  { mtNodes    = IntMap.insert ix (fnLocal,isDistinct,mtNextNode mt) (mtNodes mt)
   , mtNextNode = mtNextNode mt + 1
   }
 
@@ -129,7 +130,7 @@ addOldNode fnLocal vals mt = nameNode fnLocal False ix mt'
 mdForwardRef :: [String] -> MetadataTable -> Int -> PValMd
 mdForwardRef cxt mt ix = fromMaybe fallback nodeRef
   where
-  nodeRef           = reference `fmap` Map.lookup ix (mtNodes mt)
+  nodeRef           = reference `fmap` IntMap.lookup ix (mtNodes mt)
   fallback          = case forwardRef cxt ix (mtEntries mt) of
                         Typed { typedValue = ValMd md } -> md
                         tv                              -> ValMdValue tv
@@ -144,7 +145,7 @@ mdForwardRefOrNull cxt mt ix | ix > 0 = Just (mdForwardRef cxt mt (ix - 1))
 
 mdNodeRef :: HasCallStack
           => [String] -> MetadataTable -> Int -> Int
-mdNodeRef cxt mt ix = maybe except prj (Map.lookup ix (mtNodes mt))
+mdNodeRef cxt mt ix = maybe except prj (IntMap.lookup ix (mtNodes mt))
   where explanation   = "Bad forward reference into mtNodes"
         except        = throw (BadValueRef callStack cxt explanation ix)
         prj (_, _, x) = x
@@ -180,7 +181,7 @@ mdStringOrEmpty :: HasCallStack
 mdStringOrEmpty cxt partialMeta = fromMaybe "" . mdStringOrNull cxt partialMeta
 
 mkMdRefTable :: MetadataTable -> MdRefTable
-mkMdRefTable mt = Map.mapMaybe step (mtNodes mt)
+mkMdRefTable mt = IntMap.mapMaybe step (mtNodes mt)
   where
   step (fnLocal,_,ix) = do
     guard (not fnLocal)
@@ -301,7 +302,7 @@ data PartialUnnamedMd = PartialUnnamedMd
   , pumDistinct :: Bool
   } deriving (Data, Eq, Ord, Generic, Show, Typeable)
 
-finalizePartialUnnamedMd :: PartialUnnamedMd -> Parse UnnamedMd
+finalizePartialUnnamedMd :: PartialUnnamedMd -> Finalize UnnamedMd
 finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` finalizePValMd (pumValues pum)
   where
   mkUnnamedMd v = UnnamedMd
@@ -310,12 +311,12 @@ finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` finalizePValMd (pumValues pum)
     , umDistinct = pumDistinct pum
     }
 
-finalizePValMd :: PValMd -> Parse ValMd
+finalizePValMd :: PValMd -> Finalize ValMd
 finalizePValMd = relabel (const requireBbEntryName)
 
 -- | Partition unnamed entries into global and function local unnamed entries.
-unnamedEntries :: PartialMetadata -> ([PartialUnnamedMd],[PartialUnnamedMd])
-unnamedEntries pm = partitionEithers (mapMaybe resolveNode (Map.toList (mtNodes mt)))
+unnamedEntries :: PartialMetadata -> ([PartialUnnamedMd], [PartialUnnamedMd])
+unnamedEntries pm = partitionEithers (mapMaybe resolveNode (IntMap.toList (mtNodes mt)))
   where
   mt = pmEntries pm
 
