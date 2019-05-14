@@ -343,7 +343,7 @@ parseFunctionBlock unnamedGlobals ents =
         vt  <- getValueTable
 
     -- merge the symbol table with the anonymous symbol table
-    return pd' { partialSymtab = partialSymtab pd' <> symtab }
+    return pd' { partialSymtab = partialSymtab pd' `mappend` symtab }
 
 -- | Parse the members of the function block
 parseFunctionBlockEntry ::
