@@ -5,6 +5,9 @@ module Factorial where
 
 import Text.LLVM
 import Text.LLVM.AST
+import Text.LLVM.PP
+
+factorialDoc = withConfig (Config True True True) (ppModule factorial)
 
 factorial :: Module
 factorial  = snd $ runLLVM $ do
