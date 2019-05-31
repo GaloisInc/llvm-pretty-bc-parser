@@ -14,7 +14,7 @@ factorial: factorial.o test.o
 	$(CC) -o $@ $^
 
 factorial.ll: Factorial.hs
-	$(GHC) -i../src Factorial.hs -e "ppModule factorial" > $@
+	$(GHC) -i../src Factorial.hs -e factorialDoc > $@
 
 clean: clean-factorial
 clean-factorial:
