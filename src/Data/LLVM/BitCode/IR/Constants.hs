@@ -20,7 +20,8 @@ import           Data.Array.ST (newArray,readArray,MArray,STUArray)
 import           Data.Bits (shiftL,shiftR,testBit)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, isJust)
-import           Data.Word (Word32,Word64)
+import           Data.Word (Word8,Word16, Word32,Word64)
+import qualified Data.LLVM.BitCode.BitString as BitS --  ( BitString(..), showBitString )
 
 #if __GLASGOW_HASKELL__ >= 704
 import           Data.Array.Unsafe (castSTUArray)
@@ -228,6 +229,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     case ft of
       Float -> build (ValFloat  . castFloat)
       Double -> build (ValDouble . castDouble)
+      X86_fp80 -> fp80build ty r cs getTy
       _ -> error $ "parseConstantEntry: Unsupported type " ++ show ft
 
   -- [n x value number]
@@ -383,13 +385,14 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
                   | otherwise  = ValVector (PrimType elemTy) elems
           return (getTy, Typed ty val : cs)
     case elemTy of
-      Integer 8        -> build ValInteger
-      Integer 16       -> build ValInteger
-      Integer 32       -> build ValInteger
-      Integer 64       -> build ValInteger
-      FloatType Float  -> build ValFloat
-      FloatType Double -> build ValDouble
-      x                -> Assert.unknownEntity "element type" x
+      Integer 8          -> build ValInteger
+      Integer 16         -> build ValInteger
+      Integer 32         -> build ValInteger
+      Integer 64         -> build ValInteger
+      FloatType Float    -> build ValFloat
+      FloatType Double   -> build ValDouble
+      FloatType X86_fp80 -> error "fp80buildData ty r cs getTy"
+      x                  -> Assert.unknownEntity "element type" x
 
   23 -> label "CST_CODE_INLINEASM" $ do
     let field = parseField r
@@ -477,3 +480,42 @@ cast x = do
   arr <- newArray (0 :: Int, 0) x
   res <- castSTUArray arr
   readArray res 0
+
+-- fp80 is double extended format.  This conforms to IEEE 754, but is
+-- store as two values: the significand and the exponent.  Discussion
+-- here is relative to information from the LLVM source based at
+-- https://github.com/llvm-mirror/llvm/blob/release_60 (hereafter
+-- identified as LGH).
+--
+-- The exponent range is 16383..-16384 (14 bits), and the precision
+-- (significand bits) is 64, including the integer bit (see
+-- LGH/lib/Support/APFloat.cpp:75).
+--
+-- When reading the Record here, there are two fields, one of 65 bits
+-- and the other of up to 20 bits (which clearly adds to more than
+-- 80... extras are ignored).  Bits are not stored in the expected way
+-- and "compensation" is needed. First the two record fields are
+-- combined into an 80-bit integer (see
+-- LGH/lib/Bitcode/Reader/BitcodeReader.cpp:2196-2202), using only 64
+-- bits of the first field and 16 bits of the second field, discarding
+-- the extra bits.  This is the result of this build operation; if
+-- this result is used semantically, it should be analyzed as per
+-- LGH/lib/Support/APFloat.cpp:3076-3108.
+
+fp80build :: Type -> Record -> [Typed PValue] -> Parse Type
+          -> Parse (Parse Type, [Typed PValue])
+fp80build ty r cs getTy =
+  do v <- parseField r 1 numeric
+     -- values <- parseField r 0 (fieldArray numeric)
+     v1 <- parseField r 0 fieldLiteral
+     v2 <- parseField r 1 fieldLiteral
+     let -- Note bs1 <> bs2 results in bs2|bs1 layout, shifting bs2 to higher bits
+         v64_0 = BitS.take 64 (BitS.take 16 v2 <> v1)
+         v64_1 = BitS.drop 48 v2
+         -- result is v64_1|v64_0 being v0|v1
+         fullexp :: Word16
+         fullexp = BitS.fromBitString $ BitS.take 16 v64_1
+         significand :: Word64
+         significand = BitS.fromBitString $ v64_0
+         fp80Val = FP80_LongDouble fullexp significand
+     return (getTy, Typed ty (ValFP80 fp80Val):cs)
