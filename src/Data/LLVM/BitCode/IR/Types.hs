@@ -130,7 +130,7 @@ parseTypeBlockEntry (fromEntry -> Just r) = case recordCode r of
       rty:ptys -> addType (FunTy rty ptys va)
       _        -> fail "function expects a return type"
 
-  10 -> label "TYPE_CODE_X86_FP80" (addType (PrimType (FloatType Half)))
+  10 -> label "TYPE_CODE_FP_HALF" (addType (PrimType (FloatType Half)))
 
   11 -> label "TYPE_CODE_ARRAY" $ do
     let field = parseField r
