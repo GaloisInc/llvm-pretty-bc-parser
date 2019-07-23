@@ -508,8 +508,7 @@ cast x = do
 fp80build :: Type -> Record -> [Typed PValue] -> Parse Type
           -> Parse (Parse Type, [Typed PValue])
 fp80build ty r cs getTy =
-  do -- values <- parseField r 0 (fieldArray numeric)
-     v1 <- parseField r 0 fieldLiteral
+  do v1 <- parseField r 0 fieldLiteral
      v2 <- parseField r 1 fieldLiteral
      let -- Note bs1 <> bs2 results in bs2|bs1 layout, shifting bs2 to higher bits
          v64_0 = BitS.take 64 (BitS.take 16 v2 <> v1)
