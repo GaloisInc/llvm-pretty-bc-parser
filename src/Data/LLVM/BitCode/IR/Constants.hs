@@ -21,6 +21,7 @@ import           Data.Bits (shiftL,shiftR,testBit)
 import qualified Data.LLVM.BitCode.BitString as BitS
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, isJust)
+import           Data.Semigroup ( (<>) )
 import           Data.Word (Word16, Word32,Word64)
 
 #if __GLASGOW_HASKELL__ >= 704
@@ -28,6 +29,8 @@ import           Data.Array.Unsafe (castSTUArray)
 #else
 import           Data.Array.ST (castSTUArray)
 #endif
+
+import           Prelude
 
 
 -- Instruction Field Parsing ---------------------------------------------------
