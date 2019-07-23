@@ -44,6 +44,7 @@ instance Arbitrary lab => Arbitrary (Instr' lab)                      where arbi
 instance Arbitrary lab => Arbitrary (Clause' lab)                     where arbitrary = genericArbitrary uniform
 instance Arbitrary ICmpOp                                             where arbitrary = genericArbitrary uniform
 instance Arbitrary FCmpOp                                             where arbitrary = genericArbitrary uniform
+instance Arbitrary FP80Value                                          where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (Value' lab)                      where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (ValMd' lab)                      where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DebugLoc' lab)                   where arbitrary = genericArbitrary uniform
