@@ -18,10 +18,10 @@ import           Control.Monad (mplus,mzero,foldM,(<=<))
 import           Control.Monad.ST (runST,ST)
 import           Data.Array.ST (newArray,readArray,MArray,STUArray)
 import           Data.Bits (shiftL,shiftR,testBit)
+import qualified Data.LLVM.BitCode.BitString as BitS
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, isJust)
-import           Data.Word (Word8,Word16, Word32,Word64)
-import qualified Data.LLVM.BitCode.BitString as BitS --  ( BitString(..), showBitString )
+import           Data.Word (Word16, Word32,Word64)
 
 #if __GLASGOW_HASKELL__ >= 704
 import           Data.Array.Unsafe (castSTUArray)
@@ -391,7 +391,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
       Integer 64         -> build ValInteger
       FloatType Float    -> build ValFloat
       FloatType Double   -> build ValDouble
-      FloatType X86_fp80 -> error "fp80buildData ty r cs getTy"
+      FloatType X86_fp80 -> error "TBD: similar to `fp80buildData ty r cs getTy`, but potentially applied iteratively"
       x                  -> Assert.unknownEntity "element type" x
 
   23 -> label "CST_CODE_INLINEASM" $ do
@@ -505,8 +505,7 @@ cast x = do
 fp80build :: Type -> Record -> [Typed PValue] -> Parse Type
           -> Parse (Parse Type, [Typed PValue])
 fp80build ty r cs getTy =
-  do v <- parseField r 1 numeric
-     -- values <- parseField r 0 (fieldArray numeric)
+  do -- values <- parseField r 0 (fieldArray numeric)
      v1 <- parseField r 0 fieldLiteral
      v2 <- parseField r 1 fieldLiteral
      let -- Note bs1 <> bs2 results in bs2|bs1 layout, shifting bs2 to higher bits
@@ -514,8 +513,8 @@ fp80build ty r cs getTy =
          v64_1 = BitS.drop 48 v2
          -- result is v64_1|v64_0 being v0|v1
          fullexp :: Word16
-         fullexp = BitS.fromBitString $ BitS.take 16 v64_1
-         significand :: Word64
-         significand = BitS.fromBitString $ v64_0
-         fp80Val = FP80_LongDouble fullexp significand
+         fullexp = BitS.fromBitString $ BitS.take 16 v64_1 -- includes sign bit
+         significnd :: Word64
+         significnd = BitS.fromBitString $ v64_0
+         fp80Val = FP80_LongDouble fullexp significnd
      return (getTy, Typed ty (ValFP80 fp80Val):cs)
