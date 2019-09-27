@@ -894,7 +894,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       bs     <- parseField r 2 fieldBlob
       when (count == 0)
         (fail "Invalid record: metadata strings with no strings")
-      when (offset >= S.length bs)
+      when (offset > S.length bs)
         (fail "Invalid record: metadata strings corrupt offset")
       let (bsLengths, bsStrings) = S.splitAt offset bs
       lengths <- either fail return $ parseMetadataStringLengths count bsLengths
