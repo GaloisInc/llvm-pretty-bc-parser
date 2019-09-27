@@ -456,7 +456,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       -- TODO: broken in 3.7+; needs to be a DILocation rather than an
       -- MDLocation, but there appears to be no difference in the
       -- bitcode. /sigh/
-      assertRecordSizeIn [5]
+      assertRecordSizeIn [5, 6]
       let field = parseField r
       cxt        <- getContext
       isDistinct <- field 0 nonzero
@@ -465,6 +465,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> field 2 numeric                                 -- dlCol
         <*> (mdForwardRef       cxt mt <$> field 3 numeric) -- dlScope
         <*> (mdForwardRefOrNull cxt mt <$> field 4 numeric) -- dlIA
+        <*> if length (recordFields r) <= 5
+            then pure False
+            else parseField r 5 nonzero                     -- dlImplicit
       return $! updateMetadataTable (addLoc isDistinct loc) pm
 
 

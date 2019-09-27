@@ -714,6 +714,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
           , dlCol   = col
           , dlScope = typedValue scope
           , dlIA    = typedValue `fmap` ia
+          , dlImplicit = False
           }
     setLastLoc loc
     updateLastStmt (extendMetadata ("dbg", ValMdLoc loc)) d
