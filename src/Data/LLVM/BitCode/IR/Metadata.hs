@@ -948,8 +948,16 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return pm
 
     40 -> label "METADATA_LABEL" $ do
-      -- TODO: is it OK to skip this if we always parse everything?
-      return pm
+      assertRecordSizeIn [5]
+      cxt        <- getContext
+      isDistinct <- parseField r 0 nonzero
+      dil <- DILabel
+        <$> (mdForwardRefOrNull cxt mt <$> parseField r 1 numeric)
+        <*> (mdString           cxt pm <$> parseField r 2 numeric)
+        <*> (mdForwardRefOrNull cxt mt <$> parseField r 3 numeric)
+        <*> parseField r 4 numeric
+      return $! updateMetadataTable
+        (addDebugInfo isDistinct (DebugInfoLabel dil)) pm
 
     code -> fail ("unknown record code: " ++ show code)
 
