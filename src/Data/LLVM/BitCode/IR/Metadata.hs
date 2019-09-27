@@ -947,6 +947,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       -- TODO: is it OK to skip this if we always parse everything?
       return pm
 
+    40 -> label "METADATA_LABEL" $ do
+      -- TODO: is it OK to skip this if we always parse everything?
+      return pm
+
     code -> fail ("unknown record code: " ++ show code)
 
 parseMetadataEntry _ _ pm (abbrevDef -> Just _) =
