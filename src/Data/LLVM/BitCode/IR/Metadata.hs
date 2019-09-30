@@ -456,7 +456,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       -- TODO: broken in 3.7+; needs to be a DILocation rather than an
       -- MDLocation, but there appears to be no difference in the
       -- bitcode. /sigh/
-      assertRecordSizeIn [5]
+      assertRecordSizeIn [5, 6]
       let field = parseField r
       cxt        <- getContext
       isDistinct <- field 0 nonzero
@@ -465,6 +465,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> field 2 numeric                                 -- dlCol
         <*> (mdForwardRef       cxt mt <$> field 3 numeric) -- dlScope
         <*> (mdForwardRefOrNull cxt mt <$> field 4 numeric) -- dlIA
+        <*> if length (recordFields r) <= 5
+            then pure False
+            else parseField r 5 nonzero                     -- dlImplicit
       return $! updateMetadataTable (addLoc isDistinct loc) pm
 
 
@@ -524,7 +527,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return $! updateMetadataTable (addDebugInfo isDistinct diEnum) pm
 
     15 -> label "METADATA_BASIC_TYPE" $ do
-      assertRecordSizeIn [6]
+      assertRecordSizeIn [6, 7]
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       dibt       <- DIBasicType
@@ -533,6 +536,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> parseField r 3 numeric                       -- dibtSize
         <*> parseField r 4 numeric                       -- dibtAlign
         <*> parseField r 5 numeric                       -- dibtEncoding
+        <*> if length (recordFields r) <= 6
+            then pure Nothing
+            else Just <$> parseField r 6 numeric         -- dibtFlags
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoBasicType dibt)) pm
 
@@ -888,7 +894,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       bs     <- parseField r 2 fieldBlob
       when (count == 0)
         (fail "Invalid record: metadata strings with no strings")
-      when (offset >= S.length bs)
+      when (offset > S.length bs)
         (fail "Invalid record: metadata strings corrupt offset")
       let (bsLengths, bsStrings) = S.splitAt offset bs
       lengths <- either fail return $ parseMetadataStringLengths count bsLengths
@@ -940,6 +946,18 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     39 -> label "METADATA_INDEX" $ do
       -- TODO: is it OK to skip this if we always parse everything?
       return pm
+
+    40 -> label "METADATA_LABEL" $ do
+      assertRecordSizeIn [5]
+      cxt        <- getContext
+      isDistinct <- parseField r 0 nonzero
+      dil <- DILabel
+        <$> (mdForwardRefOrNull cxt mt <$> parseField r 1 numeric)
+        <*> (mdString           cxt pm <$> parseField r 2 numeric)
+        <*> (mdForwardRefOrNull cxt mt <$> parseField r 3 numeric)
+        <*> parseField r 4 numeric
+      return $! updateMetadataTable
+        (addDebugInfo isDistinct (DebugInfoLabel dil)) pm
 
     code -> fail ("unknown record code: " ++ show code)
 

@@ -69,6 +69,7 @@ instance Arbitrary lab => Arbitrary (DILocalVariable' lab)            where arbi
 instance Arbitrary lab => Arbitrary (DISubprogram' lab)               where arbitrary = genericArbitrary uniform
 instance Arbitrary DISubrange                                         where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DISubroutineType' lab)           where arbitrary = genericArbitrary uniform
+instance Arbitrary lab => Arbitrary (DILabel' lab)                    where arbitrary = genericArbitrary uniform
 
 -- Newtypes
 instance Arbitrary Ident  where arbitrary = genericArbitrary uniform

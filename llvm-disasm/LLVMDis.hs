@@ -114,6 +114,8 @@ renderLLVM opts m = do
      | v `elem` ["5", "5.0"] -> putRender (ppLLVM38 (ppModule m))
      | v `elem` ["6", "6.0"] -> putRender (ppLLVM38 (ppModule m))
      | v `elem` ["7", "7.0"] -> putRender (ppLLVM38 (ppModule m))
+     | v `elem` ["8", "8.0"] -> putRender (ppLLVM38 (ppModule m))
+     | v `elem` ["9", "9.0"] -> putRender (ppLLVM38 (ppModule m))
      | otherwise -> printUsage ["unsupported LLVM version: " ++ v] >> exitFailure
   when (optDoCFG opts) $ do
     let cfgs  = map (buildCFG . defBody) $ modDefines m
