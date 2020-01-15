@@ -53,6 +53,7 @@ instance Monad GetBits where
     (x,off1) <- unGetBits m off0
     unGetBits (f x) off1
 
+instance MonadFail GetBits where
   {-# INLINE fail #-}
   fail str = GetBits (\ _ -> fail str)
 

@@ -60,10 +60,8 @@ instance Monad Parse where
   {-# INLINE (>>=) #-}
   Parse m >>= f = Parse (m >>= unParse . f)
 
-  {-# INLINE fail #-}
-  fail = failWithContext
-
 instance MonadFail Parse where
+  {-# INLINE fail #-}
   fail = failWithContext
 
 instance Alternative Parse where
@@ -145,13 +143,13 @@ setRelIds b = Parse $ do
   put $! ps { psValueTable = (psValueTable ps) { valueRelIds = b }}
 
 getRelIds :: Parse Bool
-getRelIds  = Parse $ do
-  ps <- get
+getRelIds  = do
+  ps <- Parse get
   return (valueRelIds (psValueTable ps))
 
 getLastLoc :: Parse PDebugLoc
-getLastLoc  = Parse $ do
-  ps <- get
+getLastLoc  = do
+  ps <- Parse get
   case psLastLoc ps of
     Just loc -> return loc
     Nothing  -> fail "No last location available"
@@ -162,8 +160,7 @@ setModVersion v = Parse $ do
   put $! ps { psModVersion = v }
 
 getModVersion :: Parse Int
-getModVersion = Parse $ do
-  psModVersion <$> get
+getModVersion = Parse (psModVersion <$> get)
 
 -- | Sort of a hack to preserve state between function body parses.  It would
 -- really be nice to separate this into a different monad, that could just run
@@ -702,8 +699,8 @@ addKind kind name = Parse $ do
   put $! ps { psKinds = KindTable { ktNames = IntMap.insert kind name ktNames } }
 
 getKind :: Int -> Parse String
-getKind kind = Parse $ do
-  ps <- get
+getKind kind = do
+  ps <- Parse get
   let KindTable { .. } = psKinds ps
   case IntMap.lookup kind ktNames of
     Just name -> return name
@@ -738,10 +735,8 @@ instance Monad Finalize where
   {-# INLINE (>>=) #-}
   Finalize m >>= f = Finalize (m >>= unFinalize . f)
 
-  {-# INLINE fail #-}
-  fail = failWithContext'
-
 instance MonadFail Finalize where
+  {-# INLINE fail #-}
   fail = failWithContext'
 
 instance Alternative Finalize where
