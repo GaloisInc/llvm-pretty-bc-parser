@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -13,8 +14,10 @@ import           Text.LLVM.PP
 
 import           Control.Applicative (Alternative(..))
 import           Control.Monad.Fix (MonadFix)
+#if !MIN_VERSION_base(4,13,0)
 import           Control.Monad.Fail (MonadFail)
 import qualified Control.Monad.Fail -- makes fail visible for instance
+#endif
 import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Control.Monad.State.Strict
@@ -59,6 +62,11 @@ instance Monad Parse where
 
   {-# INLINE (>>=) #-}
   Parse m >>= f = Parse (m >>= unParse . f)
+
+#if !MIN_VERSION_base(4,13,0)
+  {-# INLINE fail #-}
+  fail = failWithContext
+#endif
 
 instance MonadFail Parse where
   {-# INLINE fail #-}
@@ -734,6 +742,11 @@ instance Monad Finalize where
 
   {-# INLINE (>>=) #-}
   Finalize m >>= f = Finalize (m >>= unFinalize . f)
+
+#if !MIN_VERSION_base(4,13,0)
+  {-# INLINE fail #-}
+  fail = failWithContext'
+#endif
 
 instance MonadFail Finalize where
   {-# INLINE fail #-}
