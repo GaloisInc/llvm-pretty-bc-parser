@@ -9,6 +9,7 @@ This module is meant to be imported qualified as @Assert@
 
 -}
 
+{-# LANGUAGE CPP #-}
 module Data.LLVM.BitCode.Assert
   ( failWithMsg
   , unknownEntity
@@ -26,7 +27,9 @@ module Data.LLVM.BitCode.Assert
 
 import           Control.Monad (MonadPlus, mplus)
 import           Control.Monad (when)
+#if !MIN_VERSION_base(4,13,0)
 import           Control.Monad.Fail (MonadFail)
+#endif
 import           Data.LLVM.BitCode.Record (Record)
 import qualified Data.LLVM.BitCode.Record as Record
 import           Text.LLVM.AST (Type', Typed, Ident)

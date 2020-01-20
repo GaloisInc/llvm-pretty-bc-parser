@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 module Data.LLVM.BitCode.GetBits (
     GetBits
   , runGetBits
@@ -20,6 +22,10 @@ import Data.Monoid (mempty,mappend)
 import Data.Word (Word32)
 import qualified Data.Serialize as C
 
+#if !MIN_VERSION_base(4,13,0)
+import Control.Monad.Fail( MonadFail )
+import qualified Control.Monad.Fail
+#endif
 
 -- Bit-level Parsing -----------------------------------------------------------
 
@@ -53,6 +59,12 @@ instance Monad GetBits where
     (x,off1) <- unGetBits m off0
     unGetBits (f x) off1
 
+#if !MIN_VERSION_base(4,13,0)
+  {-# INLINE fail #-}
+  fail str = GetBits (\ _ -> fail str)
+#endif
+
+instance MonadFail GetBits where
   {-# INLINE fail #-}
   fail str = GetBits (\ _ -> fail str)
 
