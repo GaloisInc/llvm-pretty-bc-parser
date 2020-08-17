@@ -116,7 +116,7 @@ parseSlice r l n p = loop (take n (drop l (recordFields r)))
   loop []     = return []
 
 -- | Parse a @Field@ as a numeric value.
-numeric :: Num a => Match Field a
+numeric :: (Num a, Bits a) => Match Field a
 numeric  = fmap fromBitString . (fieldLiteral ||| fieldFixed ||| fieldVbr)
 
 signedImpl :: (Bits a, Num a) => Match Field a
@@ -157,7 +157,7 @@ nonzero  = decode <=< (fieldFixed ||| fieldLiteral ||| fieldVbr)
     | otherwise      = return True
 
 char :: Match Field Word8
-char  = numeric
+char = numeric
 
 string :: Match Field String
 string  = fmap UTF8.decode . fieldArray char

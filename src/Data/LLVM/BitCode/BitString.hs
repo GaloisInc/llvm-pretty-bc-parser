@@ -7,13 +7,12 @@ module Data.LLVM.BitCode.BitString (
   , take, drop, splitAt
   ) where
 
-import Data.Bits ((.&.),(.|.),shiftL,shiftR,bit)
+import Data.Bits ((.&.),(.|.),shiftL,shiftR,bit,bitSizeMaybe, Bits)
 import Data.Monoid (Monoid(..))
 import Data.Semigroup
 import Numeric (showIntAtBase)
 
 import Prelude hiding (take,drop,splitAt)
-
 
 data BitString = BitString
   { bsLength :: !Int
@@ -35,8 +34,20 @@ instance Monoid BitString where
 toBitString :: Int -> Integer -> BitString
 toBitString len val = BitString len (val .&. maskBits len)
 
-fromBitString :: Num a => BitString -> a
-fromBitString (BitString l i) = fromIntegral (i .&. maskBits l)
+fromBitString :: (Num a, Bits a) => BitString -> a
+fromBitString (BitString l i) =
+  case bitSizeMaybe x of
+    Nothing -> x
+    Just n
+      | 0 <= ival && ival < bit n -> x
+      | otherwise -> error (unwords
+           [ "Data.LLVM.BitCode.BitString.fromBitString: bitstring value of length", show l
+           , "(", show i, ")"
+           , "could not be parsed into type with only", show n, "bits"
+           ])
+ where
+ x    = fromInteger ival
+ ival = i .&. maskBits l
 
 showBitString :: BitString -> ShowS
 showBitString bs = showString padding . showString bin

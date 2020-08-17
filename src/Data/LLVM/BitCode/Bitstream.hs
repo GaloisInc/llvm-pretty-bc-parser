@@ -21,6 +21,7 @@ import Data.LLVM.BitCode.GetBits
 
 import Control.Applicative ((<$>))
 import Control.Monad (unless,replicateM,guard)
+import Data.Bits (Bits, bitSizeMaybe, bit)
 import Data.Monoid (Monoid(..))
 import Data.Word (Word8,Word16,Word32)
 import qualified Data.ByteString as S
@@ -38,10 +39,19 @@ boolean  = do
   return (bsData bs == 1)
 
 -- | Parse a Num type out of n-bits.
-numeric :: Num a => Int -> GetBits a
+numeric :: (Num a, Bits a) => Int -> GetBits a
 numeric n = do
   bs <- fixed n
-  return (fromIntegral (bsData bs))
+  let x = fromIntegral (bsData bs)
+  case bitSizeMaybe x of
+    Nothing -> return x
+    Just n'
+      | bsData bs < bit n' -> return x
+      | otherwise -> fail $ unwords
+           [ "Data.LLVM.BitCode.numeric: bitstring value of length", show n
+           , "( " ++ show (bsData bs) ++ ")"
+           , "could not be parsed into type with only", show n', "bits"
+           ]
 
 -- | Get a @BitString@ formatted as vbr.
 vbr :: Int -> GetBits BitString
@@ -57,7 +67,7 @@ vbr n = loop mempty
        else return acc'
 
 -- | Process a variable-bit encoded integer.
-vbrNum :: Num a => Int -> GetBits a
+vbrNum :: (Num a, Bits a) => Int -> GetBits a
 vbrNum n = fromBitString <$> vbr n
 
 -- | Decode a 6-bit encoded character.

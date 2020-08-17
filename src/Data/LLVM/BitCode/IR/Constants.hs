@@ -17,7 +17,7 @@ import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import           Control.Monad (mplus,mzero,foldM,(<=<))
 import           Control.Monad.ST (runST,ST)
 import           Data.Array.ST (newArray,readArray,MArray,STUArray)
-import           Data.Bits (shiftL,shiftR,testBit)
+import           Data.Bits (shiftL,shiftR,testBit, Bits)
 import qualified Data.LLVM.BitCode.BitString as BitS
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, isJust)
@@ -225,7 +225,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     ty <- getTy
     ft <- (elimFloatType =<< elimPrimType ty)
         `mplus` fail "expecting a float type"
-    let build :: Num a => (a -> PValue) -> Parse (Parse Type, [Typed PValue])
+    let build :: (Num a, Bits a) => (a -> PValue) -> Parse (Parse Type, [Typed PValue])
         build k = do
           a <-  parseField r 0 (fmap k . numeric)
           return (getTy, (Typed ty $! a):cs)
@@ -392,9 +392,9 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
       Integer 16         -> build ValInteger
       Integer 32         -> build ValInteger
       Integer 64         -> build ValInteger
-      FloatType Float    -> build ValFloat
-      FloatType Double   -> build ValDouble
-      FloatType X86_fp80 -> error "TBD: similar to `fp80buildData ty r cs getTy`, but potentially applied iteratively"
+--      FloatType Float    -> build ValFloat
+--      FloatType Double   -> build ValDouble
+--      FloatType X86_fp80 -> error "TBD: similar to `fp80buildData ty r cs getTy`, but potentially applied iteratively"
       x                  -> Assert.unknownEntity "element type" x
 
   23 -> label "CST_CODE_INLINEASM" $ do
