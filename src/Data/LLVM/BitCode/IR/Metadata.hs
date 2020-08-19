@@ -44,7 +44,7 @@ import           Data.List (mapAccumL, foldl')
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
-import           Data.Word (Word32,Word64)
+import           Data.Word (Word8,Word32,Word64)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
@@ -650,10 +650,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       assertRecordSizeBetween 18 21
 
       -- A "version" is encoded in the high-order bits of the isDistinct field.
-      -- We parse it once here as a numeric value, and later as a Bool.
       version <- parseField r 0 numeric
 
-      let hasSPFlags = (version .&. (0x4 :: Word32)) /= 0;
+      let hasSPFlags = (version .&. (0x4 :: Word64)) /= 0;
 
       (diFlags0, spFlags0) <-
         if hasSPFlags then
@@ -670,10 +669,12 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
           spFlagIsOptimized  = bit 4
           spFlagIsMain       = bit 8
 
+          diFlags :: Word32
           diFlags
             | hasOldMainSubprogramFlag = diFlags0 .&. complement diFlagMainSubprogram
             | otherwise                = diFlags0
 
+          spFlags :: Word32
           spFlags
             | hasOldMainSubprogramFlag = spFlags0 .|. spFlagIsMain
             | otherwise                = spFlags0
@@ -685,7 +686,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
               spIsDefinition  = spFlags .&. spFlagIsDefinition /= 0
               spIsOptimized   = spFlags .&. spFlagIsOptimized /= 0
               spIsMain        = spFlags .&. spFlagIsMain /= 0
-              spVirtuality    = spFlags .&. 0x3
+              spVirtuality :: Word8
+              spVirtuality    = fromIntegral (spFlags .&. 0x3)
            in return (spIsLocal, spIsDefinition, spIsOptimized, spVirtuality, spIsMain)
         else
           do (,,,,) <$>
