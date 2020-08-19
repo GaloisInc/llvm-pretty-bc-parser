@@ -392,9 +392,8 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
       Integer 16         -> build ValInteger
       Integer 32         -> build ValInteger
       Integer 64         -> build ValInteger
---      FloatType Float    -> build ValFloat
---      FloatType Double   -> build ValDouble
---      FloatType X86_fp80 -> error "TBD: similar to `fp80buildData ty r cs getTy`, but potentially applied iteratively"
+      FloatType Float    -> build (ValFloat . castFloat)
+      FloatType Double   -> build (ValDouble . castDouble)
       x                  -> Assert.unknownEntity "element type" x
 
   23 -> label "CST_CODE_INLINEASM" $ do
