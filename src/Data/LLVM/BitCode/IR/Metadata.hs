@@ -725,7 +725,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
       -- Some additional sanity checking
       when (not hasSPFlags && hasUnit)
-           (assertRecordSizeBetween 18 19)
+           (assertRecordSizeBetween 19 21)
 
       when (hasSPFlags && not hasUnit)
            (fail "DISubprogram record has subprogram flags, but does not have unit.  Invalid record.")
