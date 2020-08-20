@@ -31,7 +31,7 @@ import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import           Control.Applicative ((<|>))
 import           Control.Exception (throw)
 import           Control.Monad (foldM, guard, mplus, when)
-import           Data.Bits (shiftR, testBit, shiftL)
+import           Data.Bits (shiftR, testBit, shiftL, (.&.), (.|.), bit, complement)
 import           Data.Data (Data)
 import           Data.Typeable (Typeable)
 import qualified Data.ByteString as S
@@ -44,7 +44,7 @@ import           Data.List (mapAccumL, foldl')
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
-import           Data.Word (Word32,Word64)
+import           Data.Word (Word8,Word32,Word64)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
@@ -645,25 +645,94 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
     21 -> label "METADATA_SUBPROGRAM" $ do
       -- this one is a bit funky:
-      -- https://github.com/llvm-mirror/llvm/blob/release_50/lib/Bitcode/Reader/MetadataLoader.cpp#L1382
+      -- https://github.com/llvm/llvm-project/blob/release/10.x/llvm/lib/Bitcode/Reader/MetadataLoader.cpp#L1486
+
+      assertRecordSizeBetween 18 21
 
       -- A "version" is encoded in the high-order bits of the isDistinct field.
-      -- We parse it once here as a numeric value, and later as a Bool.
       version <- parseField r 0 numeric
-      assertRecordSizeBetween 18 21
+
+      let hasSPFlags = (version .&. (0x4 :: Word64)) /= 0;
+
+      (diFlags0, spFlags0) <-
+        if hasSPFlags then
+          (,) <$> parseField r (11 + 2) numeric <*> pure 0
+        else
+          (,) <$> parseField r 11 numeric <*> parseField r 9 numeric
+
+      let diFlagMainSubprogram = bit 21 :: Word32
+          hasOldMainSubprogramFlag = (diFlags0 .&. diFlagMainSubprogram) /= 0
+
+          -- CF https://github.com/llvm/llvm-project/blob/release/10.x/llvm/include/llvm/IR/DebugInfoFlags.def
+          spFlagIsLocal      = bit 2
+          spFlagIsDefinition = bit 3
+          spFlagIsOptimized  = bit 4
+          spFlagIsMain       = bit 8
+
+          diFlags :: Word32
+          diFlags
+            | hasOldMainSubprogramFlag = diFlags0 .&. complement diFlagMainSubprogram
+            | otherwise                = diFlags0
+
+          spFlags :: Word32
+          spFlags
+            | hasOldMainSubprogramFlag = spFlags0 .|. spFlagIsMain
+            | otherwise                = spFlags0
+
+      -- TODO, isMain isn't exposed via DISubprogram
+      (isLocal, isDefinition, isOptimized, virtuality, _isMain) <-
+        if hasSPFlags then
+          let spIsLocal       = spFlags .&. spFlagIsLocal /= 0
+              spIsDefinition  = spFlags .&. spFlagIsDefinition /= 0
+              spIsOptimized   = spFlags .&. spFlagIsOptimized /= 0
+              spIsMain        = spFlags .&. spFlagIsMain /= 0
+              spVirtuality :: Word8
+              spVirtuality    = fromIntegral (spFlags .&. 0x3)
+           in return (spIsLocal, spIsDefinition, spIsOptimized, spVirtuality, spIsMain)
+        else
+          do (,,,,) <$>
+               parseField r 7 nonzero <*>  -- isLocal
+               parseField r 8 nonzero <*>  -- isDefinition
+               parseField r 14 nonzero <*> -- isOptimized
+               parseField r 11 numeric <*> -- virtuality
+               pure hasOldMainSubprogramFlag -- isMain
+
       let recordSize = length (recordFields r)
-          adj i | recordSize == 19 = i + 1
-                | otherwise        = i
-          hasThisAdjustment = recordSize >= 20
-          hasThrownTypes    = recordSize >= 21
-          hasUnit           = version >= (2 :: Int) -- avoid default type
 
-      ctx          <- getContext
+          isDistinct = (version .&. 0x1 /= 0) || (spFlags .&. spFlagIsDefinition /= 0)
 
-      -- See https://github.com/elliottt/llvm-pretty/issues/47
-      -- and the corresponding LLVM code in MetadataLoader.cpp (parseOneMetadata)
-      isDefinition <- parseField r 8 nonzero                       -- dispIsDefinition
-      isDistinct   <- (isDefinition ||) <$> parseField r 0 nonzero -- isDistinct
+          hasUnit = version .&. 0x2 /= 0
+
+          offsetA
+            | not hasSPFlags = 2
+            | otherwise      = 0
+
+          offsetB
+            | not hasSPFlags && recordSize >= 19 = 3
+            | not hasSPFlags                     = 2
+            | otherwise                          = 0
+
+          -- this doesn't seem to be used in our parser...
+          --hasFn
+          --  | not hasSPFlags && recordSize >= 19 = not hasUnit
+          --  | otherwise = False
+
+          hasThisAdjustment
+            | not hasSPFlags = recordSize >= 20
+            | otherwise      = True
+
+          hasThrownTypes
+            | not hasSPFlags = recordSize >= 21
+            | otherwise      = True
+
+      -- Some additional sanity checking
+      when (not hasSPFlags && hasUnit)
+           (assertRecordSizeBetween 19 21)
+
+      when (hasSPFlags && not hasUnit)
+           (fail "DISubprogram record has subprogram flags, but does not have unit.  Invalid record.")
+
+      ctx <- getContext
 
       -- Forward references that depend on the 'version'
       let optFwdRef b n =
@@ -672,29 +741,29 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
             else pure Nothing
 
       disp         <- DISubprogram
-        <$> (mdForwardRefOrNull ctx mt <$> parseField r 1 numeric)        -- dispScope
-        <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)        -- dispName
-        <*> (mdStringOrNull     ctx pm <$> parseField r 3 numeric)        -- dispLinkageName
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 4 numeric)        -- dispFile
-        <*>                                parseField r 5 numeric         -- dispLine
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 6 numeric)        -- dispType
-        <*>                                parseField r 7 nonzero         -- dispIsLocal
-        <*>                                pure isDefinition              -- dispIsDefinition
-        <*>                                parseField r 9 numeric         -- dispScopeLine
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r 10 numeric)       -- dispContainingType
-        <*>                                parseField r 11 numeric        -- dispVirtuality
-        <*>                                parseField r 12 numeric        -- dispVirtualIndex
+        <$> (mdForwardRefOrNull ctx mt <$> parseField r 1 numeric)             -- dispScope
+        <*> (mdStringOrNull     ctx pm <$> parseField r 2 numeric)             -- dispName
+        <*> (mdStringOrNull     ctx pm <$> parseField r 3 numeric)             -- dispLinkageName
+        <*> (mdForwardRefOrNull ctx mt <$> parseField r 4 numeric)             -- dispFile
+        <*>                                parseField r 5 numeric              -- dispLine
+        <*> (mdForwardRefOrNull ctx mt <$> parseField r 6 numeric)             -- dispType
+        <*>                                pure isLocal                        -- dispIsLocal
+        <*>                                pure isDefinition                   -- dispIsDefinition
+        <*>                                parseField r (7 + offsetA) numeric  -- dispScopeLine
+        <*> (mdForwardRefOrNull ctx mt <$> parseField r (8 + offsetA) numeric) -- dispContainingType
+        <*>                                pure virtuality                     -- dispVirtuality
+        <*>                                parseField r (10 + offsetA) numeric -- dispVirtualIndex
         <*> (if hasThisAdjustment
-            then parseField r 19 numeric
-            else return 0)                                                -- dispThisAdjustment
-        <*> parseField r 13 numeric                                       -- dispFlags
-        <*> parseField r 14 nonzero                                       -- dispIsOptimized
-        <*> (optFwdRef hasUnit       15)                                  -- dispUnit
-        <*> (optFwdRef (not hasUnit) (adj 15))                            -- dispTemplateParams
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r (adj 16) numeric) -- dispDeclaration
-        <*> (mdForwardRefOrNull ctx mt <$> parseField r (adj 17) numeric) -- dispVariables
-        -- Indices 18-19 seem unused.
-        <*> (optFwdRef hasThrownTypes 20)                                 -- dispThrownTypes
+            then parseField r (16 + offsetB) numeric
+            else return 0)                                                      -- dispThisAdjustment
+        <*> pure diFlags                                                        -- dispFlags
+        <*> pure isOptimized                                                    -- dispIsOptimized
+        <*> (optFwdRef hasUnit (12 + offsetB))                                  -- dispUnit
+        <*> (mdForwardRefOrNull ctx mt <$> parseField r (13 + offsetB) numeric) -- dispTemplateParams
+        <*> (mdForwardRefOrNull ctx mt <$> parseField r (14 + offsetB) numeric) -- dispDeclaration
+        <*> (mdForwardRefOrNull ctx mt <$> parseField r (15 + offsetB) numeric) -- dispVariables
+        <*> (optFwdRef hasThrownTypes (17 + offsetB))                           -- dispThrownTypes
+
       -- TODO: in the LLVM parser, it then goes into the metadata table
       -- and updates function entries to point to subprograms. Is that
       -- neccessary for us?

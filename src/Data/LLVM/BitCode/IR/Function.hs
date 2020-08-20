@@ -21,7 +21,7 @@ import           Text.LLVM.Labels
 import           Text.LLVM.PP
 
 import           Control.Monad (when,unless,mplus,mzero,foldM,(<=<),msum)
-import           Data.Bits (shiftR,bit,shiftL,testBit,(.&.),(.|.),complement)
+import           Data.Bits (shiftR,bit,shiftL,testBit,(.&.),(.|.),complement,Bits)
 import           Data.Int (Int32)
 import           Data.Maybe (isJust)
 import           Data.Word (Word32)
@@ -1202,7 +1202,7 @@ interpGep ty vs = check (resolveGep ty vs)
       ty' <- getType' =<< getTypeId i
       check (k ty')
 
-parseIndexes :: Num a => Record -> Int -> Parse [a]
+parseIndexes :: (Num a, Bits a) => Record -> Int -> Parse [a]
 parseIndexes r = loop
   where
   field  = parseField r
@@ -1259,7 +1259,7 @@ parseSwitchLabels ty r = loop
 
 -- | See the comment for 'parseSwitchLabels' for information about what this
 -- does.
-parseNewSwitchLabels :: Int32 -> Record -> Int -> Int -> Parse [(Integer,Int)]
+parseNewSwitchLabels :: Word32 -> Record -> Int -> Int -> Parse [(Integer,Int)]
 parseNewSwitchLabels width r = loop
   where
   field = parseField r
