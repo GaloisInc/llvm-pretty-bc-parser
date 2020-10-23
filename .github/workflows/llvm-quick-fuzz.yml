@@ -1,0 +1,50 @@
+name: llvm-quick-fuzz
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest]
+        ghc: ["8.10.2"]
+        llvm: [ "https://github.com/llvm/llvm-project/releases/download/llvmorg-11.0.0/clang+llvm-11.0.0-x86_64-apple-darwin.tar.xz"
+              , "https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.0/clang+llvm-10.0.0-x86_64-apple-darwin.tar.xz"
+              ]
+    name: llvm-quick-fuzz - GHC v${{ matrix.ghc }} - ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - uses: actions/setup-haskell@v1
+        id: setup-haskell
+        with:
+          ghc-version: ${{ matrix.ghc }}
+
+      - uses: actions/cache@v2
+        name: Cache cabal store
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.cabal-store }}
+            dist-newstyle
+          key: cabal-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles(format('cabal.GHC-{0}.config', matrix.ghc)) }}-${{ github.sha }}
+          restore-keys: |
+            cabal-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles(format('cabal.GHC-{0}.config', matrix.ghc)) }}-
+
+      - shell: bash
+        run: brew install csmith creduce
+
+      - shell: bash
+        run: curl ${{ matrix.llvm }} | tar xf
+
+      - shell: bash
+        run: mv clang+llvm-*-x86_64-apple-darwin llvm && echo "$PWD/llvm/bin" >> $GITHUB_PATH
+
+      - shell: bash
+        run: cabal build -ffuzz llvm-disasm fuzz-llvm-disasm
+
+#      - shell: bash
+#        run: cabal run fuzz-llvm-disasm -- -n 5 --junit-xml results.xml -o results --collapse --clang-flags="-O -w" --clang-flags="-O -w -g" -c "$PWD/llvm/bin/clang"
