@@ -573,7 +573,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoDerivedType didt)) pm
 
     18 -> label "METADATA_COMPOSITE_TYPE" $ do
-      assertRecordSizeBetween 16 17
+      assertRecordSizeBetween 16 18
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       dict       <- DICompositeType
@@ -592,9 +592,12 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 13 numeric)    -- dictVTableHolder
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 14 numeric)    -- dictTemplateParams
         <*> (mdStringOrNull     ctx pm <$> parseField r 15 numeric)    -- dictIdentifier
-        <*> if length (recordFields r) <= 16
-            then pure Nothing
-            else mdForwardRefOrNull ctx mt <$> parseField r 16 numeric -- dictDiscriminator
+        <*> (if length (recordFields r) <= 16
+             then pure Nothing
+             else mdForwardRefOrNull ctx mt <$> parseField r 16 numeric) -- dictDiscriminator
+        <*> (if length (recordFields r) <= 17
+             then pure Nothing
+             else mdForwardRefOrNull ctx mt <$> parseField r 17 numeric) -- dictDataLocation
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoCompositeType dict)) pm
 
@@ -609,7 +612,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoSubroutineType dist)) pm
 
     20 -> label "METADATA_COMPILE_UNIT" $ do
-      assertRecordSizeBetween 14 19
+      assertRecordSizeBetween 14 22
       let recordSize = length (recordFields r)
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
@@ -627,20 +630,32 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 11 numeric) -- dicuSubprograms
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 12 numeric) -- dicuGlobals
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 13 numeric) -- dicuImports
-        <*> if recordSize <= 15
-            then pure Nothing
-            else mdForwardRefOrNull ctx mt <$> parseField r 15 numeric -- dicuMacros
-      dicuDWOId <-
-        if recordSize <= 14
-        then pure 0
-        else parseField r 14 numeric
-      dicuSplitDebugInlining <-
-        if recordSize <= 16
-        then pure True
-        else parseField r 16 nonzero
-      let dicu' = dicu dicuDWOId dicuSplitDebugInlining
+        <*> (if recordSize <= 15
+             then pure Nothing
+             else mdForwardRefOrNull ctx mt <$> parseField r 15 numeric) -- dicuMacros
+        <*> (if recordSize <= 14
+             then pure 0
+             else parseField r 14 numeric)
+        <*> (if recordSize <= 16
+             then pure True
+             else parseField r 16 nonzero)
+        <*> (if recordSize <= 17
+             then pure False
+             else parseField r 17 nonzero) -- dicuDebugInfoForProf
+        <*> (if recordSize <= 18
+             then pure 0
+             else parseField r 18 numeric) -- dicuNameTableKind
+        <*> (if recordSize <= 19
+             then pure 0
+             else parseField r 19 numeric) -- dicuRangesBaseAddress
+        <*> (if recordSize <= 20
+             then pure Nothing
+             else mdStringOrNull ctx pm <$> parseField r 20 numeric) -- dicuSysRoot
+        <*> (if recordSize <= 21
+             then pure Nothing
+             else mdStringOrNull ctx pm <$> parseField r 21 numeric) -- dicuSDK
       return $! updateMetadataTable
-        (addDebugInfo isDistinct (DebugInfoCompileUnit dicu')) pm
+        (addDebugInfo isDistinct (DebugInfoCompileUnit dicu)) pm
 
 
     21 -> label "METADATA_SUBPROGRAM" $ do
