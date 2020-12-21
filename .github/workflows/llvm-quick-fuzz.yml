@@ -48,5 +48,5 @@ jobs:
       - shell: bash
         run: cabal build -ffuzz llvm-disasm fuzz-llvm-disasm
 
-#      - shell: bash
-#        run: cabal run fuzz-llvm-disasm -- -n 5 --junit-xml results.xml -o results --collapse --clang-flags="-O -w" --clang-flags="-O -w -g" -c "$PWD/llvm/bin/clang"
+      - shell: bash
+        run: cabal run fuzz-llvm-disasm -- -n 5 --junit-xml results.xml -o results --collapse --clang-flags="-O -w" --clang-flags="-O -w -g" -c "$PWD/llvm/bin/clang"
