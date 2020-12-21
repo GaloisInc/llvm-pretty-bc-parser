@@ -9,7 +9,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest]
-        ghc: ["8.10.3"]
+        ghc: ["8.10.2"]
         llvm: [ "https://github.com/llvm/llvm-project/releases/download/llvmorg-11.0.0/clang+llvm-11.0.0-x86_64-apple-darwin.tar.xz"
               , "https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.1/clang+llvm-10.0.1-x86_64-apple-darwin.tar.xz"
               , "https://github.com/llvm/llvm-project/releases/download/llvmorg-9.0.1/clang+llvm-9.0.1-x86_64-apple-darwin.tar.xz"
