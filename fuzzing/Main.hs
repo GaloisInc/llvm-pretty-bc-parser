@@ -294,10 +294,10 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, includeDirs, flags) opts clang
   let baseName   = dropExtension srcFile
       srcReduced = clangRoot </> baseName ++ "-reduced.c"
       scriptFile = clangRoot </> baseName ++ "-reduce.sh"
-      llvmVersion =
+      llvmVersionFlags =
         case stripPrefix "clang-" clangExe of
-          Nothing -> ""
-          Just ver -> "--llvm-version=" ++ ver
+          Nothing -> []
+          Just ver -> [ "--llvm-version=" ++ ver ]
       includeOpts = concatMap (\dir -> ["-I", dir]) includeDirs
   copyFile (clangRoot </> srcFile) srcReduced
   absClangRoot <- makeAbsolute clangRoot
@@ -336,18 +336,20 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, includeDirs, flags) opts clang
           clangExe, "-I", csmithPath, flags, "-c"
         , "-emit-llvm", baseName ++ "-reduced.c", "-o", bcFile
         ] ++ includeOpts
-      buildLl = unwords [
-          "llvm-disasm", llvmVersion, bcFile, ">", llFile
-        ]
+      buildLl = unwords $
+          [ "llvm-disasm" ] ++
+          llvmVersionFlags ++
+          [ bcFile, ">", llFile ]
       copyBc = unwords [
           "cp", bcFile, absClangRoot </> bcFile
         ]
       script DisasmStage = unlines $ scriptHeader ++ [
           buildBc
         , copyBc
-        , unwords [ "llvm-disasm", llvmVersion, bcFile, "2>&1 |"
-                  , "grep", show (fromMaybe "" (grepPat st))
-                  ]
+        , unwords $
+            [ "llvm-disasm" ] ++
+            llvmVersionFlags ++
+            [ bcFile, "2>&1 |" , "grep", show (fromMaybe "" (grepPat st)) ]
         ]
       script AsStage = unlines $ scriptHeader ++ [
           buildBc
@@ -437,10 +439,10 @@ runTest tmpDir (clangExe, includeDirs, flags) seed opts = X.handle return $ do
       srcFile  = baseFile <.> "c"
       bcFile   = baseFile <.> "bc"
       llFile   = baseFile <.> "ll"
-      llvmVersion =
+      llvmVersionFlags =
         case stripPrefix "clang-" clangExe of
-          Nothing -> ""
-          Just ver -> "--llvm-version=" ++ ver
+          Nothing -> []
+          Just ver -> [ "--llvm-version=" ++ ver ]
       includeOpts = concatMap (\dir -> ["-I", dir]) includeDirs
   putStrLn $ "Testing bitcode file " ++ bcFile
   ---- Run csmith ----
@@ -462,8 +464,9 @@ runTest tmpDir (clangExe, includeDirs, flags) seed opts = X.handle return $ do
   unless (clangErr == ExitSuccess) $ X.throw $!! TestClangError seed
 
   ---- Disassemble ----
+  let disasmArgs = llvmVersionFlags ++ [ tmpDir </> bcFile ]
   (ec, out, err) <-
-    readProcessWithExitCode "llvm-disasm" [ llvmVersion, tmpDir </> bcFile ] ""
+    readProcessWithExitCode "llvm-disasm" disasmArgs ""
   case ec of
     ExitFailure c -> do
       putStrLn "[DISASM ERROR]"
