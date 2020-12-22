@@ -56,12 +56,7 @@ jobs:
         run: cabal build -ffuzz llvm-disasm fuzz-llvm-disasm
 
       - shell: bash
-        name: Copy binaries
-        run: |
-          cp $PWD/llvm/bin/clang $PWD/llvm/bin/clangy
-          ls -Fl@ $(cabal exec -ffuzz which llvm-disasm)
-          file $(cabal exec -ffuzz which llvm-disasm)
-          xattr -lv $(cabal exec -ffuzz which llvm-disasm)
+        run: cp $PWD/llvm/bin/clang $PWD/llvm/bin/clangy
 
       - shell: bash
         name: Run fuzzing
