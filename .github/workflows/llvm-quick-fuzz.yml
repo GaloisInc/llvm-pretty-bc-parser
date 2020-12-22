@@ -61,6 +61,9 @@ jobs:
           cp $(find dist-newstyle -type f -name llvm-disasm | sort -g | tail -1) $PWD/llvm/bin
           cp $(find dist-newstyle -type f -name fuzz-llvm-disasm | sort -g | tail -1) $PWD/llvm/bin
           cp $PWD/llvm/bin/clang $PWD/llvm/bin/clangy
+          ls -Fl@ $PWD/llvm/bin
+          file $PWD/llvm/bin/llvm-disasm
+          file $PWD/llvm/bin/fuzz-llvm-disasm
 
       - shell: bash
         name: Run fuzzing
