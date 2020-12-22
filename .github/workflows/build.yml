@@ -44,7 +44,7 @@ jobs:
         run: cabal build --enable-tests
 
       - shell: bash
-        name: Build
+        name: Test
         run: cabal test
 
       - shell: bash
