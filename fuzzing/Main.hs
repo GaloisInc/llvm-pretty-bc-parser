@@ -225,6 +225,7 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   -- run the tests within each clang version in parallel. We could
   -- parallelize the runs across clang versions as well, but it's
   -- probably not worth the complexity at that level of granularity
+  liftIO $ putStrLn $ "Temp directory: " ++ tmpDir
   resultMaps <-
     forM (optClangs opts) $ \clangExe ->
     forM (optClangFlags opts) $ \flags -> runParIO $ do
@@ -441,6 +442,7 @@ runTest tmpDir (clangExe, includeDirs, flags) seed opts = X.handle return $ do
           Nothing -> ""
           Just ver -> "--llvm-version=" ++ ver
       includeOpts = concatMap (\dir -> ["-I", dir]) includeDirs
+  putStrLn $ "Testing bitcode file " ++ bcFile
   ---- Run csmith ----
   csmithPath <- getCsmithPath opts
   callProcess "csmith" [
