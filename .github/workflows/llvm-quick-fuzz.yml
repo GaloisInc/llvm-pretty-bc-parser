@@ -55,7 +55,7 @@ jobs:
         run: |
           curl -L ${{ matrix.llvm }} -o llvm.tar.xz
           tar xzf llvm.tar.xz
-          mv clang+llvm-*-x86_64-apple-darwin llvm
+          mv clang+llvm-* llvm
           echo "$PWD/llvm/bin" >> $GITHUB_PATH
 
       - shell: bash
@@ -63,14 +63,12 @@ jobs:
         run: cabal build -ffuzz llvm-disasm fuzz-llvm-disasm
 
       - shell: bash
-        run: cp $PWD/llvm/bin/clang $PWD/llvm/bin/clangy
+        run: ln -s $PWD/llvm/bin/clang $PWD/llvm/bin/clangy
 
       - shell: bash
         name: Run fuzzing
-        run: cabal exec -ffuzz fuzz-llvm-disasm -- -n 5 --junit-xml results.xml -o results --collapse -I /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include --clang-flags="-O -w" --clang-flags="-O -w -g" -c clangy
+        run: |
+          cabal exec -ffuzz fuzz-llvm-disasm -- -n 5 --junit-xml results.xml -o results --collapse -I /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include --clang-flags="-O -w" --clang-flags="-O -w -g" -c clangy
+          test $(grep "failures=\"0\"" results.xml | wc -l) -eq 2
         env:
           CSMITH_PATH: "/usr/local/Cellar/csmith/2.3.0/include/csmith-2.3.0"
-
-      - shell: bash
-        name: Check for errors
-        run: test $(grep "failures=\"0\"" results.xml | wc -l) -eq 2
