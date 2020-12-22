@@ -15,7 +15,7 @@ jobs:
               , "https://github.com/llvm/llvm-project/releases/download/llvmorg-9.0.1/clang+llvm-9.0.1-x86_64-apple-darwin.tar.xz"
               , "https://releases.llvm.org/8.0.0/clang+llvm-8.0.0-x86_64-apple-darwin.tar.xz"
               ]
-    name: llvm-quick-fuzz - GHC v${{ matrix.ghc }} - ${{ matrix.os }}
+    name: llvm-quick-fuzz - ${{ matrix.llvm }}
     steps:
       - uses: actions/checkout@v2
         with:
