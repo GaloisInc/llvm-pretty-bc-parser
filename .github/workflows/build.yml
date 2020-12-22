@@ -33,24 +33,22 @@ jobs:
           path: |
             ${{ steps.setup-haskell.outputs.cabal-store }}
             dist-newstyle
-          key: cabal-${{ runner.os }}-${{ matrix.ghc }}
+          key: cabal-${{ runner.os }}-${{ matrix.ghc }}-${{ github.sha }}
+          restore-keys: cabal-${{ runner.os }}-${{ matrix.ghc }}-
 
-      - shell: bash
-        name: Clone llvm-pretty
-        run: git clone https://github.com/elliottt/llvm-pretty
+      - uses: actions/checkout@v2
+        with:
+          repository: elliottt/llvm-pretty
+          path: llvm-pretty
 
-      - shell: bash
-        name: Build
+      - name: Build
         run: cabal build --enable-tests
 
-      - shell: bash
-        name: Test
+      - name: Test
         run: cabal test
 
-      - shell: bash
-        name: Cabal file check
+      - name: Cabal file check
         run: cabal check
 
-      - shell: bash
-        name: Haddock
+      - name: Haddock
         run: cabal haddock
