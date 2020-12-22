@@ -1,0 +1,54 @@
+name: build
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, "release-**"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest]
+        ghc: ["8.6.5", "8.8.4", "8.10.2"]
+    name: build - ${{ matrix.ghc }} - ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Install LLVM (for running tests)
+        run: sudo apt-get -y install llvm
+
+      - uses: actions/setup-haskell@v1
+        id: setup-haskell
+        with:
+          ghc-version: ${{ matrix.ghc }}
+
+      - uses: actions/cache@v2
+        name: Cache cabal store
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.cabal-store }}
+            dist-newstyle
+          key: cabal-${{ runner.os }}-${{ matrix.ghc }}-${{ github.sha }}
+          restore-keys: cabal-${{ runner.os }}-${{ matrix.ghc }}-
+
+      - uses: actions/checkout@v2
+        with:
+          repository: elliottt/llvm-pretty
+          path: llvm-pretty
+
+      - name: Build
+        run: cabal build --enable-tests
+
+      - name: Test
+        run: cabal test
+
+      - name: Cabal file check
+        run: cabal check
+
+      - name: Haddock
+        run: cabal haddock
