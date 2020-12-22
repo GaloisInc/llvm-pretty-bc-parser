@@ -49,6 +49,6 @@ jobs:
         run: cabal build -ffuzz llvm-disasm fuzz-llvm-disasm
 
       - shell: bash
-        run: cabal run -ffuzz fuzz-llvm-disasm -- -n 5 --junit-xml results.xml -o results --collapse --clang-flags="-O -w" --clang-flags="-O -w -g" -c "$PWD/llvm/bin/clang"
+        run: cabal run -ffuzz fuzz-llvm-disasm -- -n 5 --junit-xml results.xml -o results --collapse --clang-flags="-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include -O -w" --clang-flags="-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include -O -w -g" -c "$PWD/llvm/bin/clang"
         env:
           CSMITH_PATH: "/usr/local/Cellar/csmith/2.3.0/include/csmith-2.3.0"
