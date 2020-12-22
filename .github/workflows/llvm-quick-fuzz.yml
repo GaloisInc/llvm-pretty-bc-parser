@@ -62,6 +62,7 @@ jobs:
           ls -Fl@ $(cabal exec -ffuzz which llvm-disasm)
           file $(cabal exec -ffuzz which llvm-disasm)
           xattr -lv $(cabal exec -ffuzz which llvm-disasm)
+          cabal run -ffuzz llvm-disasm
 
       - shell: bash
         name: Run fuzzing
