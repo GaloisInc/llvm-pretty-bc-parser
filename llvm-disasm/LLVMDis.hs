@@ -108,7 +108,7 @@ renderLLVM opts m = do
      | v == "3.6"            -> putRender (ppLLVM36 (ppModule m))
      | v == "3.7"            -> putRender (ppLLVM37 (ppModule m))
      | v == "3.8"            -> putRender (ppLLVM38 (ppModule m))
-     -- try the 3.8 style for 3.9-7.0
+     -- try the 3.8 style for 3.9-11.0
      | v == "3.9"            -> putRender (ppLLVM38 (ppModule m))
      | v `elem` ["4", "4.0"] -> putRender (ppLLVM38 (ppModule m))
      | v `elem` ["5", "5.0"] -> putRender (ppLLVM38 (ppModule m))
@@ -116,6 +116,8 @@ renderLLVM opts m = do
      | v `elem` ["7", "7.0"] -> putRender (ppLLVM38 (ppModule m))
      | v `elem` ["8", "8.0"] -> putRender (ppLLVM38 (ppModule m))
      | v `elem` ["9", "9.0"] -> putRender (ppLLVM38 (ppModule m))
+     | v `elem` ["10", "10.0"] -> putRender (ppLLVM38 (ppModule m))
+     | v `elem` ["11", "11.0"] -> putRender (ppLLVM38 (ppModule m))
      | otherwise -> printUsage ["unsupported LLVM version: " ++ v] >> exitFailure
   when (optDoCFG opts) $ do
     let cfgs  = map (buildCFG . defBody) $ modDefines m
