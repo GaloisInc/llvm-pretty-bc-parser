@@ -35,15 +35,15 @@ jobs:
         with:
           ghc-version: ${{ matrix.ghc }}
 
-#      - uses: actions/cache@v2
-#        name: Cache cabal store
-#        with:
-#          path: |
-#            ${{ steps.setup-haskell.outputs.cabal-store }}
-#            dist-newstyle
-#          key: cabal-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles(format('cabal.GHC-{0}.config', matrix.ghc)) }}-${{ github.sha }}
-#          restore-keys: |
-#            cabal-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles(format('cabal.GHC-{0}.config', matrix.ghc)) }}-
+      - uses: actions/cache@v2
+        name: Cache cabal store
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.cabal-store }}
+            dist-newstyle
+          key: cabal-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles(format('cabal.GHC-{0}.config', matrix.ghc)) }}-${{ github.sha }}
+          restore-keys: |
+            cabal-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles(format('cabal.GHC-{0}.config', matrix.ghc)) }}-
 
       - shell: bash
         run: brew install csmith creduce
