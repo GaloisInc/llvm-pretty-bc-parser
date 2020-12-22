@@ -59,9 +59,9 @@ jobs:
         name: Copy binaries
         run: |
           cp $PWD/llvm/bin/clang $PWD/llvm/bin/clangy
-          ls -Fl@ $(cabal exec -ffuzz which fuzz-llvm-disasm)
-          file $(cabal exec -ffuzz which fuzz-llvm-disasm)
-          xattr -lv $(cabal exec -ffuzz which fuzz-llvm-disasm)
+          ls -Fl@ $(cabal exec -ffuzz which llvm-disasm)
+          file $(cabal exec -ffuzz which llvm-disasm)
+          xattr -lv $(cabal exec -ffuzz which llvm-disasm)
 
       - shell: bash
         name: Run fuzzing
