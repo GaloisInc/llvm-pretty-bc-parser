@@ -48,8 +48,8 @@ jobs:
         run: |
           curl -L ${{ matrix.llvm }} -o llvm.tar.xz
           tar xzf llvm.tar.xz
-           mv clang+llvm-*-x86_64-apple-darwin llvm
-           echo "$PWD/llvm/bin" >> $GITHUB_PATH
+          mv clang+llvm-*-x86_64-apple-darwin llvm
+          echo "$PWD/llvm/bin" >> $GITHUB_PATH
 
       - shell: bash
         name: Build
