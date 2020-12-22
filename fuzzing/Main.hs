@@ -41,7 +41,7 @@ import Text.XML.Light (Attr(..), Element, ppTopElement, unode, unqual)
 
 -- | The @clang@ executable and flags for a particular test
 -- configuration, e.g., @("clang-3.8", "-O -w -g")@
-type Clang = (FilePath, String)
+type Clang = (FilePath, [String], String)
 
 data Options = Options {
     optNumTests :: Integer
@@ -54,6 +54,9 @@ data Options = Options {
     -- ^ Clangs to use with the fuzzer
   , optClangFlags :: [String]
     -- ^ Sets of argument flags to use with each clang configuration
+  , optIncludeDirs :: [String]
+    -- ^ List of include directories to pass to clang, since those
+    -- interact badly with intermediate file names
   , optJUnitXml :: Maybe FilePath
     -- ^ Write JUnit test report
   , optCsmithPath :: Maybe FilePath
@@ -80,6 +83,7 @@ defaultOptions  = Options {
   , optSaveTests    = Nothing
   , optClangs       = ["clang"]
   , optClangFlags   = ["-O -g -w"]
+  , optIncludeDirs  = []
   , optJUnitXml     = Nothing
   , optCsmithPath   = Nothing
   , optCollapse     = False
@@ -104,6 +108,8 @@ options  =
   , Option ""  ["clang-flags"] (ReqArg addClangFlags "ARGS") $
     "specify a set of flags to use with each clang " ++
     "e.g., `--clang-flags \"-O\" --clang-flags \"-O -g\"'"
+  , Option "I" ["include-dir"] (ReqArg addIncludeDir "DIRECTORY")
+    "add a directory to the include search path for clang"
   , Option ""  ["junit-xml"] (ReqArg setJUnitXml "FILEPATH")
     "output JUnit-style XML test report"
   , Option ""  ["csmith-path"] (ReqArg setCsmithPath "DIRECTORY")
@@ -157,6 +163,10 @@ addClangFlags str = Endo $ \opt ->
   then opt { optClangFlags = [str] }
   else opt { optClangFlags = str : optClangFlags opt }
 
+addIncludeDir :: String -> Endo Options
+addIncludeDir str = Endo $ \opt ->
+  opt { optIncludeDirs = str : optIncludeDirs opt }
+
 setJUnitXml :: String -> Endo Options
 setJUnitXml str = Endo (\opt -> opt { optJUnitXml = Just str })
 
@@ -208,6 +218,7 @@ printUsage errs =
 main :: IO ()
 main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   opts <- getOptions
+  let includeDirs = optIncludeDirs opts
   when (optSaveTests opts == Nothing &&
         or [optReduceDisasm opts, optReduceAs opts, optReduceExec opts]) $
     printUsage [ "--reduce options require --output to be set" ]
@@ -217,8 +228,10 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   resultMaps <-
     forM (optClangs opts) $ \clangExe ->
     forM (optClangFlags opts) $ \flags -> runParIO $ do
-      let clang = (clangExe, flags)
+      let clang = (clangExe, includeDirs, flags)
       liftIO $ putStrLn $ "[" ++ clangExe ++ " " ++ flags ++ "]"
+      forM_ includeDirs $ \dir ->
+        liftIO $ putStrLn $ "Include directory: " ++ dir
       results' <-
         case optSeeds opts of
           Nothing ->
@@ -235,7 +248,7 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   let allResults' = Map.unions (concat resultMaps)
       allResults | optCollapse opts = collapseResults allResults'
                  | otherwise        = allResults'
-  forM_ (Map.toList allResults) $ \((clangExe, flags), results) -> do
+  forM_ (Map.toList allResults) $ \((clangExe, _, flags), results) -> do
     let (_passes, fails) = partition isPass results
     when (not (null fails)) $ do
       putStrLn $ "[" ++ clangExe ++ " " ++ flags ++ "] " ++
@@ -247,7 +260,7 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
     Nothing -> return ()
     Just root -> do
       createDirectoryIfMissing False root
-      forM_ (Map.toList allResults) $ \((clangExe, flags), results) ->
+      forM_ (Map.toList allResults) $ \((clangExe, _, flags), results) ->
         when (not (null (filter isFail results))) $ do
           let clangRoot = root </> (clangExe ++ "_" ++ toUnders " " flags)
           createDirectoryIfMissing False clangRoot
@@ -266,7 +279,7 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
                 when (or [ st == DisasmStage && optReduceDisasm opts
                          , st == AsStage     && optReduceAs opts
                          , st == ExecStage   && optReduceExec opts ]) $
-                  reduce result (clangExe, flags) opts clangRoot
+                  reduce result (clangExe, includeDirs, flags) opts clangRoot
   case optJUnitXml opts of
     Nothing -> return ()
     Just f -> do
@@ -274,7 +287,7 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
       writeFile f (ppTopElement xml)
 
 reduce :: TestResult -> Clang -> Options -> FilePath -> IO ()
-reduce (TestFail st _ TestSrc{..} err) (clangExe, flags) opts clangRoot = do
+reduce (TestFail st _ TestSrc{..} err) (clangExe, includeDirs, flags) opts clangRoot = do
   csmithPath <- getCsmithPath opts
   -- copy a file for the reduction in place
   let baseName   = dropExtension srcFile
@@ -284,6 +297,7 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, flags) opts clangRoot = do
         case stripPrefix "clang-" clangExe of
           Nothing -> ""
           Just ver -> "--llvm-version=" ++ ver
+      includeOpts = concatMap (\dir -> ["-I", dir]) includeDirs
   copyFile (clangRoot </> srcFile) srcReduced
   absClangRoot <- makeAbsolute clangRoot
   let grepPat DisasmStage =
@@ -317,10 +331,10 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, flags) opts clangRoot = do
         , "set -e"
         , ""
         ]
-      buildBc = unwords [
+      buildBc = unwords $ [
           clangExe, "-I", csmithPath, flags, "-c"
         , "-emit-llvm", baseName ++ "-reduced.c", "-o", bcFile
-        ]
+        ] ++ includeOpts
       buildLl = unwords [
           "llvm-disasm", llvmVersion, bcFile, ">", llFile
         ]
@@ -417,7 +431,7 @@ isFail :: TestResult -> Bool
 isFail = not . isPass
 
 runTest :: FilePath -> Clang -> Seed -> Options -> IO TestResult
-runTest tmpDir (clangExe, flags) seed opts = X.handle return $ do
+runTest tmpDir (clangExe, includeDirs, flags) seed opts = X.handle return $ do
   let baseFile = show seed
       srcFile  = baseFile <.> "c"
       bcFile   = baseFile <.> "bc"
@@ -426,6 +440,7 @@ runTest tmpDir (clangExe, flags) seed opts = X.handle return $ do
         case stripPrefix "clang-" clangExe of
           Nothing -> ""
           Just ver -> "--llvm-version=" ++ ver
+      includeOpts = concatMap (\dir -> ["-I", dir]) includeDirs
   ---- Run csmith ----
   csmithPath <- getCsmithPath opts
   callProcess "csmith" [
@@ -440,7 +455,7 @@ runTest tmpDir (clangExe, flags) seed opts = X.handle return $ do
     , "-c", "-emit-llvm"
     , tmpDir </> srcFile
     , "-o", tmpDir </> bcFile
-    ])
+    ] ++ includeOpts)
   clangErr <- waitForProcess h
   unless (clangErr == ExitSuccess) $ X.throw $!! TestClangError seed
 
@@ -465,7 +480,7 @@ runTest tmpDir (clangExe, flags) seed opts = X.handle return $ do
         "-I" ++ csmithPath
       , tmpDir </> llFile
       , "-o", tmpDir </> "ours"
-      ]) ""
+      ] ++ includeOpts) ""
     case ec of
       ExitFailure c -> do
         putStrLn "[AS ERROR]"
@@ -483,7 +498,7 @@ runTest tmpDir (clangExe, flags) seed opts = X.handle return $ do
         "-I" ++ csmithPath
       , tmpDir </> bcFile
       , "-o", tmpDir </> "golden"
-      ])
+      ] ++ includeOpts)
     clangErr <- waitForProcess h
     unless (clangErr == ExitSuccess) $ X.throw $!! TestClangError seed
     timeout <- getTimeoutCmd
@@ -531,7 +546,7 @@ mkJUnitXml allResults = do
       testsuites = map (testsuite hostname nowFmt) (Map.toList allResults)
   return $ unode "testsuites" testsuites
   where
-    fmtClang (clangExe, flags) = toUnders ". " (clangExe ++ "_" ++ flags)
+    fmtClang (clangExe, _, flags) = toUnders ". " (clangExe ++ "_" ++ flags)
     testsuite hostname nowFmt (clang, results) =
       unode "testsuite" ([
           uattr "name"      "llvm-disasm fuzzer"
