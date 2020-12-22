@@ -27,8 +27,6 @@ jobs:
     name: llvm-quick-fuzz - ${{ matrix.llvm }}
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: true
 
       - uses: actions/setup-haskell@v1
         id: setup-haskell
@@ -38,9 +36,10 @@ jobs:
       - shell: bash
         run: brew install csmith creduce
 
-      - shell: bash
-        name: Clone llvm-pretty
-        run: git clone https://github.com/elliottt/llvm-pretty
+      - uses: actions/checkout@v2
+        with:
+          repository: elliottt/llvm-pretty
+          path: llvm-pretty
 
       - shell: bash
         name: Install LLVM
