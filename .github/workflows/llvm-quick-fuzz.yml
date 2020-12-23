@@ -37,7 +37,9 @@ jobs:
           ghc-version: ${{ matrix.ghc }}
 
       - shell: bash
-        run: brew install csmith creduce
+        run: |
+          brew install csmith creduce
+          ln -s /usr/local/opt/csmith/include/csmith-* $PWD/csmith-include
 
       - uses: actions/checkout@v2
         with:
@@ -65,4 +67,4 @@ jobs:
           cabal exec -ffuzz fuzz-llvm-disasm -- -n 50 --junit-xml results.xml -o results --collapse -I /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include --clang-flags="-O -w" --clang-flags="-O -w -g" -c clangy
           test $(grep "failures=\"0\"" results.xml | wc -l) -eq 2
         env:
-          CSMITH_PATH: "/usr/local/Cellar/csmith/2.3.0/include/csmith-2.3.0"
+          CSMITH_PATH: "csmith-include"

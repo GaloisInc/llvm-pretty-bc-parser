@@ -40,7 +40,8 @@ import Text.XML.Light (Attr(..), Element, ppTopElement, unode, unqual)
 -- Option Parsing --------------------------------------------------------------
 
 -- | The @clang@ executable and flags for a particular test
--- configuration, e.g., @("clang-3.8", "-O -w -g")@
+-- configuration, e.g., @("clang-3.8", ["/usr/local/include"],
+-- "-O -w -g")@
 type Clang = (FilePath, [String], String)
 
 data Options = Options {
