@@ -59,7 +59,7 @@ jobs:
       - shell: bash
         name: Run fuzzing
         run: |
-          cabal exec -ffuzz fuzz-llvm-disasm -- -n 5 --junit-xml results.xml -o results --collapse -I /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include --clang-flags="-O -w" --clang-flags="-O -w -g" -c clangy
+          cabal exec -ffuzz fuzz-llvm-disasm -- -n 50 --junit-xml results.xml -o results --collapse -I /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include --clang-flags="-O -w" --clang-flags="-O -w -g" -c clangy
           test $(grep "failures=\"0\"" results.xml | wc -l) -eq 2
         env:
           CSMITH_PATH: "/usr/local/Cellar/csmith/2.3.0/include/csmith-2.3.0"
