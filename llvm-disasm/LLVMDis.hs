@@ -41,7 +41,7 @@ options  =
   , Option "" ["cfg"] (NoArg setDoCFG)
     "output CFG in graphviz format"
   , Option "" ["ast"] (NoArg setAST)
-    "Output the Haskell AST instead"
+    "output the Haskell AST instead"
   , Option "h" ["help"] (NoArg setHelp)
     "display this message"
   ]
