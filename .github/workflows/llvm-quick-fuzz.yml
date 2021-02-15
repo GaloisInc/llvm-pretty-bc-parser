@@ -49,9 +49,8 @@ jobs:
       - shell: bash
         name: Install LLVM
         run: |
-          curl -L ${{ matrix.llvm }} -o llvm.tar.xz
-          tar xzf llvm.tar.xz
-          mv clang+llvm-* llvm
+          { curl -sSL ${{ matrix.llvm }} -o llvm.tar.xz && tar xzf llvm.tar.xz && mv clang+llvm-* llvm ; } || \
+          { curl -sSL ${{ matrix.llvm }} -o llvm.tar.xz && tar xzf llvm.tar.xz && mv clang+llvm-* llvm ; }
           echo "$PWD/llvm/bin" >> $GITHUB_PATH
 
       - shell: bash
