@@ -322,6 +322,8 @@ parseFunProto r pm = label "FUNCTION" $ do
 
   link    <-             field 3 linkage
 
+  vis     <-             field 7 visibility
+
   section <-
     if length (recordFields r) >= 6
        then do sid <- field 6 numeric
@@ -350,6 +352,7 @@ parseFunProto r pm = label "FUNCTION" $ do
              -- llvm-dis when linkage is External
              guard (link /= External)
              return link
+        , protoVisibility = Just vis
         , protoGC    = Nothing
         , protoSym   = name
         , protoIndex = ix

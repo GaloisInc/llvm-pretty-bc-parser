@@ -12,6 +12,7 @@ import           Data.LLVM.BitCode.IR.Blocks
 import           Data.LLVM.BitCode.IR.Constants
 import           Data.LLVM.BitCode.IR.Metadata
 import           Data.LLVM.BitCode.IR.Values
+import           Data.LLVM.BitCode.IR.Attrs
 import           Data.LLVM.BitCode.Match
 import           Data.LLVM.BitCode.Parse
 import           Data.LLVM.BitCode.Record
@@ -36,9 +37,11 @@ import qualified Data.Traversable as T
 type AliasList = Seq.Seq PartialAlias
 
 data PartialAlias = PartialAlias
-  { paName   :: Symbol
-  , paType   :: Type
-  , paTarget :: !Word32
+  { paLinkage    :: Maybe Linkage
+  , paVisibility :: Maybe Visibility
+  , paName       :: Symbol
+  , paType       :: Type
+  , paTarget     :: !Word32
   } deriving Show
 
 parseAliasOld :: Int -> Record -> Parse PartialAlias
@@ -48,11 +51,15 @@ parseAliasOld n r = do
       name = Symbol sym
   ty  <- getType   =<< field 0 numeric
   tgt <-               field 1 numeric
+  lnk <-               field 2 linkage
+  vis <-               field 3 visibility
   _   <- pushValue (Typed ty (ValSymbol name))
   return PartialAlias
-    { paName   = name
-    , paType   = ty
-    , paTarget = tgt
+    { paLinkage    = Just lnk
+    , paVisibility = Just vis
+    , paName       = name
+    , paType       = ty
+    , paTarget     = tgt
     }
 
 parseAlias :: Record -> Parse PartialAlias
@@ -63,16 +70,20 @@ parseAlias r = do
   ty       <- getType =<< field 0 numeric
   _addrSp  <-             field 1 unsigned
   tgt      <-             field 2 numeric
-  _linkage <-             field 3 unsigned
+  lnk      <-             field 3 linkage
+  vis      <-             field 4 visibility
+
 
   -- XXX: is it the case that the alias type will always be a pointer to the
   -- aliasee?
   _   <- pushValue (Typed (PtrTo ty) (ValSymbol name))
 
   return PartialAlias
-    { paName   = name
-    , paType   = ty
-    , paTarget = tgt
+    { paLinkage    = Just lnk
+    , paVisibility = Just vis
+    , paName       = name
+    , paType       = ty
+    , paTarget     = tgt
     }
 
 finalizePartialAlias :: PartialAlias -> Parse GlobalAlias
@@ -81,9 +92,11 @@ finalizePartialAlias pa = label "finalizePartialAlias" $ do
   tv  <- getFnValueById (paType pa) (fromIntegral (paTarget pa))
   tgt <- liftFinalize $ relabel (const requireBbEntryName) (typedValue tv)
   return GlobalAlias
-    { aliasName   = paName pa
-    , aliasType   = paType pa
-    , aliasTarget = tgt
+    { aliasLinkage    = paLinkage pa
+    , aliasVisibility = paVisibility pa
+    , aliasName       = paName pa
+    , aliasType       = paType pa
+    , aliasTarget     = tgt
     }
 
 
@@ -95,12 +108,14 @@ type DeclareList = Seq.Seq FunProto
 finalizeDeclare :: FunProto -> Parse Declare
 finalizeDeclare fp = case protoType fp of
   PtrTo (FunTy ret args va) -> return Declare
-    { decRetType = ret
-    , decName    = protoSym fp
-    , decArgs    = args
-    , decVarArgs = va
-    , decAttrs   = []
-    , decComdat  = protoComdat fp
+    { decLinkage    = protoLinkage fp
+    , decVisibility = protoVisibility fp
+    , decRetType    = ret
+    , decName       = protoSym fp
+    , decArgs       = args
+    , decVarArgs    = va
+    , decAttrs      = []
+    , decComdat     = protoComdat fp
     }
   _ -> fail "invalid type on function prototype"
 
@@ -112,21 +127,22 @@ type DefineList = Seq.Seq PartialDefine
 -- | A define with a list of statements for a body, instead of a list of basic
 -- bocks.
 data PartialDefine = PartialDefine
-  { partialLinkage  :: Maybe Linkage
-  , partialGC       :: Maybe GC
-  , partialSection  :: Maybe String
-  , partialRetType  :: Type
-  , partialName     :: Symbol
-  , partialArgs     :: [Typed Ident]
-  , partialVarArgs  :: Bool
-  , partialBody     :: BlockList
-  , partialBlock    :: StmtList
-  , partialBlockId  :: !Int
-  , partialSymtab   :: ValueSymtab
-  , partialMetadata :: Map.Map PKindMd PValMd
-  , partialGlobalMd :: [PartialUnnamedMd]
-  , partialComdatName   :: Maybe String
-  } deriving (Show)
+  { partialLinkage    :: Maybe Linkage
+  , partialVisibility :: Maybe Visibility
+  , partialGC         :: Maybe GC
+  , partialSection    :: Maybe String
+  , partialRetType    :: Type
+  , partialName       :: Symbol
+  , partialArgs       :: [Typed Ident]
+  , partialVarArgs    :: Bool
+  , partialBody       :: BlockList
+  , partialBlock      :: StmtList
+  , partialBlockId    :: !Int
+  , partialSymtab     :: ValueSymtab
+  , partialMetadata   :: Map.Map PKindMd PValMd
+  , partialGlobalMd   :: [PartialUnnamedMd]
+  , partialComdatName :: Maybe String
+  } deriving Show
 
 -- | Generate a partial function definition from a function prototype.
 emptyPartialDefine :: FunProto -> Parse PartialDefine
@@ -138,20 +154,21 @@ emptyPartialDefine proto = do
   symtab <- initialPartialSymtab
 
   return PartialDefine
-    { partialLinkage  = protoLinkage proto
-    , partialGC       = protoGC proto
-    , partialSection  = protoSect proto
-    , partialRetType  = rty
-    , partialName     = protoSym proto
-    , partialArgs     = zipWith Typed tys names
-    , partialVarArgs  = va
-    , partialBody     = Seq.empty
-    , partialBlock    = Seq.empty
-    , partialBlockId  = 0
-    , partialSymtab   = symtab
-    , partialMetadata = Map.empty
-    , partialGlobalMd = []
-    , partialComdatName   = protoComdat proto
+    { partialLinkage    = protoLinkage proto
+    , partialVisibility = protoVisibility proto
+    , partialGC         = protoGC proto
+    , partialSection    = protoSect proto
+    , partialRetType    = rty
+    , partialName       = protoSym proto
+    , partialArgs       = zipWith Typed tys names
+    , partialVarArgs    = va
+    , partialBody       = Seq.empty
+    , partialBlock      = Seq.empty
+    , partialBlockId    = 0
+    , partialSymtab     = symtab
+    , partialMetadata   = Map.empty
+    , partialGlobalMd   = []
+    , partialComdatName = protoComdat proto
     }
 
 -- | Set the statement list in a partial define.
@@ -212,17 +229,18 @@ finalizePartialDefine lkp pd =
     body <- liftFinalize $ finalizeBody lkp (partialBody pd)
     md <- finalizeMetadata (partialMetadata pd)
     return Define
-      { defLinkage  = partialLinkage pd
-      , defGC       = partialGC pd
-      , defAttrs    = []
-      , defRetType  = partialRetType pd
-      , defName     = partialName pd
-      , defArgs     = partialArgs pd
-      , defVarArgs  = partialVarArgs pd
-      , defBody     = body
-      , defSection  = partialSection pd
-      , defMetadata = md
-      , defComdat   = partialComdatName pd
+      { defLinkage    = partialLinkage pd
+      , defVisibility = partialVisibility pd
+      , defGC         = partialGC pd
+      , defAttrs      = []
+      , defRetType    = partialRetType pd
+      , defName       = partialName pd
+      , defArgs       = partialArgs pd
+      , defVarArgs    = partialVarArgs pd
+      , defBody       = body
+      , defSection    = partialSection pd
+      , defMetadata   = md
+      , defComdat     = partialComdatName pd
       }
 
 finalizeMetadata :: PFnMdAttachments -> Parse FnMdAttachments
