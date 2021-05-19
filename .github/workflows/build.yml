@@ -36,11 +36,6 @@ jobs:
           key: cabal-${{ runner.os }}-${{ matrix.ghc }}-${{ github.sha }}
           restore-keys: cabal-${{ runner.os }}-${{ matrix.ghc }}-
 
-      - uses: actions/checkout@v2
-        with:
-          repository: elliottt/llvm-pretty
-          path: llvm-pretty
-
       - name: Build
         run: cabal build --enable-tests
 
