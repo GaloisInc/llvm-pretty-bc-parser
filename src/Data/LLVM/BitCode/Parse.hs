@@ -446,14 +446,15 @@ setMdRefs refs = Parse $ do
 -- Function Prototypes ---------------------------------------------------------
 
 data FunProto = FunProto
-  { protoType  :: Type
-  , protoLinkage :: Maybe Linkage
-  , protoGC    :: Maybe GC
-  , protoSym   :: Symbol
-  , protoIndex :: Int
-  , protoSect  :: Maybe String
-  , protoComdat :: Maybe String
-  } deriving (Show)
+  { protoType       :: Type
+  , protoLinkage    :: Maybe Linkage
+  , protoVisibility :: Maybe Visibility
+  , protoGC         :: Maybe GC
+  , protoSym        :: Symbol
+  , protoIndex      :: Int
+  , protoSect       :: Maybe String
+  , protoComdat     :: Maybe String
+  } deriving Show
 
 -- | Push a function prototype on to the prototype stack.
 pushFunProto :: FunProto -> Parse ()
