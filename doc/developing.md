@@ -5,6 +5,7 @@
 
 - [Developers' documentation](#developers-documentation)
     - [Upstream documentation](#upstream-documentation)
+    - [Building](#building)
     - [Running the tests](#running-the-tests)
         - [`llvm-disasm-test`](#llvm-disasm-test)
             - [description](#description)
@@ -33,6 +34,15 @@ C++ implementation:
      - [Release 4.0](https://github.com/llvm-mirror/llvm/blob/release_40/include/llvm/Bitcode/LLVMBitCodes.h)
      - [Release 5.0](https://github.com/llvm-mirror/llvm/blob/release_50/include/llvm/Bitcode/LLVMBitCodes.h)
      - [Release 6.0](https://github.com/llvm-mirror/llvm/blob/release_60/include/llvm/Bitcode/LLVMBitCodes.h)
+
+## Building
+
+Make sure you have cloned the `llvm-pretty` submodule before building:
+
+```bash
+$ git submodule update --init
+$ cabal build
+```
 
 ## Running the tests
 
@@ -82,29 +92,3 @@ See [the README in that directory](../fuzzing/README.md).
 ### `unit-test`
 
 These are run with `cabal test` or `cabal new-test`.
-
-## Travis CI build
-
-**Note**: the CI build doesn't run the full test suite, just some regression
-tests and the unit tests.
-
-The `.travis.yml` file is generated using
-[haskell-ci](https://github.com/haskell-CI/haskell-ci). However, we add the 
-following:
-```yml
-  - git clone https://github.com/elliottt/llvm-pretty llvm-pretty
-  - "printf 'packages: \".\" llvm-pretty/\\n' > cabal.project"
-```
-and:
-```yml
-  - git clone https://github.com/elliottt/llvm-pretty llvm-pretty
-  - "printf 'packages: llvm-pretty-bc-parser-*/*.cabal llvm-pretty/*.cabal\\n' > cabal.project"
-```
-so that it picks up the latest `llvm-pretty`.
-
-
-When Cabal [supports fetching tarballs](https://github.com/haskell/cabal/issues/2189), 
-we can use the following so that it fetches the latest `llvm-pretty` from Github.
-```yml
-  - "printf 'packages: llvm-pretty-bc-parser-*/*.cabal https://github.com/elliottt/llvm-pretty/archive/master.tar.gz \\n' > cabal.project"
-```
