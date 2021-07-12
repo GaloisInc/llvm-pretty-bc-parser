@@ -116,7 +116,8 @@ fcmpOp  = choose <=< numeric
   choose 13 = return Fule
   choose 14 = return Fune
   choose 15 = return Ftrue
-  choose _  = mzero
+  choose _ = return Ftrue
+  -- choose _  = mzero
 
 icmpOp :: Match Field ICmpOp
 icmpOp  = choose <=< numeric
