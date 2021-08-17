@@ -21,6 +21,7 @@ module Data.LLVM.BitCode.IR.Metadata (
   ) where
 
 import           Data.LLVM.BitCode.Bitstream
+import           Data.LLVM.BitCode.IR.Constants
 import           Data.LLVM.BitCode.Match
 import           Data.LLVM.BitCode.Parse
 import           Data.LLVM.BitCode.Record
@@ -523,11 +524,17 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
     -- [distinct, value, name]
     14 -> label "METADATA_ENUMERATOR" $ do
-      assertRecordSizeIn [3]
+      assertRecordSizeIn [3, 4]
       ctx        <- getContext
-      isDistinct <- parseField r 0 nonzero
+      flags      <- parseField r 0 unsigned
+      let isDistinct = testBit flags 0
+          isUnsigned = testBit flags 1
+          isBigInt = testBit flags 2
+      value      <- if isBigInt
+                    then parseWideIntegerAt r 3
+                    else fromIntegral <$> parseField r 1 (if isUnsigned then numeric else signedInt64)
       diEnum     <- flip DebugInfoEnumerator
-        <$> parseField r 1 signedInt64                   -- value
+        <$> pure value -- value
         <*> (mdString ctx pm <$> parseField r 2 numeric) -- name
       return $! updateMetadataTable (addDebugInfo isDistinct diEnum) pm
 

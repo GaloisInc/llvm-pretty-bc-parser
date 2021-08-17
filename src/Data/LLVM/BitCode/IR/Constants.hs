@@ -160,6 +160,9 @@ castOpCE = castOpGeneric op
   where
   op c = return (\ tv t -> ValConstExpr (ConstConv c tv t))
 
+unop :: Match Field (Maybe Int -> Typed PValue -> PInstr)
+unop = undefined
+
 -- Constants Block -------------------------------------------------------------
 
 type ConstantTable = Map.Map Int (Typed Value)
@@ -458,8 +461,11 @@ parseCeGep isInbounds mInrangeIdx t r = do
   return $! ValConstExpr (ConstGEP isInbounds mInrangeIdx mPointeeType args)
 
 parseWideInteger :: Record -> Parse Integer
-parseWideInteger r = do
-  limbs <- parseFields r 0 signedWord64
+parseWideInteger r = parseWideIntegerAt r 0
+
+parseWideIntegerAt :: Record -> Int -> Parse Integer
+parseWideIntegerAt r i = do
+  limbs <- parseFields r i signedWord64
   return (foldr (\l acc -> acc `shiftL` 64 + (toInteger l)) 0 limbs)
 
 resolveNull :: Type -> Parse PValue

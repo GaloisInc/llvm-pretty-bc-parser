@@ -975,6 +975,24 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   55 -> label "FUNC_CODE_OPERAND_BUNDLE" $ do
     notImplemented
 
+  -- UNOP: [opval, ty, opcode]
+  56 -> label "FUNC_CODE_INST_UNOP" $ do
+    let field = parseField r
+    (lhs,ix) <- getValueTypePair t r 0
+    mkInstr  <- field (ix + 1) unop
+    -- If there's an extra field on the end of the record, it's for
+    -- designating the value of the fast math flag. The constructor
+    -- returned from unop will use that value when constructing the
+    -- unop.
+    let mbWord = numeric =<< fieldAt (ix + 2) r
+    result (typedType lhs) (mkInstr mbWord lhs) d
+
+  57 -> label "FUNC_CODE_INST_CALLBR" $ do
+    notImplemented
+
+  58 -> label "FUNC_CODE_INST_FREEZE" $ do
+    notImplemented
+
   -- [opty,opval,opval,pred]
   code
    |  code == 9
