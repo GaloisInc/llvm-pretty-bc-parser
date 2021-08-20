@@ -134,6 +134,23 @@ icmpOp  = choose <=< numeric
   choose 41 = return Isle
   choose _  = mzero
 
+unopGeneric :: forall a.
+               (UnaryArithOp -> Typed PValue -> a)
+            -> Match Field (Typed PValue -> a)
+unopGeneric uaop = choose <=< numeric
+  where
+  choose :: Match Int (Typed PValue -> a)
+  choose 0 = return (uaop FNeg)
+  choose _ = mzero
+
+unop :: Match Field (Typed PValue -> PInstr)
+unop = unopGeneric UnaryArith
+
+unopCE :: Match Field (Typed PValue -> PValue)
+unopCE = unopGeneric uaop
+  where
+  uaop op tv = ValConstExpr (ConstUnaryArith op tv)
+
 castOpGeneric :: forall c. (ConvOp -> Maybe c) -> Match Field c
 castOpGeneric op = choose <=< numeric
   where
@@ -428,6 +445,15 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     v <- parseCeGep inBounds (Just inRangeIndex) t r
     return (getTy,Typed ty v:cs)
 
+  -- [opcode, opval]
+  25 -> label "CST_CODE_CE_UNOP" $ do
+    let field = parseField r
+    ty      <- getTy
+    mkInstr <- field 0 unopCE
+    opval   <- field 1 numeric
+    cxt     <- getContext
+    let v = forwardRef cxt opval t
+    return (getTy, Typed ty (mkInstr v) : cs)
 
 
   code -> Assert.unknownEntity "constant record code" code

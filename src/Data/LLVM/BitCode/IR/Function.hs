@@ -975,6 +975,14 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   55 -> label "FUNC_CODE_OPERAND_BUNDLE" $ do
     notImplemented
 
+  -- [opval,ty,opcode]
+  56 -> label "FUNC_CODE_INST_UNOP" $ do
+    let field = parseField r
+    (v,ix)  <- getValueTypePair t r 0
+    mkInstr <- field ix unop
+    result (typedType v) (mkInstr v) d
+
+
   -- [opty,opval,opval,pred]
   code
    |  code == 9
