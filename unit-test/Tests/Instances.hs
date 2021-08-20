@@ -36,6 +36,7 @@ instance Arbitrary Linkage                                            where arbi
 instance Arbitrary Visibility                                         where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (Typed lab)                       where arbitrary = genericArbitrary uniform
 instance Arbitrary ArithOp                                            where arbitrary = genericArbitrary uniform
+instance Arbitrary UnaryArithOp                                       where arbitrary = genericArbitrary uniform
 instance Arbitrary BitOp                                              where arbitrary = genericArbitrary uniform
 instance Arbitrary ConvOp                                             where arbitrary = genericArbitrary uniform
 instance Arbitrary AtomicRWOp                                         where arbitrary = genericArbitrary uniform
