@@ -982,6 +982,16 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     mkInstr <- field ix unop
     result (typedType v) (mkInstr v) d
 
+  -- [attr, cc, norm, transfs,
+  --  fnty, fnid, args...]
+  57 -> label "FUNC_CODE_INST_CALLBR" $ do
+    notImplemented
+
+  -- [opty, opval]
+  58 -> label "FUNC_CODE_INST_FREEZE" $ do
+    (v,_) <- getValueTypePair t r 0
+    result (typedType v) (Freeze v) d
+
 
   -- [opty,opval,opval,pred]
   code
