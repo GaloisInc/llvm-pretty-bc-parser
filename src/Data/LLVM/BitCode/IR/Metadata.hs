@@ -594,7 +594,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoDerivedType didt)) pm
 
     18 -> label "METADATA_COMPOSITE_TYPE" $ do
-      assertRecordSizeBetween 16 18
+      assertRecordSizeBetween 16 21
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       dict       <- DICompositeType
@@ -619,6 +619,15 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> (if length (recordFields r) <= 17
              then pure Nothing
              else mdForwardRefOrNull ctx mt <$> parseField r 17 numeric) -- dictDataLocation
+        <*> (if length (recordFields r) <= 18
+             then pure Nothing
+             else mdForwardRefOrNull ctx mt <$> parseField r 18 numeric) -- dictAssociated
+        <*> (if length (recordFields r) <= 19
+             then pure Nothing
+             else mdForwardRefOrNull ctx mt <$> parseField r 19 numeric) -- dictAllocated
+        <*> (if length (recordFields r) <= 20
+             then pure Nothing
+             else mdForwardRefOrNull ctx mt <$> parseField r 20 numeric) -- dictRank
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoCompositeType dict)) pm
 
