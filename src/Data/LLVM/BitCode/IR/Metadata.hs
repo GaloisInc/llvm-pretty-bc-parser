@@ -21,6 +21,7 @@ module Data.LLVM.BitCode.IR.Metadata (
   ) where
 
 import           Data.LLVM.BitCode.Bitstream
+import           Data.LLVM.BitCode.IR.Constants
 import           Data.LLVM.BitCode.Match
 import           Data.LLVM.BitCode.Parse
 import           Data.LLVM.BitCode.Record
@@ -412,6 +413,13 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
              fail $ unlines $ [ "Invalid record size: " ++ show len
                               , "Expected one of: " ++ show ns
                               ] ++ msg
+
+      assertRecordSizeAtLeast lb =
+        let len = length (recordFields r)
+        in when (len < lb) $
+             fail $ unlines $ [ "Invalid record size: " ++ show len
+                              , "Expected size of " ++ show lb ++ " or greater"
+                              ] ++ msg
   in case recordCode r of
     -- [values]
     1 -> label "METADATA_STRING" $ do
@@ -521,14 +529,22 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoSubrange diNode)) pm
 
-    -- [distinct, value, name]
+    -- [isBigInt|isUnsigned|distinct, value, name]
     14 -> label "METADATA_ENUMERATOR" $ do
-      assertRecordSizeIn [3]
-      ctx        <- getContext
-      isDistinct <- parseField r 0 nonzero
-      diEnum     <- flip DebugInfoEnumerator
-        <$> parseField r 1 signedInt64                   -- value
-        <*> (mdString ctx pm <$> parseField r 2 numeric) -- name
+      assertRecordSizeAtLeast 3
+      ctx   <- getContext
+      flags <- parseField r 0 numeric
+      let isDistinct = testBit (flags :: Int) 0
+          isUnsigned = testBit (flags :: Int) 1
+          isBigInt   = testBit (flags :: Int) 2
+      name  <- mdString ctx pm <$> parseField r 2 numeric
+      value <-
+        if isBigInt
+          -- LLVM 12 or later
+          then parseWideInteger r 3
+          -- Pre-LLVM 12
+          else toInteger <$> parseField r 1 signedInt64
+      let diEnum = DebugInfoEnumerator name value isUnsigned
       return $! updateMetadataTable (addDebugInfo isDistinct diEnum) pm
 
     15 -> label "METADATA_BASIC_TYPE" $ do

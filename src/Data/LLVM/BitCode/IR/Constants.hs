@@ -234,7 +234,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   -- [n x value]
   5 -> label "CST_CODE_WIDE_INTEGER" $ do
     ty <- getTy
-    n  <- parseWideInteger r
+    n  <- parseWideInteger r 0
     return (getTy, Typed ty (ValInteger n):cs)
 
   -- [fpval]
@@ -483,9 +483,9 @@ parseCeGep isInbounds mInrangeIdx t r = do
   args <- loop firstIdx
   return $! ValConstExpr (ConstGEP isInbounds mInrangeIdx mPointeeType args)
 
-parseWideInteger :: Record -> Parse Integer
-parseWideInteger r = do
-  limbs <- parseFields r 0 signedWord64
+parseWideInteger :: Record -> Int -> Parse Integer
+parseWideInteger r idx = do
+  limbs <- parseSlice r idx (length (recordFields r) - idx) signedWord64
   return (foldr (\l acc -> acc `shiftL` 64 + (toInteger l)) 0 limbs)
 
 resolveNull :: Type -> Parse PValue
