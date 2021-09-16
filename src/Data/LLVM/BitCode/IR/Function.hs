@@ -21,10 +21,9 @@ import           Text.LLVM.AST
 import           Text.LLVM.Labels
 import           Text.LLVM.PP
 
-import           Control.Monad (when,unless,mplus,mzero,foldM,(<=<),msum)
+import           Control.Monad (when,unless,mplus,mzero,foldM,(<=<))
 import           Data.Bits (shiftR,bit,shiftL,testBit,(.&.),(.|.),complement,Bits)
 import           Data.Int (Int32)
-import           Data.Maybe (isJust)
 import           Data.Word (Word32)
 import qualified Data.Foldable as F
 import qualified Data.IntMap as IntMap
@@ -386,9 +385,20 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (lhs,ix) <- getValueTypePair t r 0
     rhs      <- getValue t (typedType lhs) =<< field ix numeric
     mkInstr  <- field (ix + 1) binop
-    -- if there's an extra field on the end of the record, it's for designating
-    -- the value of the nuw and nsw flags.  the constructor returned from binop
-    -- will use that value when constructing the binop.
+    -- If there's an extra field on the end of the record, it's for one of the
+    -- following:
+    --
+    -- - If the instruction is add, sub, mul, or shl, the extra field
+    --   designates the value of the nuw and nsw flags.
+    --
+    -- - If the instruction is sdiv, udiv, lshr, or ashr, the extra field
+    --   designates the value of the exact flag.
+    --
+    -- - If the instruction is floating-point, the extra field designates the
+    --   value of the fast-math flags. We currently ignore these.
+    --
+    -- The constructor returned from binop will use that value when
+    -- constructing the binop.
     let mbWord = numeric =<< fieldAt (ix + 2) r
     result (typedType lhs) (mkInstr mbWord lhs (typedValue rhs)) d
 
@@ -550,6 +560,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     -- cause a loop.
     useRelIds <- getRelIds
     args      <- parsePhiArgs useRelIds t r
+    -- XXX: we're ignoring the fast-math flags
     result ty (Phi ty args) d
 
   -- 17 is unused
@@ -658,6 +669,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (tv,ix) <- getValueTypePair t r 0
     fv      <- getValue t (typedType tv) =<< field ix numeric
     (c,_)   <- getValueTypePair t r (ix+1)
+    -- XXX: we're ignoring the fast-math flags
     result (typedType tv) (Select c tv (typedValue fv)) d
 
   30 -> label "FUNC_CODE_INST_INBOUNDS_GEP_OLD" (parseGEP t (Just True) r d)
@@ -682,7 +694,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
     -- pal <- field 0 numeric -- N.B. skipping param attributes
     ccinfo <- field 1 numeric
-    let ix0 = if testBit ccinfo 17 then 3 else 2 -- N.B. skipping fast math flags
+    let ix0 = if testBit ccinfo 17 then 3 else 2 -- N.B. skipping fast-math flags
     (mbFnTy, ix1) <- if testBit (ccinfo :: Word32) 15
                        then do fnTy <- getType =<< field ix0 numeric
                                return (Just fnTy, ix0+1)
@@ -980,6 +992,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     let field = parseField r
     (v,ix)  <- getValueTypePair t r 0
     mkInstr <- field ix unop
+    -- XXX: we're ignoring the fast-math flags
     result (typedType v) (mkInstr v) d
 
   -- [attr, cc, norm, transfs,
@@ -998,26 +1011,11 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
    |  code == 9
    || code == 28 -> label "FUNC_CODE_INST_CMP2" $ do
     let field = parseField r
-    (lhs,ix0) <- getValueTypePair t r 0
-                `mplus` (do i   <- adjustId =<< field 0 numeric
-                            cxt <- getContext
-                            return (forwardRef cxt i t, 1))
-
-    _predval  <- field ix0 unsigned
-    let isfp = isJust $ msum [ do pty <- elimPrimType (typedType lhs)
-                                  _   <- elimFloatType pty
-                                  return ()
-
-                             , do (_,vty) <- elimVector (typedType lhs)
-                                  pty     <- elimPrimType vty
-                                  _       <- elimFloatType pty
-                                  return () ]
-
-    -- XXX: we're ignoring the fast math flags
-    let ix1 | isfp && length (recordFields r) > 3 = ix0 + 1
-            | otherwise                           = ix0
-
-    rhs <- getValue t (typedType lhs) =<< field ix1 numeric
+    (lhs,ix) <- getValueTypePair t r 0
+               `mplus` (do i   <- adjustId =<< field 0 numeric
+                           cxt <- getContext
+                           return (forwardRef cxt i t, 1))
+    rhs <- getValue t (typedType lhs) =<< field ix numeric
 
     let ty = typedType lhs
         parseOp | isPrimTypeOf isFloatingPoint ty ||
@@ -1027,7 +1025,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
                 | otherwise =
                   return . ICmp <=< icmpOp
 
-    op <- field (ix1 + 1) parseOp
+    op <- field (ix + 1) parseOp
+    -- XXX: we're ignoring the fast-math flags
 
     let boolTy = Integer 1
     let rty = case ty of
