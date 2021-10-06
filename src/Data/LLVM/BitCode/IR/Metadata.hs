@@ -864,24 +864,34 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoNameSpace dins)) pm
 
     25 -> label "METADATA_TEMPLATE_TYPE" $ do
-      assertRecordSizeIn [3]
+      assertRecordSizeIn [3, 4]
+      let recordLength = length (recordFields r)
+      let hasIsDefault | recordLength == 3 = False
+                       | recordLength == 4 = True
+                       | otherwise = error "Impossible (METADATA_TEMPLATE_TYPE)" -- see assertion
       cxt <- getContext
       isDistinct <- parseField r 0 nonzero
       dittp <- DITemplateTypeParameter
         <$> (mdStringOrNull cxt pm   <$> parseField r 1 numeric) -- dittpName
         <*> (mdForwardRefOrNull cxt mt  <$> parseField r 2 numeric) -- dittpType
+        <*> (if hasIsDefault then Just <$> parseField r 3 boolean else pure Nothing) -- dittpIsDefault
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoTemplateTypeParameter dittp)) pm
 
     26 -> label "METADATA_TEMPLATE_VALUE" $ do
-      assertRecordSizeIn [5]
+      assertRecordSizeIn [5, 6]
+      let recordLength = length (recordFields r)
+      let hasIsDefault | recordLength == 5 = False
+                       | recordLength == 6 = True
+                       | otherwise = error "Impossible (METADATA_TEMPLATE_TYPE)" -- see assertion
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
       ditvp      <- DITemplateValueParameter
         <$> (                           parseField r 1 numeric) -- ditvpTag
         <*> (mdStringOrNull cxt pm  <$> parseField r 2 numeric) -- ditvpName
         <*> (mdForwardRefOrNull cxt mt <$> parseField r 3 numeric) -- ditvpName
-        <*> (mdForwardRef cxt mt    <$> parseField r 4 numeric) -- ditvpValue
+        <*> (if hasIsDefault then Just <$> parseField r 4 boolean else pure Nothing) -- ditvpIsDefault
+        <*> (mdForwardRef cxt mt <$> parseField r (if hasIsDefault then 5 else 4) numeric) -- ditvpValue
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoTemplateValueParameter ditvp)) pm
 
