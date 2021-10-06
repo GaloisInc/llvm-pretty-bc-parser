@@ -99,18 +99,27 @@ splitWord n l w = case compare n l of
   EQ -> (toBitString n (fromIntegral w), Right Aligned)
   GT -> (toBitString l (fromIntegral w), Left (n - l))
 
--- | Get a @BitString@, yielding a new partial word.
-getBitString :: Int -> C.Get (BitString,SubWord)
-getBitString 0 = return (mempty,Aligned)
+-- | @getBitString n@ grabs a @BitString@ of length @n@ from the next incoming
+-- word, yielding the remainder partial word.  On @n@ = @0@, it does not
+-- actually consume the next word.  Should not be called to read more than one
+-- 32-bit word at a time (will fail on @n@ > 32).
+getBitString :: Int -> C.Get (BitString, SubWord)
+getBitString 0 = return (mempty, Aligned)
+getBitString n | n > 32 =
+  fail $ "getBitString: refusing to read " ++ show n ++ " (> 32) bits."
 getBitString n = getBitStringPartial n 32 =<< C.getWord32le
 
--- | A combination of @splitWord@ and @getBitString@ that takes an initial
--- partial word as input.
-getBitStringPartial :: Int -> Int -> Word32 -> C.Get (BitString,SubWord)
+-- | @getBitStringPartial n l w@ returns a @BitString@ of length @n@ from either
+-- the current subword @w@ (with @l@ bits available), potentially also reading
+-- the next incoming word if @n@ > @l@.  Should not be called to read more than
+-- one 32-bit word at a time (will fail on @n@ > 32).
+getBitStringPartial :: Int -> Int -> Word32 -> C.Get (BitString, SubWord)
+getBitStringPartial n _ _ | n > 32 =
+  fail $ "getBitStringPartial: refusing to read " ++ show n ++ " (> 32) bits."
 getBitStringPartial n l w = case splitWord n l w of
-  (bs,Right off) -> return (bs, off)
-  (bs,Left n')   -> do
-    (rest,off) <- getBitString n'
+  (bs, Right off) -> return (bs, off)
+  (bs, Left n') -> do
+    (rest, off) <- getBitString n'
     return (bs `mappend` rest, off)
 
 -- | Skip a byte of input, which must be zero.
