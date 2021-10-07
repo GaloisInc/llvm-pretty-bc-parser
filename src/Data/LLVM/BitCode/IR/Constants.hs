@@ -14,14 +14,13 @@ import           Data.LLVM.BitCode.Record
 import           Text.LLVM.AST
 
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
-import           Control.Monad (mplus,mzero,foldM,(<=<))
+import           Control.Monad (mplus,mzero,foldM,(<=<), when)
 import           Control.Monad.ST (runST,ST)
 import           Data.Array.ST (newArray,readArray,MArray,STUArray)
 import           Data.Bits (shiftL,shiftR,testBit, Bits)
 import qualified Data.LLVM.BitCode.BitString as BitS
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, isJust)
-import           Data.Semigroup ( (<>) )
 import           Data.Word (Word16, Word32,Word64)
 
 #if __GLASGOW_HASKELL__ >= 704
@@ -384,14 +383,15 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
 
   -- [funty,fnval,bb#]
   21 -> label "CST_CODE_BLOCKADDRESS" $ do
+    when (length (recordFields r) < 3) $
+      fail "Invalid BLOCKADDRESS record (length < 3)"
     let field = parseField r
     ty  <- getTy
-    val <- getValue t ty =<< field 1 numeric
-    bid <-                 field 2 numeric
-    sym <- elimValSymbol (typedValue val)
-        `mplus` fail "invalid function symbol in BLOCKADDRESS record"
-    let ce = ConstBlockAddr sym bid
-    return (getTy, Typed ty (ValConstExpr ce):cs)
+    ctx <- getContext
+    valref <- field 1 numeric
+    bid <- field 2 numeric
+    let ce = ConstBlockAddr (forwardRef ctx valref t) bid
+    return (getTy, Typed ty (ValConstExpr ce) : cs)
 
   -- [n x elements]
   22 -> label "CST_CODE_DATA" $ do
