@@ -560,7 +560,10 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     -- cause a loop.
     useRelIds <- getRelIds
     args      <- parsePhiArgs useRelIds t r
-    -- XXX: we're ignoring the fast-math flags
+
+    when (even (length (recordFields r))) $ do
+      pure () -- TODO: fast math flags
+
     result ty (Phi ty args) d
 
   -- 17 is unused
@@ -1168,11 +1171,10 @@ parsePhiArgs relIds t r = loop 1
     return (typedValue val,bid)
 
   loop n
-    | n >= len  = return []
-    | otherwise = do
-      entry <- parse n
-      rest  <- loop (n+2)
-      return (entry:rest)
+    -- We must stop when @n@ is either equal to @len@, or to @len - 1@ in the
+    -- presence of fast math flags.
+    | len - n < 2 = return []
+    | otherwise   = (:) <$> parse n <*> loop (n + 2)
 
 -- | Parse the arguments for a call record.
 parseCallArgs :: ValueTable -> Bool -> Record -> Int -> [Type] -> Parse [Typed PValue]
