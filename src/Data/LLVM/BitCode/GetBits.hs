@@ -13,12 +13,11 @@ module Data.LLVM.BitCode.GetBits (
 
 import Data.LLVM.BitCode.BitString
 
-import Control.Applicative (Applicative(..),Alternative(..),(<$>))
+import Control.Applicative (Alternative(..))
 import Control.Arrow (first)
 import Control.Monad (MonadPlus(..),when,replicateM_)
 import Data.Bits (shiftR)
 import Data.ByteString (ByteString)
-import Data.Monoid (mempty,mappend)
 import Data.Word (Word32)
 import qualified Data.Serialize as C
 
@@ -34,7 +33,7 @@ newtype GetBits a = GetBits { unGetBits :: SubWord -> C.Get (a,SubWord) }
 -- | Run a @GetBits@ action, returning its value, and the number of bits offset
 -- into the next byte of the stream.
 runGetBits :: GetBits a -> C.Get a
-runGetBits m = fst `fmap` unGetBits m Aligned
+runGetBits m = fst `fmap` unGetBits m aligned
 
 instance Functor GetBits where
   {-# INLINE fmap #-}
@@ -90,33 +89,34 @@ instance MonadPlus GetBits where
 -- files get padded to a 32-bit boundary.
 data SubWord
   = SubWord !Int !Word32
-  | Aligned
     deriving (Show)
 
-splitWord :: Int -> Int -> Word32 -> (BitString,Either Int SubWord)
-splitWord n l w = case compare n l of
-  LT -> (toBitString n (fromIntegral w), Right (SubWord (l - n) (w `shiftR` n)))
-  EQ -> (toBitString n (fromIntegral w), Right Aligned)
-  GT -> (toBitString l (fromIntegral w), Left (n - l))
+aligned :: SubWord
+aligned = SubWord 0 0
+
+splitWord :: Int -> SubWord -> (BitString, Either Int SubWord)
+splitWord n (SubWord l w)
+  | n <= l    = (toBitString n (fromIntegral w), Right (SubWord (l - n) (w `shiftR` n)))
+  | otherwise = (toBitString l (fromIntegral w), Left (n - l))
 
 -- | @getBitString n@ grabs a @BitString@ of length @n@ from the next incoming
 -- word, yielding the remainder partial word.  On @n@ = @0@, it does not
 -- actually consume the next word.  Should not be called to read more than one
 -- 32-bit word at a time (will fail on @n@ > 32).
 getBitString :: Int -> C.Get (BitString, SubWord)
-getBitString 0 = return (mempty, Aligned)
+getBitString 0 = return (mempty, aligned)
 getBitString n | n > 32 =
   fail $ "getBitString: refusing to read " ++ show n ++ " (> 32) bits."
-getBitString n = getBitStringPartial n 32 =<< C.getWord32le
+getBitString n = getBitStringPartial n . SubWord 32 =<< C.getWord32le
 
--- | @getBitStringPartial n l w@ returns a @BitString@ of length @n@ from either
--- the current subword @w@ (with @l@ bits available), potentially also reading
--- the next incoming word if @n@ > @l@.  Should not be called to read more than
--- one 32-bit word at a time (will fail on @n@ > 32).
-getBitStringPartial :: Int -> Int -> Word32 -> C.Get (BitString, SubWord)
-getBitStringPartial n _ _ | n > 32 =
+-- | @getBitStringPartial n sw@ returns a @BitString@ of length @n@ from either
+-- the current subword @sw@ (with some @l@ bits available), potentially also
+-- reading the next incoming word if @n@ > @l@.  Should not be called to read
+-- more than one 32-bit word at a time (will fail on @n@ > 32).
+getBitStringPartial :: Int -> SubWord -> C.Get (BitString, SubWord)
+getBitStringPartial n _ | n > 32 =
   fail $ "getBitStringPartial: refusing to read " ++ show n ++ " (> 32) bits."
-getBitStringPartial n l w = case splitWord n l w of
+getBitStringPartial n sw = case splitWord n sw of
   (bs, Right off) -> return (bs, off)
   (bs, Left n') -> do
     (rest, off) <- getBitString n'
@@ -129,11 +129,11 @@ skipZeroByte = do
   when (x /= 0) $ fail "alignment padding was not zeros"
 
 -- | Get a @ByteString@ of @n@ bytes, and then align to 32 bits.
-getByteString :: Int -> C.Get (ByteString,SubWord)
+getByteString :: Int -> C.Get (ByteString, SubWord)
 getByteString n = do
   bs <- C.getByteString n
   replicateM_ ((- n) `mod` 4) skipZeroByte
-  return (bs, Aligned)
+  return (bs, aligned)
 
 
 -- Basic Interface -------------------------------------------------------------
@@ -141,20 +141,16 @@ getByteString n = do
 -- | Read zeros up to an alignment of 32-bits.
 align32bits :: GetBits ()
 align32bits  = GetBits $ \ off -> case off of
-  Aligned     -> return ((),Aligned)
-  SubWord _ 0 -> return ((),Aligned)
+  SubWord _ 0 -> return ((), aligned)
   SubWord _ _ -> fail "alignment padding was not zeros"
 
 -- | Read out n bits as a @BitString@.
 fixed :: Int -> GetBits BitString
-fixed n = GetBits $ \ off -> case off of
-  Aligned     -> getBitString n
-  SubWord l w -> getBitStringPartial n l w
+fixed n = GetBits $ getBitStringPartial n
 
 -- | Read out n bytes as a @ByteString@, aligning to a 32-bit boundary before and after.
 bytestring :: Int -> GetBits ByteString
 bytestring n = GetBits $ \ off -> case off of
-  Aligned     -> getByteString n
   SubWord _ 0 -> getByteString n
   SubWord _ _ -> fail "alignment padding was not zeros"
 
