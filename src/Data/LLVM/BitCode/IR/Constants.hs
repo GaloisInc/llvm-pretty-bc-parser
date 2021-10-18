@@ -455,6 +455,9 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     let v = forwardRef cxt opval t
     return (getTy, Typed ty (mkInstr v) : cs)
 
+  26 -> label "CST_CODE_POISON" $ do
+    ty <- getTy
+    return (getTy, Typed ty ValPoison : cs)
 
   code -> Assert.unknownEntity "constant record code" code
 
