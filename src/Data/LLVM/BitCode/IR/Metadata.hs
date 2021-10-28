@@ -46,6 +46,7 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
 import qualified Data.Sequence as Seq
+import           Data.Sequence (Seq)
 import           Data.Word (Word8,Word32,Word64)
 
 import           GHC.Generics (Generic)
@@ -269,7 +270,7 @@ nameMetadata val pm = case pmNextName pm of
 -- cost is O(n^2*log(n)) where
 -- * n^2 comes from looking at every 'PValMd' inside every 'PartialUnnamedMd'
 -- * log(n) is the cost of looking them up in a 'Map'.
-dedupMetadata :: Seq.Seq PartialUnnamedMd -> Seq.Seq PartialUnnamedMd
+dedupMetadata :: Seq PartialUnnamedMd -> Seq PartialUnnamedMd
 dedupMetadata pumd = helper (mkPartialUnnamedMdMap pumd) <$> pumd
   where helper pumdMap pum =
           let pumdMap' = Map.delete (pumValues pum) pumdMap -- don't self-reference
@@ -288,13 +289,13 @@ dedupMetadata pumd = helper (mkPartialUnnamedMdMap pumd) <$> pumd
                             Just idex -> ValMdRef idex
                             Nothing   -> v
 
-        mkPartialUnnamedMdMap :: Seq.Seq PartialUnnamedMd -> Map PValMd Int
+        mkPartialUnnamedMdMap :: Seq PartialUnnamedMd -> Map PValMd Int
         mkPartialUnnamedMdMap =
           foldl' (\mp part -> Map.insert (pumValues part) (pumIndex part) mp) Map.empty
 
 -- Finalizing ---------------------------------------------------------------
 
-namedEntries :: PartialMetadata -> Seq.Seq NamedMd
+namedEntries :: PartialMetadata -> Seq NamedMd
 namedEntries  = Seq.fromList
               . map (uncurry NamedMd)
               . Map.toList
@@ -319,7 +320,7 @@ finalizePValMd :: PValMd -> Finalize ValMd
 finalizePValMd = relabel (const requireBbEntryName)
 
 -- | Partition unnamed entries into global and function local unnamed entries.
-unnamedEntries :: PartialMetadata -> (Seq.Seq PartialUnnamedMd, Seq.Seq PartialUnnamedMd)
+unnamedEntries :: PartialMetadata -> (Seq PartialUnnamedMd, Seq PartialUnnamedMd)
 unnamedEntries pm = bimap Seq.fromList Seq.fromList (partitionEithers (mapMaybe resolveNode (IntMap.toList (mtNodes mt))))
   where
   mt = pmEntries pm
@@ -346,8 +347,8 @@ type PFnMdAttachments = Map.Map PKindMd PValMd
 type PGlobalAttachments = Map.Map Symbol (Map.Map KindMd PValMd)
 
 type ParsedMetadata =
-  ( Seq.Seq NamedMd
-  , (Seq.Seq PartialUnnamedMd, Seq.Seq PartialUnnamedMd)
+  ( Seq NamedMd
+  , (Seq PartialUnnamedMd, Seq PartialUnnamedMd)
   , InstrMdAttachments
   , PFnMdAttachments
   , PGlobalAttachments
