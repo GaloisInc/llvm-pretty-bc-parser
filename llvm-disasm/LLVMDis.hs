@@ -10,7 +10,7 @@ import Text.PrettyPrint (Style(..), renderStyle, style)
 import Control.Monad (when)
 import Data.Graph.Inductive.Graph (nmap, emap)
 import Data.Graph.Inductive.Dot (fglToDotString, showDot)
-import Data.Monoid (mconcat, Endo(..))
+import Data.Monoid (Endo(..))
 import Text.Show.Pretty (pPrint)
 import System.Console.GetOpt
   (ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo)
