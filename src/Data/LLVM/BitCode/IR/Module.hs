@@ -19,8 +19,8 @@ import Text.LLVM.AST
 
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import Control.Monad (foldM,guard,when,forM_)
-import Data.List (sortBy)
-import Data.Ord (comparing)
+import Data.Foldable (toList)
+import Data.List (sortOn)
 import qualified Data.Foldable as F
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
@@ -36,12 +36,12 @@ data PartialModule = PartialModule
   , partialDeclares   :: DeclareList
   , partialDataLayout :: DataLayout
   , partialInlineAsm  :: InlineAsm
-  , partialComdat     :: Seq.Seq (String,SelectionKind)
+  , partialComdat     :: !(Seq.Seq (String,SelectionKind))
   , partialAliasIx    :: !Int
   , partialAliases    :: AliasList
-  , partialNamedMd    :: [NamedMd]
-  , partialUnnamedMd  :: [PartialUnnamedMd]
-  , partialSections   :: Seq.Seq String
+  , partialNamedMd    :: !(Seq.Seq NamedMd)
+  , partialUnnamedMd  :: !(Seq.Seq PartialUnnamedMd)
+  , partialSections   :: !(Seq.Seq String)
   , partialSourceName :: !(Maybe String)
   }
 
@@ -76,8 +76,8 @@ finalizeModule pm = label "finalizeModule" $ do
   return emptyModule
     { modSourceName = partialSourceName pm
     , modDataLayout = partialDataLayout pm
-    , modNamedMd    = partialNamedMd pm
-    , modUnnamedMd  = sortBy (comparing umIndex) unnamed
+    , modNamedMd    = toList (partialNamedMd pm)
+    , modUnnamedMd  = sortOn umIndex (toList unnamed)
     , modGlobals    = F.toList globals
     , modDefines    = F.toList defines
     , modTypes      = types
@@ -135,11 +135,11 @@ parseModuleBlockEntry pm (moduleCodeFunction -> Just r) = do
   parseFunProto r pm
 
 parseModuleBlockEntry pm (functionBlockId -> Just es) = label "FUNCTION_BLOCK_ID" $ do
-  let unnamedGlobalsCount = length (partialUnnamedMd pm)
+  let unnamedGlobalsCount = Seq.length (partialUnnamedMd pm)
   def <- parseFunctionBlock unnamedGlobalsCount es
-  let def' = def { partialGlobalMd = [] }
+  let def' = def { partialGlobalMd = mempty }
   return pm { partialDefines = partialDefines pm Seq.|> def'
-            , partialUnnamedMd = partialGlobalMd def ++ partialUnnamedMd pm
+            , partialUnnamedMd = partialGlobalMd def <> partialUnnamedMd pm
             }
 
 parseModuleBlockEntry pm (paramattrBlockId -> Just _) = do
@@ -154,11 +154,11 @@ parseModuleBlockEntry pm (paramattrGroupBlockId -> Just _) = do
 
 parseModuleBlockEntry pm (metadataBlockId -> Just es) = label "METADATA_BLOCK_ID" $ do
   vt <- getValueTable
-  let globalsSoFar = length (partialUnnamedMd pm)
+  let globalsSoFar = Seq.length (partialUnnamedMd pm)
   (ns,(gs,_),_,_,atts) <- parseMetadataBlock globalsSoFar vt es
   return $ addGlobalAttachments atts pm
-    { partialNamedMd   = partialNamedMd   pm ++ ns
-    , partialUnnamedMd = partialUnnamedMd pm ++ gs
+    { partialNamedMd   = partialNamedMd   pm <> ns
+    , partialUnnamedMd = partialUnnamedMd pm <> gs
     }
 
 parseModuleBlockEntry pm (valueSymtabBlockId -> Just _es) = do

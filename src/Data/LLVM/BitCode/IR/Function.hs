@@ -139,7 +139,7 @@ data PartialDefine = PartialDefine
   , partialBlockId    :: !Int
   , partialSymtab     :: ValueSymtab
   , partialMetadata   :: Map.Map PKindMd PValMd
-  , partialGlobalMd   :: [PartialUnnamedMd]
+  , partialGlobalMd   :: !(Seq.Seq PartialUnnamedMd)
   , partialComdatName :: Maybe String
   } deriving Show
 
@@ -161,12 +161,12 @@ emptyPartialDefine proto = do
     , partialName       = protoSym proto
     , partialArgs       = zipWith Typed tys names
     , partialVarArgs    = va
-    , partialBody       = Seq.empty
-    , partialBlock      = Seq.empty
+    , partialBody       = mempty
+    , partialBlock      = mempty
     , partialBlockId    = 0
     , partialSymtab     = symtab
-    , partialMetadata   = Map.empty
-    , partialGlobalMd   = []
+    , partialMetadata   = mempty
+    , partialGlobalMd   = mempty
     , partialComdatName = protoComdat proto
     }
 
@@ -1047,7 +1047,7 @@ parseFunctionBlockEntry _ _ d (valueSymtabBlockId -> Just _) = do
 parseFunctionBlockEntry globals t d (metadataBlockId -> Just es) = do
   (_, (globalUnnamedMds, localUnnamedMds), _, _, _) <- parseMetadataBlock globals t es
   if (null localUnnamedMds)
-    then return d { partialGlobalMd = globalUnnamedMds ++ partialGlobalMd d }
+    then return d { partialGlobalMd = globalUnnamedMds Seq.>< partialGlobalMd d }
     else return d -- silently drop unexpected local unnamed metadata
 
 parseFunctionBlockEntry globals t d (metadataAttachmentBlockId -> Just es) = do

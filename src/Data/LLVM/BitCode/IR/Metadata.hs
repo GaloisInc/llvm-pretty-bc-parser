@@ -45,10 +45,12 @@ import           Data.List (mapAccumL, foldl')
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
+import qualified Data.Sequence as Seq
 import           Data.Word (Word8,Word32,Word64)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
+import Data.Bifunctor (bimap)
 
 
 
@@ -267,8 +269,8 @@ nameMetadata val pm = case pmNextName pm of
 -- cost is O(n^2*log(n)) where
 -- * n^2 comes from looking at every 'PValMd' inside every 'PartialUnnamedMd'
 -- * log(n) is the cost of looking them up in a 'Map'.
-dedupMetadata :: [PartialUnnamedMd] -> [PartialUnnamedMd]
-dedupMetadata pumd = map (helper (mkPartialUnnamedMdMap pumd)) pumd
+dedupMetadata :: Seq.Seq PartialUnnamedMd -> Seq.Seq PartialUnnamedMd
+dedupMetadata pumd = helper (mkPartialUnnamedMdMap pumd) <$> pumd
   where helper pumdMap pum =
           let pumdMap' = Map.delete (pumValues pum) pumdMap -- don't self-reference
           in pum { pumValues = maybeTransform pumdMap' (pumValues pum) }
@@ -286,14 +288,15 @@ dedupMetadata pumd = map (helper (mkPartialUnnamedMdMap pumd)) pumd
                             Just idex -> ValMdRef idex
                             Nothing   -> v
 
-        mkPartialUnnamedMdMap :: [PartialUnnamedMd] -> Map PValMd Int
+        mkPartialUnnamedMdMap :: Seq.Seq PartialUnnamedMd -> Map PValMd Int
         mkPartialUnnamedMdMap =
           foldl' (\mp part -> Map.insert (pumValues part) (pumIndex part) mp) Map.empty
 
 -- Finalizing ---------------------------------------------------------------
 
-namedEntries :: PartialMetadata -> [NamedMd]
-namedEntries  = map (uncurry NamedMd)
+namedEntries :: PartialMetadata -> Seq.Seq NamedMd
+namedEntries  = Seq.fromList
+              . map (uncurry NamedMd)
               . Map.toList
               . pmNamedEntries
 
@@ -316,8 +319,8 @@ finalizePValMd :: PValMd -> Finalize ValMd
 finalizePValMd = relabel (const requireBbEntryName)
 
 -- | Partition unnamed entries into global and function local unnamed entries.
-unnamedEntries :: PartialMetadata -> ([PartialUnnamedMd], [PartialUnnamedMd])
-unnamedEntries pm = partitionEithers (mapMaybe resolveNode (IntMap.toList (mtNodes mt)))
+unnamedEntries :: PartialMetadata -> (Seq.Seq PartialUnnamedMd, Seq.Seq PartialUnnamedMd)
+unnamedEntries pm = bimap Seq.fromList Seq.fromList (partitionEithers (mapMaybe resolveNode (IntMap.toList (mtNodes mt))))
   where
   mt = pmEntries pm
 
@@ -343,8 +346,8 @@ type PFnMdAttachments = Map.Map PKindMd PValMd
 type PGlobalAttachments = Map.Map Symbol (Map.Map KindMd PValMd)
 
 type ParsedMetadata =
-  ( [NamedMd]
-  , ([PartialUnnamedMd],[PartialUnnamedMd])
+  ( Seq.Seq NamedMd
+  , (Seq.Seq PartialUnnamedMd, Seq.Seq PartialUnnamedMd)
   , InstrMdAttachments
   , PFnMdAttachments
   , PGlobalAttachments
