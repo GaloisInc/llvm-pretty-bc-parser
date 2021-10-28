@@ -99,6 +99,7 @@ test-suite unit-test
                          -threaded
     -- other-extensions:    OverloadedStrings, ...
     build-depends: base -any,
+                   containers >= 0.4,
                    HUnit -any,
                    QuickCheck -any,
                    generic-random -any,
