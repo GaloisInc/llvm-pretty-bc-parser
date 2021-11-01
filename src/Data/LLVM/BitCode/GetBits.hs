@@ -105,22 +105,26 @@ splitWord n (SubWord l w)
 -- 32-bit word at a time (will fail on @n@ > 32).
 getBitString :: Int -> C.Get (BitString, SubWord)
 getBitString 0 = return (mempty, aligned)
-getBitString n | n > 32 =
-  fail $ "getBitString: refusing to read " ++ show n ++ " (> 32) bits."
-getBitString n = getBitStringPartial n . SubWord 32 =<< C.getWord32le
+getBitString n =
+  case compare n 32 of
+    GT -> fail $ "getBitString: refusing to read " ++ show n ++ " (> 32) bits."
+    EQ -> do
+      w <- C.getWord32le
+      return (BitString n (fromIntegral w), aligned)
+    LT -> do
+      w <- C.getWord32le
+      return (toBitString n (fromIntegral w), SubWord (32 - n) (w `shiftR` n))
 
 -- | @getBitStringPartial n sw@ returns a @BitString@ of length @n@ from either
 -- the current subword @sw@ (with some @l@ bits available), potentially also
 -- reading the next incoming word if @n@ > @l@.  Should not be called to read
 -- more than one 32-bit word at a time (will fail on @n@ > 32).
 getBitStringPartial :: Int -> SubWord -> C.Get (BitString, SubWord)
-getBitStringPartial n _ | n > 32 =
-  fail $ "getBitStringPartial: refusing to read " ++ show n ++ " (> 32) bits."
+-- It seems 32 is super infrequent.
+-- Most calls to `getBitStringPartial` are with 1, 5, 6, and 14
 getBitStringPartial n sw = case splitWord n sw of
   (bs, Right off) -> return (bs, off)
-  (bs, Left n') -> do
-    (rest, off) <- getBitString n'
-    return (bs `mappend` rest, off)
+  (bs, Left n') -> first (bs <>) <$> getBitString n'
 
 -- | Skip a byte of input, which must be zero.
 skipZeroByte :: C.Get ()
