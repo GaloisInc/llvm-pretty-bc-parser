@@ -38,10 +38,11 @@ import           Data.Typeable (Typeable)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as Char8 (unpack)
 import           Data.Either (partitionEithers)
+import           Data.Bifunctor (bimap)
 import           Data.Functor.Compose (Compose(..), getCompose)
 import           Data.Generics.Uniplate.Data
 import qualified Data.IntMap as IntMap
-import           Data.List (mapAccumL, foldl')
+import           Data.List (find, foldl', mapAccumL)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
@@ -51,8 +52,9 @@ import           Data.Word (Word8,Word32,Word64)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
-import Data.Bifunctor (bimap)
 
+-- import Debug.Trace
+import Data.Hashable (hash)
 
 
 -- Parsing State ---------------------------------------------------------------
@@ -271,27 +273,30 @@ nameMetadata val pm = case pmNextName pm of
 -- * n^2 comes from looking at every 'PValMd' inside every 'PartialUnnamedMd'
 -- * log(n) is the cost of looking them up in a 'Map'.
 dedupMetadata :: Seq PartialUnnamedMd -> Seq PartialUnnamedMd
-dedupMetadata pumd = helper (mkPartialUnnamedMdMap pumd) <$> pumd
-  where helper pumdMap pum =
-          let pumdMap' = Map.delete (pumValues pum) pumdMap -- don't self-reference
-          in pum { pumValues = maybeTransform pumdMap' (pumValues pum) }
+dedupMetadata pumd = helper (binByHash pumd) <$> pumd
+  where helper bins pum = pum { pumValues = maybeTransform bins (pumValues pum) (pumValues pum) }
 
         -- | We avoid erroneously recursing into ValMdValues and exit early on
         -- a few other constructors de-duplication wouldn't affect.
-        maybeTransform :: Map PValMd Int -> PValMd -> PValMd
-        maybeTransform pumdMap v@(ValMdNode _)      = transform (trans pumdMap) v
-        maybeTransform pumdMap v@(ValMdLoc _)       = transform (trans pumdMap) v
-        maybeTransform pumdMap v@(ValMdDebugInfo _) = transform (trans  pumdMap) v
-        maybeTransform _       v                    = v
+        maybeTransform :: IntMap.IntMap [PartialUnnamedMd] -> PValMd -> PValMd -> PValMd
+        maybeTransform pumdMap self v@(ValMdNode _)      = transform (trans pumdMap self) v
+        maybeTransform pumdMap self v@(ValMdLoc _)       = transform (trans pumdMap self) v
+        maybeTransform pumdMap self v@(ValMdDebugInfo _) = transform (trans pumdMap self) v
+        maybeTransform _       _    v                    = v
 
-        trans :: Map PValMd Int -> PValMd -> PValMd
-        trans pumdMap v = case Map.lookup v pumdMap of
-                            Just idex -> ValMdRef idex
-                            Nothing   -> v
+        trans :: IntMap.IntMap [PartialUnnamedMd] -> PValMd -> PValMd -> PValMd
+        trans pumdMap self v | v == self = v
+                             | otherwise = maybe v ValMdRef (pumIndex <$> (find ((== v) . pumValues) =<< IntMap.lookup (hash v) pumdMap))
 
-        mkPartialUnnamedMdMap :: Seq PartialUnnamedMd -> Map PValMd Int
-        mkPartialUnnamedMdMap =
-          foldl' (\mp part -> Map.insert (pumValues part) (pumIndex part) mp) Map.empty
+        binByHash :: Seq PartialUnnamedMd -> IntMap.IntMap [PartialUnnamedMd]
+        binByHash =
+          foldl' (\mp part -> IntMap.insertWith (++) (hash (pumValues part)) [] mp) IntMap.empty
+
+-- dedupMetadata2 :: Map PValMd PartialUnnamedMd -> Map PValMd PartialUnnamedMd
+-- dedupMetadata2 pumdOriginal = helper pumdOriginal
+--   where
+--     helper pumd =
+--       let pumd' = Map.delete ()
 
 -- Finalizing ---------------------------------------------------------------
 
