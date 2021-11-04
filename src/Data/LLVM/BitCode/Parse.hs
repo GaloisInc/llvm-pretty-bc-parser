@@ -13,11 +13,6 @@ import           Text.LLVM.AST
 import           Text.LLVM.PP
 
 import           Control.Applicative (Alternative(..))
-import           Control.Monad.Fix (MonadFix)
-#if !MIN_VERSION_base(4,13,0)
-import           Control.Monad.Fail (MonadFail)
-import qualified Control.Monad.Fail -- makes fail visible for instance
-#endif
 import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Control.Monad.State.Strict
@@ -53,20 +48,51 @@ formatError err
                           : map ('\t' :) (errContext err)
 
 newtype Parse a = Parse
-  { unParse :: ReaderT Env (StateT ParseState (Except Error)) a
-  } deriving (Functor, Applicative, MonadFix)
+  { unParse :: Env -> ParseState -> Either Error (ParseState, a)
+  }
+
+instance Functor Parse where
+  {-# INLINE fmap #-}
+  f `fmap` Parse p = Parse (\env st -> case p env st of
+    Left e -> Left e
+    Right (s, a) -> Right (s, f a)
+    )
+
+instance Applicative Parse where
+  {-# INLINE pure #-}
+  pure v = Parse (\_ s -> Right (s, v))
+
+  {-# INLINE (<*>) #-}
+  (<*>) (Parse a) (Parse b) = Parse (\env st -> case a env st of
+      Left e -> Left e
+      Right (st', f) -> case b env st' of
+        Left e -> Left e
+        Right (s', v) -> Right (s', f v)
+    )
 
 instance Monad Parse where
   {-# INLINE return #-}
-  return  = Parse . return
+  return = pure
 
   {-# INLINE (>>=) #-}
-  Parse m >>= f = Parse (m >>= unParse . f)
+  Parse m >>= f = Parse (\env st -> case m env st of
+      Left e -> Left e
+      Right (st', a) -> unParse (f a) env st'
+    )
 
-#if !MIN_VERSION_base(4,13,0)
-  {-# INLINE fail #-}
-  fail = failWithContext
-#endif
+
+
+
+
+
+instance MonadFix Parse where
+  {-# INLINE mfix #-}
+  mfix k = Parse (\env st ->
+      let (s, a) = case unParse (k a) env st of
+                Left _ -> error "mfix Parse Left"
+                Right o -> o
+      in Right (s, a)
+    )
 
 instance MonadFail Parse where
   {-# INLINE fail #-}
@@ -77,7 +103,10 @@ instance Alternative Parse where
   empty = failWithContext "empty"
 
   {-# INLINE (<|>) #-}
-  a <|> b = Parse $ catchError (unParse a) (const (unParse b))
+  Parse a <|> Parse b = Parse (\env st -> case a env st of
+      Left _ -> b env st
+      Right r -> Right r
+    )
 
 instance MonadPlus Parse where
   {-# INLINE mzero #-}
@@ -86,11 +115,32 @@ instance MonadPlus Parse where
   {-# INLINE mplus #-}
   mplus = (<|>)
 
+instance MonadError Error Parse where
+  {-# INLINE catchError #-}
+  catchError (Parse m) h = Parse (\env st -> case m env st of
+    Left e -> unParse (h e) env st
+    Right r -> Right r
+    )
+  {-# INLINE throwError #-}
+  throwError e = Parse (\_ _ -> Left e)
+
+instance MonadReader Env Parse where
+  {-# INLINE ask #-}
+  ask = Parse (\env s -> Right (s, env))
+  {-# INLINE local #-}
+  local k (Parse m) = Parse (m . k)
+
+instance MonadState ParseState Parse where
+  {-# INLINE get #-}
+  get = Parse (\_ s -> Right (s, s))
+  {-# INLINE put #-}
+  put s = Parse (\_ _ -> Right (s, ()))
+
 runParse :: Parse a -> Either Error a
 runParse (Parse m) =
-  case runExcept (runStateT (runReaderT m emptyEnv) emptyParseState) of
-    Left err     -> Left err
-    Right (a, _) -> Right a
+  case m emptyEnv emptyParseState of
+    Left err -> Left err
+    Right (_, a) -> Right a
 
 notImplemented :: Parse a
 notImplemented  = fail "not implemented"
@@ -133,7 +183,7 @@ emptyParseState  = ParseState
 
 -- | The next implicit result id.
 nextResultId :: Parse Int
-nextResultId  = Parse $ do
+nextResultId  = do
   ps <- get
   put ps { psNextResultId = psNextResultId ps + 1 }
   return (psNextResultId ps)
@@ -141,45 +191,45 @@ nextResultId  = Parse $ do
 type PDebugLoc = DebugLoc' Int
 
 setLastLoc :: PDebugLoc -> Parse ()
-setLastLoc loc = Parse $ do
+setLastLoc loc = do
   ps <- get
   put $! ps { psLastLoc = Just loc }
 
 setRelIds :: Bool -> Parse ()
-setRelIds b = Parse $ do
+setRelIds b = do
   ps <- get
   put $! ps { psValueTable = (psValueTable ps) { valueRelIds = b }}
 
 getRelIds :: Parse Bool
 getRelIds  = do
-  ps <- Parse get
+  ps <- get
   return (valueRelIds (psValueTable ps))
 
 getLastLoc :: Parse PDebugLoc
 getLastLoc  = do
-  ps <- Parse get
+  ps <- get
   case psLastLoc ps of
     Just loc -> return loc
     Nothing  -> fail "No last location available"
 
 setModVersion :: Int -> Parse ()
-setModVersion v = Parse $ do
+setModVersion v = do
   ps <- get
   put $! ps { psModVersion = v }
 
 getModVersion :: Parse Int
-getModVersion = Parse (psModVersion <$> get)
+getModVersion = psModVersion <$> get
 
 -- | Sort of a hack to preserve state between function body parses.  It would
 -- really be nice to separate this into a different monad, that could just run
 -- under the Parse monad, but sort of unnecessary in the long run.
 enterFunctionDef :: Parse a -> Parse a
-enterFunctionDef m = Parse $ do
+enterFunctionDef m = do
   ps  <- get
   put ps
     { psNextResultId = 0
     }
-  res <- unParse m
+  res <- m
   ps' <- get
   put ps'
     { psValueTable = psValueTable ps
@@ -230,21 +280,21 @@ lookupTypeRef cxt n =
   in fromMaybe (X.throw (BadTypeRef callStack cxt explanation n)) . IntMap.lookup n
 
 setTypeTable :: TypeTable -> Parse ()
-setTypeTable table = Parse $ do
+setTypeTable table = do
   ps <- get
   put ps { psTypeTable = table }
 
 getTypeTable :: Parse TypeTable
-getTypeTable  = Parse (psTypeTable <$> get)
+getTypeTable  = psTypeTable <$> get
 
 setTypeTableSize :: Int -> Parse ()
-setTypeTableSize n = Parse $ do
+setTypeTableSize n = do
   ps <- get
   put ps { psTypeTableSize = n }
 
 -- | Retrieve the current type name, failing if it hasn't been set.
 getTypeName :: Parse Ident
-getTypeName  = Parse $ do
+getTypeName  = do
   ps  <- get
   str <- case psTypeName ps of
     Just tn -> do
@@ -256,14 +306,14 @@ getTypeName  = Parse $ do
   return (Ident str)
 
 setTypeName :: String -> Parse ()
-setTypeName name = Parse $ do
+setTypeName name = do
   ps <- get
   put ps { psTypeName = Just name }
 
 -- | Lookup the value of a type; don't attempt to resolve to an alias.
 getType' :: Int -> Parse Type
 getType' ref = do
-  ps <- Parse get
+  ps <- get
   unless (ref < psTypeTableSize ps)
     (fail ("type reference " ++ show ref ++ " is too large"))
   cxt <- getContext
@@ -271,15 +321,15 @@ getType' ref = do
 
 -- | Test to see if the type table has been added to already.
 isTypeTableEmpty :: Parse Bool
-isTypeTableEmpty  = Parse (IntMap.null . psTypeTable <$> get)
+isTypeTableEmpty  = IntMap.null . psTypeTable <$> get
 
 setStringTable :: StringTable -> Parse ()
-setStringTable st = Parse $ do
+setStringTable st = do
   ps <- get
   put ps { psStringTable = Just st }
 
 getStringTable :: Parse (Maybe StringTable)
-getStringTable = Parse (psStringTable <$> get)
+getStringTable = psStringTable <$> get
 
 -- Value Tables ----------------------------------------------------------------
 
@@ -316,7 +366,7 @@ addValue' tv vs = (valueNextId vs,vs')
 
 -- | Push a value into the value table, and return its index.
 pushValue :: Typed PValue -> Parse Int
-pushValue tv = Parse $ do
+pushValue tv = do
   ps <- get
   let vt = psValueTable ps
   put ps { psValueTable = addValue tv vt }
@@ -324,7 +374,7 @@ pushValue tv = Parse $ do
 
 -- | Get the index for the next value.
 nextValueId :: Parse Int
-nextValueId  = Parse (valueNextId . psValueTable <$> get)
+nextValueId  = valueNextId . psValueTable <$> get
 
 -- | Depending on whether or not relative ids are in use, adjust the id.
 adjustId :: Int -> Parse Int
@@ -378,7 +428,7 @@ requireValue n = do
 
 -- | Get the current value table.
 getValueTable :: Parse ValueTable
-getValueTable  = Parse (psValueTable <$> get)
+getValueTable  = psValueTable <$> get
 
 -- | Retrieve the name for the next value.  Note that this doesn't assume that
 -- the name gets used, and doesn't update the next id in the value table.
@@ -387,7 +437,7 @@ getNextId  = valueNextId <$> getValueTable
 
 -- | Set the current value table.
 setValueTable :: ValueTable -> Parse ()
-setValueTable vt = Parse $ do
+setValueTable vt = do
   ps <- get
   put ps { psValueTable = vt }
 
@@ -411,16 +461,16 @@ type PValMd = ValMd' Int
 type MdTable = ValueTable
 
 getMdTable :: Parse MdTable
-getMdTable  = Parse (psMdTable <$> get)
+getMdTable  = psMdTable <$> get
 
 setMdTable :: MdTable -> Parse ()
-setMdTable md = Parse $ do
+setMdTable md = do
   ps <- get
   put $! ps { psMdTable = md }
 
 getMetadata :: Int -> Parse (Typed PValMd)
 getMetadata ix = do
-  ps <- Parse get
+  ps <- get
   case resolveMd ix ps of
     Just tv -> case typedValue tv of
       ValMd val -> return tv { typedValue = val }
@@ -438,7 +488,7 @@ resolveMd ix ps = nodeRef `mplus` mdValue
 type MdRefTable = IntMap.IntMap Int
 
 setMdRefs :: MdRefTable -> Parse ()
-setMdRefs refs = Parse $ do
+setMdRefs refs = do
   ps <- get
   put $! ps { psMdRefs = refs `IntMap.union` psMdRefs ps }
 
@@ -458,18 +508,18 @@ data FunProto = FunProto
 
 -- | Push a function prototype on to the prototype stack.
 pushFunProto :: FunProto -> Parse ()
-pushFunProto p = Parse $ do
+pushFunProto p = do
   ps <- get
   put ps { psFunProtos = psFunProtos ps Seq.|> p }
 
 -- | Take a single function prototype off of the prototype stack.
 popFunProto :: Parse FunProto
 popFunProto  = do
-  ps <- Parse get
+  ps <- get
   case Seq.viewl (psFunProtos ps) of
     Seq.EmptyL   -> fail "empty function prototype stack"
     p Seq.:< ps' -> do
-      Parse (put ps { psFunProtos = ps' })
+      put ps { psFunProtos = ps' }
       return p
 
 
@@ -495,7 +545,7 @@ addLabel :: String -> Env -> Env
 addLabel l env = env { envContext = l : envContext env }
 
 getContext :: Parse [String]
-getContext  = Parse (envContext `fmap` ask)
+getContext  = asks envContext
 
 
 data Symtab = Symtab
@@ -518,8 +568,8 @@ instance Monoid Symtab where
   mappend = (<>)
 
 withSymtab :: Symtab -> Parse a -> Parse a
-withSymtab symtab body = Parse $ do
-  local (extendSymtab symtab) (unParse body)
+withSymtab symtab body = do
+  local (extendSymtab symtab) body
 
 -- | Run a computation with an extended value symbol table.
 withValueSymtab :: ValueSymtab -> Parse a -> Parse a
@@ -535,16 +585,15 @@ withTypeSymtab symtab = withSymtab (mempty { symTypeSymtab = symtab })
 
 -- | Retrieve the type symbol table.
 getTypeSymtab :: Parse TypeSymtab
-getTypeSymtab  = Parse (symTypeSymtab . envSymtab <$> ask)
+getTypeSymtab  = asks (symTypeSymtab . envSymtab)
 
 -- | Label a sub-computation with its context.
 label :: String -> Parse a -> Parse a
-label l m = Parse $ do
-  local (addLabel l) (unParse m)
+label l = local (addLabel l)
 
 -- | Fail, taking into account the current context.
 failWithContext :: String -> Parse a
-failWithContext msg = Parse $ do
+failWithContext msg = do
   env <- ask
   throwError Error
     { errMessage = msg
@@ -702,14 +751,14 @@ emptyKindTable  = KindTable
   }
 
 addKind :: Int -> String -> Parse ()
-addKind kind name = Parse $ do
+addKind kind name = do
   ps <- get
   let KindTable { .. } = psKinds ps
   put $! ps { psKinds = KindTable { ktNames = IntMap.insert kind name ktNames } }
 
 getKind :: Int -> Parse String
 getKind kind = do
-  ps <- Parse get
+  ps <- get
   let KindTable { .. } = psKinds ps
   case IntMap.lookup kind ktNames of
     Just name -> return name
@@ -744,11 +793,6 @@ instance Monad Finalize where
   {-# INLINE (>>=) #-}
   Finalize m >>= f = Finalize (m >>= unFinalize . f)
 
-#if !MIN_VERSION_base(4,13,0)
-  {-# INLINE fail #-}
-  fail = failWithContext'
-#endif
-
 instance MonadFail Finalize where
   {-# INLINE fail #-}
   fail = failWithContext'
@@ -779,7 +823,7 @@ failWithContext' msg =
 
 liftFinalize :: Finalize a -> Parse a
 liftFinalize (Finalize m) =
-  do env <- Parse ask
+  do env <- ask
      case runExcept (runReaderT m env) of
-       Left err -> Parse (throwError err)
+       Left err -> throwError err
        Right a -> return a
