@@ -16,10 +16,10 @@ import Data.LLVM.BitCode.BitString
 import Control.Applicative (Alternative(..))
 import Control.Arrow (first)
 import Control.Monad (MonadPlus(..),when,replicateM_)
+import qualified Data.Binary.Get as BG
 import Data.Bits (shiftR)
 import Data.ByteString (ByteString)
 import Data.Word (Word32)
-import qualified Data.Serialize as C
 
 #if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail( MonadFail )
@@ -28,11 +28,11 @@ import qualified Control.Monad.Fail
 
 -- Bit-level Parsing -----------------------------------------------------------
 
-newtype GetBits a = GetBits { unGetBits :: SubWord -> C.Get (a,SubWord) }
+newtype GetBits a = GetBits { unGetBits :: SubWord -> BG.Get (a,SubWord) }
 
 -- | Run a @GetBits@ action, returning its value, and the number of bits offset
 -- into the next byte of the stream.
-runGetBits :: GetBits a -> C.Get a
+runGetBits :: GetBits a -> BG.Get a
 runGetBits m = fst `fmap` unGetBits m aligned
 
 instance Functor GetBits where
@@ -103,17 +103,17 @@ splitWord n (SubWord l w)
 -- word, yielding the remainder partial word.  On @n@ = @0@, it does not
 -- actually consume the next word.  Should not be called to read more than one
 -- 32-bit word at a time (will fail on @n@ > 32).
-getBitString :: Int -> C.Get (BitString, SubWord)
+getBitString :: Int -> BG.Get (BitString, SubWord)
 getBitString 0 = return (mempty, aligned)
 getBitString n | n > 32 =
   fail $ "getBitString: refusing to read " ++ show n ++ " (> 32) bits."
-getBitString n = getBitStringPartial n . SubWord 32 =<< C.getWord32le
+getBitString n = getBitStringPartial n . SubWord 32 =<< BG.getWord32le
 
 -- | @getBitStringPartial n sw@ returns a @BitString@ of length @n@ from either
 -- the current subword @sw@ (with some @l@ bits available), potentially also
 -- reading the next incoming word if @n@ > @l@.  Should not be called to read
 -- more than one 32-bit word at a time (will fail on @n@ > 32).
-getBitStringPartial :: Int -> SubWord -> C.Get (BitString, SubWord)
+getBitStringPartial :: Int -> SubWord -> BG.Get (BitString, SubWord)
 getBitStringPartial n _ | n > 32 =
   fail $ "getBitStringPartial: refusing to read " ++ show n ++ " (> 32) bits."
 getBitStringPartial n sw = case splitWord n sw of
@@ -123,15 +123,15 @@ getBitStringPartial n sw = case splitWord n sw of
     return (bs `mappend` rest, off)
 
 -- | Skip a byte of input, which must be zero.
-skipZeroByte :: C.Get ()
+skipZeroByte :: BG.Get ()
 skipZeroByte = do
-  x <- C.getWord8
+  x <- BG.getWord8
   when (x /= 0) $ fail "alignment padding was not zeros"
 
 -- | Get a @ByteString@ of @n@ bytes, and then align to 32 bits.
-getByteString :: Int -> C.Get (ByteString, SubWord)
+getByteString :: Int -> BG.Get (ByteString, SubWord)
 getByteString n = do
-  bs <- C.getByteString n
+  bs <- BG.getByteString n
   replicateM_ ((- n) `mod` 4) skipZeroByte
   return (bs, aligned)
 
@@ -156,11 +156,11 @@ bytestring n = GetBits $ \ off -> case off of
 
 -- | Add a label to the error tag stack.
 label :: String -> GetBits a -> GetBits a
-label l m = GetBits (\ off -> C.label l (unGetBits m off))
+label l m = GetBits (BG.label l . unGetBits m)
 
 -- | Isolate input length, in 32-bit words.
 isolate :: Int -> GetBits a -> GetBits a
-isolate ws m = GetBits (\ off -> C.isolate (ws * 4) (unGetBits m off))
+isolate ws m = GetBits (BG.isolate (ws * 4) . unGetBits m)
 
 -- | Try to parse something, returning Nothing when it fails.
 --
