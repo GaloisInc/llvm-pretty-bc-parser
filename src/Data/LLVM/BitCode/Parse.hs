@@ -13,7 +13,6 @@ import           Text.LLVM.AST
 import           Text.LLVM.PP
 
 import           Control.Applicative (Alternative(..))
-import           Control.Monad.Fix (MonadFix)
 #if !MIN_VERSION_base(4,13,0)
 import           Control.Monad.Fail (MonadFail)
 import qualified Control.Monad.Fail -- makes fail visible for instance

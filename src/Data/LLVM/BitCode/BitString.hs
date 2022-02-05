@@ -8,7 +8,6 @@ module Data.LLVM.BitCode.BitString (
   ) where
 
 import Data.Bits ((.&.),(.|.),shiftL,shiftR,bit,bitSizeMaybe, Bits)
-import Data.Monoid (Monoid(..))
 import Data.Semigroup
 import Numeric (showIntAtBase)
 
