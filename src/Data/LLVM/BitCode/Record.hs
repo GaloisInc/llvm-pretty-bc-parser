@@ -13,7 +13,7 @@ import Data.Word (Word8,Word32,Word64)
 import Data.ByteString (ByteString)
 
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
-import Control.Monad ((<=<),MonadPlus(..),guard)
+import Control.Monad ((<=<),MonadPlus(..))
 
 
 -- Generic Records -------------------------------------------------------------
@@ -36,8 +36,7 @@ fromUnabbrev u = return Record
 -- | Record construction from an abbreviated field.
 fromAbbrev :: Match AbbrevRecord Record
 fromAbbrev a = do
-  guard (not (null (abbrevFields a)))
-  let (f:fs) = abbrevFields a
+  (f:fs) <- return $ abbrevFields a
   code <- numeric f
   return Record
     { recordCode   = code
