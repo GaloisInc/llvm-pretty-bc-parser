@@ -14,7 +14,6 @@ import Data.LLVM.BitCode.Record
 import Text.LLVM.AST
 
 import Control.Monad (unless,forM_)
-import Data.Monoid (mappend)
 import Data.Word (Word16)
 
 

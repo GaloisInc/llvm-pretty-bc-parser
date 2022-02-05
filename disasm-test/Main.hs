@@ -13,7 +13,7 @@ import qualified Data.ByteString.Lazy as L
 import           Data.Char (ord,isSpace,chr)
 import           Data.Generics (everywhere, mkT) -- SYB
 import           Data.List (sort)
-import           Data.Monoid ( mconcat, Endo(..) )
+import           Data.Monoid ( Endo(..) )
 import           Data.Typeable (Typeable)
 import           System.Console.GetOpt
            ( ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo )
