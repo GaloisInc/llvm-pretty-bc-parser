@@ -57,8 +57,10 @@ newtype Parse a = Parse
   } deriving (Functor, Applicative, MonadFix)
 
 instance Monad Parse where
+#if !MIN_VERSION_base(4,11,0)
   {-# INLINE return #-}
-  return  = Parse . return
+  return = pure
+#endif
 
   {-# INLINE (>>=) #-}
   Parse m >>= f = Parse (m >>= unParse . f)
@@ -738,8 +740,10 @@ newtype Finalize a = Finalize
   } deriving (Functor, Applicative)
 
 instance Monad Finalize where
+#if !MIN_VERSION_base(4,11,0)
   {-# INLINE return #-}
-  return  = Finalize . return
+  return = pure
+#endif
 
   {-# INLINE (>>=) #-}
   Finalize m >>= f = Finalize (m >>= unFinalize . f)
