@@ -93,10 +93,10 @@ data Bitstream = Bitstream
 parseBitstream :: S.ByteString -> Either String Bitstream
 parseBitstream = bimap thd3 thd3
                  . BG.runGetOrFail (runGetBits getBitstream)
-                 . L.fromChunks . (:[])
+                 . L.fromStrict
 
 parseBitCodeBitstream :: S.ByteString -> Either String Bitstream
-parseBitCodeBitstream = parseBitCodeBitstreamLazy . L.fromChunks . (:[])
+parseBitCodeBitstream = parseBitCodeBitstreamLazy . L.fromStrict
 
 parseBitCodeBitstreamLazy :: L.ByteString -> Either String Bitstream
 parseBitCodeBitstreamLazy = bimap thd3 thd3 . BG.runGetOrFail (runGetBits getBitCodeBitstream)
@@ -459,4 +459,4 @@ parseMetadataStringLengths :: Int -> S.ByteString -> Either String [Int]
 parseMetadataStringLengths n =
   bimap thd3 thd3
   . BG.runGetOrFail (runGetBits (replicateM n (vbrNum 6)))
-  . L.fromChunks . (:[])
+  . L.fromStrict
