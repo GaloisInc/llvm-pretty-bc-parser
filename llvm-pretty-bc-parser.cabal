@@ -58,7 +58,7 @@ Library
   Ghc-options:         -Wall
 
   Build-depends:       array       >= 0.3,
-                       base        >= 4 && < 5,
+                       base        >= 4.8 && < 5,
                        binary      >= 0.8,
                        bytestring  >= 0.9.1,
                        containers  >= 0.4,
@@ -76,7 +76,7 @@ Executable llvm-disasm
   Ghc-options:         -Wall
   Hs-source-dirs:      llvm-disasm
   Build-depends:       array                 >= 0.3,
-                       base                  >= 4 && < 5,
+                       base,
                        binary                >= 0.8,
                        bytestring            >= 0.9.1,
                        containers            >= 0.4,
@@ -116,7 +116,7 @@ Test-suite disasm-test
   Default-language:    Haskell2010
   hs-source-dirs:      disasm-test
   Ghc-options:         -Wall
-  build-depends:       base >= 4 && < 5,
+  build-depends:       base,
                        process,
                        directory,
                        bytestring,
@@ -131,7 +131,7 @@ Executable regression-test
   Default-language:    Haskell2010
   hs-source-dirs:      regression-test
   Ghc-options:         -Wall
-  build-depends:       base >= 4 && < 5,
+  build-depends:       base,
                        directory,
                        filepath,
                        foldl,
@@ -149,7 +149,7 @@ Executable fuzz-llvm-disasm
   Default-language:    Haskell2010
   hs-source-dirs:      fuzzing
   Ghc-options:         -Wall -threaded -O2
-  build-depends:       base >= 4 && < 5,
+  build-depends:       base,
                        process,
                        directory,
                        bytestring,
