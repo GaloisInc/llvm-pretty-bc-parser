@@ -90,18 +90,13 @@ data Bitstream = Bitstream
   , bsEntries  :: [Entry]
   } deriving (Show)
 
-runGet :: BG.Get a -> S.ByteString -> Either String a
-runGet g s =
-  case BG.pushEndOfInput (BG.runGetIncremental g `BG.pushChunk` s) of
-    BG.Fail _ _ e -> Left e
-    BG.Partial _  -> Left "runGet: Decoder is still Partial at EndOfInput"
-    BG.Done _ _ r -> Right r
-
 parseBitstream :: S.ByteString -> Either String Bitstream
-parseBitstream = runGet (runGetBits getBitstream)
+parseBitstream = bimap thd3 thd3
+                 . BG.runGetOrFail (runGetBits getBitstream)
+                 . L.fromChunks . (:[])
 
 parseBitCodeBitstream :: S.ByteString -> Either String Bitstream
-parseBitCodeBitstream = runGet (runGetBits getBitCodeBitstream)
+parseBitCodeBitstream = parseBitCodeBitstreamLazy . L.fromChunks . (:[])
 
 parseBitCodeBitstreamLazy :: L.ByteString -> Either String Bitstream
 parseBitCodeBitstreamLazy = bimap thd3 thd3 . BG.runGetOrFail (runGetBits getBitCodeBitstream)
@@ -461,4 +456,7 @@ interpAbbrevOp op = label (show op) $ case op of
 -- Metadata String Lengths -----------------------------------------------------
 
 parseMetadataStringLengths :: Int -> S.ByteString -> Either String [Int]
-parseMetadataStringLengths n = runGet (runGetBits (replicateM n (vbrNum 6)))
+parseMetadataStringLengths n =
+  bimap thd3 thd3
+  . BG.runGetOrFail (runGetBits (replicateM n (vbrNum 6)))
+  . L.fromChunks . (:[])
