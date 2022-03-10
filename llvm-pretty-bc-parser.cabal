@@ -57,35 +57,36 @@ Library
 
   Ghc-options:         -Wall
 
-  Build-depends:       base       >= 4 && < 5,
-                       containers >= 0.4,
-                       array      >= 0.3,
-                       pretty     >= 1.0.1,
-                       mtl        >= 2.2.2,
-                       fgl        >= 5.5,
-                       cereal     >= 0.3.5.2,
-                       bytestring >= 0.9.1,
-                       utf8-string>= 1.0,
-                       uniplate   >= 1.6,
-                       llvm-pretty>= 0.11 && < 0.12
+  Build-depends:       array       >= 0.3,
+                       base        >= 4.8 && < 5,
+                       binary      >= 0.8,
+                       bytestring  >= 0.10,
+                       containers  >= 0.4,
+                       extra       >= 1.7,
+                       fgl         >= 5.5,
+                       llvm-pretty >= 0.11 && < 0.12,
+                       mtl         >= 2.2.2,
+                       pretty      >= 1.0.1,
+                       uniplate    >= 1.6,
+                       utf8-string >= 1.0
 
 Executable llvm-disasm
   Main-is:             LLVMDis.hs
   Default-language:    Haskell2010
   Ghc-options:         -Wall
   Hs-source-dirs:      llvm-disasm
-  Build-depends:       bytestring >= 0.9.1,
-                       base       >= 4 && < 5,
-                       pretty     >= 1.0.1,
-                       containers >= 0.4,
-                       array      >= 0.3,
-                       monadLib   >= 3.7.2,
-                       fgl        >= 5.5,
-                       fgl-visualize >= 0.1,
-                       cereal     >= 0.3.5.2,
+  Build-depends:       array                 >= 0.3,
+                       base,
+                       binary                >= 0.8,
+                       bytestring,
+                       containers            >= 0.4,
+                       fgl                   >= 5.5,
+                       fgl-visualize         >= 0.1,
+                       llvm-pretty-bc-parser,
                        llvm-pretty,
-                       pretty-show>= 1.6,
-                       llvm-pretty-bc-parser
+                       monadLib              >= 3.7.2,
+                       pretty                >= 1.0.1,
+                       pretty-show           >= 1.6
 
 test-suite unit-test
     type:                exitcode-stdio-1.0
@@ -115,7 +116,7 @@ Test-suite disasm-test
   Default-language:    Haskell2010
   hs-source-dirs:      disasm-test
   Ghc-options:         -Wall
-  build-depends:       base >= 4 && < 5,
+  build-depends:       base,
                        process,
                        directory,
                        bytestring,
@@ -130,7 +131,7 @@ Executable regression-test
   Default-language:    Haskell2010
   hs-source-dirs:      regression-test
   Ghc-options:         -Wall
-  build-depends:       base >= 4 && < 5,
+  build-depends:       base,
                        directory,
                        filepath,
                        foldl,
@@ -148,7 +149,7 @@ Executable fuzz-llvm-disasm
   Default-language:    Haskell2010
   hs-source-dirs:      fuzzing
   Ghc-options:         -Wall -threaded -O2
-  build-depends:       base >= 4 && < 5,
+  build-depends:       base,
                        process,
                        directory,
                        bytestring,

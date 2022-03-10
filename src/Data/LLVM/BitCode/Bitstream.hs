@@ -19,15 +19,15 @@ module Data.LLVM.BitCode.Bitstream (
 import Data.LLVM.BitCode.BitString as BS
 import Data.LLVM.BitCode.GetBits
 
-import Control.Applicative ((<$>))
 import Control.Monad (unless,replicateM,guard)
 import Data.Bits (Bits, bitSizeMaybe, bit)
-import Data.Monoid (Monoid(..))
 import Data.Word (Word8,Word16,Word32)
+import qualified Data.Binary.Get as BG
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import qualified Data.Map as Map
-import qualified Data.Serialize as C
+import Data.Bifunctor (bimap)
+import Data.Tuple.Extra (thd3)
 
 
 -- Primitive Reads -------------------------------------------------------------
@@ -91,13 +91,15 @@ data Bitstream = Bitstream
   } deriving (Show)
 
 parseBitstream :: S.ByteString -> Either String Bitstream
-parseBitstream  = C.runGet (runGetBits getBitstream)
+parseBitstream = bimap thd3 thd3
+                 . BG.runGetOrFail (runGetBits getBitstream)
+                 . L.fromStrict
 
 parseBitCodeBitstream :: S.ByteString -> Either String Bitstream
-parseBitCodeBitstream  = C.runGet (runGetBits getBitCodeBitstream)
+parseBitCodeBitstream = parseBitCodeBitstreamLazy . L.fromStrict
 
 parseBitCodeBitstreamLazy :: L.ByteString -> Either String Bitstream
-parseBitCodeBitstreamLazy  = C.runGetLazy (runGetBits getBitCodeBitstream)
+parseBitCodeBitstreamLazy = bimap thd3 thd3 . BG.runGetOrFail (runGetBits getBitCodeBitstream)
 
 -- | The magic constant at the beginning of all llvm-bitcode files.
 bcMagicConst :: BitString
@@ -454,4 +456,7 @@ interpAbbrevOp op = label (show op) $ case op of
 -- Metadata String Lengths -----------------------------------------------------
 
 parseMetadataStringLengths :: Int -> S.ByteString -> Either String [Int]
-parseMetadataStringLengths n = C.runGet (runGetBits (replicateM n (vbrNum 6)))
+parseMetadataStringLengths n =
+  bimap thd3 thd3
+  . BG.runGetOrFail (runGetBits (replicateM n (vbrNum 6)))
+  . L.fromStrict
