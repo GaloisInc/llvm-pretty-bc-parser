@@ -36,6 +36,8 @@ fromUnabbrev u = return Record
 -- | Record construction from an abbreviated field.
 fromAbbrev :: Match AbbrevRecord Record
 fromAbbrev a = do
+  -- If abbrevFields is empty here, it will cause the Match to fail with
+  -- Nothing, at which point alternatives may then be tried.
   (f:fs) <- return $ abbrevFields a
   code <- numeric f
   return Record
