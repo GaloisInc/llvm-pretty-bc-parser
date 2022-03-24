@@ -767,46 +767,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     notImplemented
 
   -- LLVM 6.0: [ptrty, ptr, val, operation, vol, ordering, ssid]
-  -- https://github.com/llvm-mirror/llvm/blob/release_60/lib/Bitcode/Reader/BitcodeReader.cpp#L4420
-  38 -> label "FUNC_CODE_INST_ATOMICRMW" $ do
-    -- TODO: parse sync scope (ssid)
-    (ptr, ix')  <- getValueTypePair t r 0
-
-    -- TODO: set ix based on the return value of getTypeValuePair, then
-    -- enable this assertion. Is getTypeValuePair returning the wrong value?
-    let ix = length (recordFields r) - 4
-    -- when (length (recordFields r) /= ix + 4) $ do
-    --   fail $ "Invalid record size: " ++ show (length (recordFields r))
-
-    operation <- getDecodedAtomicRWOp =<< parseField r ix numeric
-    volatile  <- parseField r (ix + 1) nonzero
-    ordering  <- parseField r (ix + 2) unsigned >>= getDecodedOrdering >>=
-      \case
-        Just ordering -> pure ordering
-        Nothing       -> fail $ "`atomicrmw` requires ordering: ix == " ++ show ix
-
-    case typedType ptr of
-      PtrTo ty@(PrimType prim) -> do
-
-        -- Catch pointers of the wrong type
-        when (case prim of
-                Integer   _ -> False
-                FloatType _ -> False
-                _           -> True) $
-          fail $ "Expected pointer to integer or float, found " ++ show ty
-
-        val <- do
-          typed <- getValue t ty =<< parseField r ix' numeric
-          if ty /= (typedType typed)
-          then fail $ unlines $ [ "Wrong type of value retrieved from value table"
-                                , "Expected: " ++ show (ty)
-                                , "Got: " ++ show (typedType typed)
-                                ]
-          else pure typed
-
-        result ty (AtomicRW volatile operation ptr val Nothing ordering) d
-
-      ty -> fail $ "Expected pointer to integer or float, found " ++ show ty
+  38 -> label "FUNC_CODE_INST_ATOMICRMW" $
+    parseAtomicRMW t r d
 
 
   -- [opval]
@@ -1135,6 +1097,50 @@ parseGEP t mbInBound r d = do
   args    <- label "parseGepArgs" (parseGepArgs t r' ix)
   rty     <- label "interpGep"    (interpGep (typedType tv) args)
   result rty (GEP ib tv args) d
+
+-- Parse an @atomicrmw@ instruction, which was introduced in LLVM 6.0.
+-- [ptrty, ptr, val, operation, vol, ordering, ssid]
+-- https://github.com/llvm/llvm-project/blob/2362c4ecdc88123e5d54c7ebe30889fbfa760a88/llvm/lib/Bitcode/Reader/BitcodeReader.cpp#L5658-L5720.
+parseAtomicRMW :: ValueTable -> Record -> PartialDefine -> Parse PartialDefine
+parseAtomicRMW t r d = do
+  -- TODO: parse sync scope (ssid)
+  (ptr, ix')  <- getValueTypePair t r 0
+
+  -- TODO: set ix based on the return value of getTypeValuePair, then
+  -- enable this assertion. Is getTypeValuePair returning the wrong value?
+  let ix = length (recordFields r) - 4
+  -- when (length (recordFields r) /= ix + 4) $ do
+  --   fail $ "Invalid record size: " ++ show (length (recordFields r))
+
+  operation <- getDecodedAtomicRWOp =<< parseField r ix numeric
+  volatile  <- parseField r (ix + 1) nonzero
+  ordering  <- parseField r (ix + 2) unsigned >>= getDecodedOrdering >>=
+    \case
+      Just ordering -> pure ordering
+      Nothing       -> fail $ "`atomicrmw` requires ordering: ix == " ++ show ix
+
+  case typedType ptr of
+    PtrTo ty@(PrimType prim) -> do
+
+      -- Catch pointers of the wrong type
+      when (case prim of
+              Integer   _ -> False
+              FloatType _ -> False
+              _           -> True) $
+        fail $ "Expected pointer to integer or float, found " ++ show ty
+
+      val <- do
+        typed <- getValue t ty =<< parseField r ix' numeric
+        if ty /= (typedType typed)
+        then fail $ unlines $ [ "Wrong type of value retrieved from value table"
+                              , "Expected: " ++ show (ty)
+                              , "Got: " ++ show (typedType typed)
+                              ]
+        else pure typed
+
+      result ty (AtomicRW volatile operation ptr val Nothing ordering) d
+
+    ty -> fail $ "Expected pointer to integer or float, found " ++ show ty
 
 -- | Generate a statement that doesn't produce a result.
 effect :: Instr' Int -> PartialDefine -> Parse PartialDefine
