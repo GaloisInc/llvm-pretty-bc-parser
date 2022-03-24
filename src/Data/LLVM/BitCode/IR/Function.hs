@@ -767,8 +767,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     notImplemented
 
   -- LLVM 6.0: [ptrty, ptr, val, operation, vol, ordering, ssid]
-  38 -> label "FUNC_CODE_INST_ATOMICRMW" $
-    parseAtomicRMW t r d
+  38 -> label "FUNC_CODE_INST_ATOMICRMW_OLD" $
+    parseAtomicRMW True t r d
 
 
   -- [opval]
@@ -970,6 +970,10 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (v,_) <- getValueTypePair t r 0
     result (typedType v) (Freeze v) d
 
+  -- LLVM 13: [ptrty, ptr, valty, val, operation, vol, ordering, ssid]
+  59 -> label "FUNC_CODE_INST_ATOMICRMW" $
+    parseAtomicRMW False t r d
+
 
   -- [opty,opval,opval,pred]
   code
@@ -1098,28 +1102,27 @@ parseGEP t mbInBound r d = do
   rty     <- label "interpGep"    (interpGep (typedType tv) args)
   result rty (GEP ib tv args) d
 
--- Parse an @atomicrmw@ instruction, which was introduced in LLVM 6.0.
--- [ptrty, ptr, val, operation, vol, ordering, ssid]
+-- Parse an @atomicrmw@ instruction, which can be represented by one of the
+-- following function codes:
+--
+-- * FUNC_CODE_INST_ATOMICRMW_OLD, which was introduced in LLVM 6.0.
+--   [ptrty, ptr,        val, operation, vol, ordering, ssid]
+--
+-- * FUNC_CODE_INST_ATOMICRMW, which was introduced in LLVM 13.
+--   [ptrty, ptr, valty, val, operation, vol, ordering, ssid]
+--
+-- The only difference between the two is that FUNC_CODE_INST_ATOMICRMW has a
+-- @valty@ field, whereas FUNC_CODE_INST_ATOMICRMW_OLD does not (it reuses the
+-- type that @ptrty@ points to as the @valty@).
+--
+-- The parsing code was inspired by the upstream code at
 -- https://github.com/llvm/llvm-project/blob/2362c4ecdc88123e5d54c7ebe30889fbfa760a88/llvm/lib/Bitcode/Reader/BitcodeReader.cpp#L5658-L5720.
-parseAtomicRMW :: ValueTable -> Record -> PartialDefine -> Parse PartialDefine
-parseAtomicRMW t r d = do
+parseAtomicRMW :: Bool -> ValueTable -> Record -> PartialDefine -> Parse PartialDefine
+parseAtomicRMW old t r d = do
   -- TODO: parse sync scope (ssid)
-  (ptr, ix')  <- getValueTypePair t r 0
+  (ptr, ix0) <- getValueTypePair t r 0
 
-  -- TODO: set ix based on the return value of getTypeValuePair, then
-  -- enable this assertion. Is getTypeValuePair returning the wrong value?
-  let ix = length (recordFields r) - 4
-  -- when (length (recordFields r) /= ix + 4) $ do
-  --   fail $ "Invalid record size: " ++ show (length (recordFields r))
-
-  operation <- getDecodedAtomicRWOp =<< parseField r ix numeric
-  volatile  <- parseField r (ix + 1) nonzero
-  ordering  <- parseField r (ix + 2) unsigned >>= getDecodedOrdering >>=
-    \case
-      Just ordering -> pure ordering
-      Nothing       -> fail $ "`atomicrmw` requires ordering: ix == " ++ show ix
-
-  case typedType ptr of
+  (val, ix1) <- case typedType ptr of
     PtrTo ty@(PrimType prim) -> do
 
       -- Catch pointers of the wrong type
@@ -1129,18 +1132,32 @@ parseAtomicRMW t r d = do
               _           -> True) $
         fail $ "Expected pointer to integer or float, found " ++ show ty
 
-      val <- do
-        typed <- getValue t ty =<< parseField r ix' numeric
-        if ty /= (typedType typed)
-        then fail $ unlines $ [ "Wrong type of value retrieved from value table"
-                              , "Expected: " ++ show (ty)
-                              , "Got: " ++ show (typedType typed)
-                              ]
-        else pure typed
-
-      result ty (AtomicRW volatile operation ptr val Nothing ordering) d
+      if old
+        then -- FUNC_CODE_INST_ATOMICRMW_OLD
+             do typed <- getValue t ty =<< parseField r ix0 numeric
+                if ty /= (typedType typed)
+                then fail $ unlines $ [ "Wrong type of value retrieved from value table"
+                                      , "Expected: " ++ show (ty)
+                                      , "Got: " ++ show (typedType typed)
+                                      ]
+                else pure (typed, ix0 + 1)
+        else -- FUNC_CODE_INST_ATOMICRMW
+             getValueTypePair t r ix0
 
     ty -> fail $ "Expected pointer to integer or float, found " ++ show ty
+
+  -- TODO: enable this assertion. Is getTypeValuePair returning the wrong value?
+  -- when (length (recordFields r) /= ix1 + 4) $ do
+  --   fail $ "Invalid record size: " ++ show (length (recordFields r))
+
+  operation <- getDecodedAtomicRWOp =<< parseField r ix1 numeric
+  volatile  <- parseField r (ix1 + 1) nonzero
+  ordering  <- parseField r (ix1 + 2) unsigned >>= getDecodedOrdering >>=
+    \case
+      Just ordering -> pure ordering
+      Nothing       -> fail $ "`atomicrmw` requires ordering: ix == " ++ show ix1
+
+  result (typedType val) (AtomicRW volatile operation ptr val Nothing ordering) d
 
 -- | Generate a statement that doesn't produce a result.
 effect :: Instr' Int -> PartialDefine -> Parse PartialDefine
