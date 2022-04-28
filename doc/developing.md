@@ -20,20 +20,11 @@
 
 Official (yet incomplete) reference: https://llvm.org/docs/BitCodeFormat.html
 
-C++ implementation:
- + Parser:
-   * [Release 4.0](https://github.com/llvm-mirror/llvm/blob/release_40/lib/Bitcode/Reader/BitcodeReader.cpp)
-   * [Release 5.0](https://github.com/llvm-mirror/llvm/blob/release_50/lib/Bitcode/Reader/BitcodeReader.cpp)
-   * [Release 6.0](https://github.com/llvm-mirror/llvm/blob/release_60/lib/Bitcode/Reader/BitcodeReader.cpp)
+Relevant parts of the upstream C++ implementation:
+ + [Parser (14.x)](https://github.com/llvm/llvm-project/blob/release/14.x/llvm/lib/Bitcode/Reader/BitcodeReader.cpp)
  + Record codes:
-   * Bitstream format:
-     - [Release 4.0](https://github.com/llvm-mirror/llvm/blob/release_40/include/llvm/Bitcode/BitCodes.h)
-     - [Release 5.0](https://github.com/llvm-mirror/llvm/blob/release_50/include/llvm/Bitcode/BitCodes.h)
-     - [Release 6.0](https://github.com/llvm-mirror/llvm/blob/release_60/include/llvm/Bitcode/BitCodes.h)
-   * LLVM bitcode:
-     - [Release 4.0](https://github.com/llvm-mirror/llvm/blob/release_40/include/llvm/Bitcode/LLVMBitCodes.h)
-     - [Release 5.0](https://github.com/llvm-mirror/llvm/blob/release_50/include/llvm/Bitcode/LLVMBitCodes.h)
-     - [Release 6.0](https://github.com/llvm-mirror/llvm/blob/release_60/include/llvm/Bitcode/LLVMBitCodes.h)
+   * [Bitstream enum values (14.x)](https://github.com/llvm/llvm-project/blob/release/14.x/llvm/include/llvm/Bitstream/BitCodes.h)
+   * [LLVM bitcode enum values (14.x)](https://github.com/llvm/llvm-project/blob/release/14.x/llvm/include/llvm/Bitcode/LLVMBitCodes.h)
 
 ## Building
 
