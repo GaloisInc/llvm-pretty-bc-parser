@@ -16,6 +16,7 @@ import           Data.LLVM.BitCode.IR.Attrs
 import           Data.LLVM.BitCode.Match
 import           Data.LLVM.BitCode.Parse
 import           Data.LLVM.BitCode.Record
+import           Data.LLVM.BitCode.Record
 
 import           Text.LLVM.AST
 import           Text.LLVM.Labels
@@ -333,6 +334,12 @@ finalizeStmt lkp = relabel (resolveBlockLabel lkp)
 
 
 -- Function Block Parsing ------------------------------------------------------
+
+-- | A bit saying whether a call or callbr instruction has an explicit type, see
+-- LLVM's CallMarkersFlags:
+-- https://github.com/llvm/llvm-project/blob/c8ed784ee69a7dbdf4b33e85229457ffad309cf2/llvm/include/llvm/Bitcode/LLVMBitCodes.h#L505
+callExplicitTypeBit :: Int
+callExplicitTypeBit = 15
 
 -- | Parse the function block.
 parseFunctionBlock ::
@@ -698,7 +705,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     -- pal <- field 0 numeric -- N.B. skipping param attributes
     ccinfo <- field 1 numeric
     let ix0 = if testBit ccinfo 17 then 3 else 2 -- N.B. skipping fast-math flags
-    (mbFnTy, ix1) <- if testBit (ccinfo :: Word32) 15
+    (mbFnTy, ix1) <- if testBit (ccinfo :: Word32) callExplicitTypeBit
                        then do fnTy <- getType =<< field ix0 numeric
                                return (Just fnTy, ix0+1)
                        else    return (Nothing,   ix0)
@@ -960,10 +967,44 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     -- XXX: we're ignoring the fast-math flags
     result (typedType v) (mkInstr v) d
 
-  -- [attr, cc, norm, transfs,
-  --  fnty, fnid, args...]
+  -- LLVM 9: [attr, cc, norm, transfs, fnty, fnid, args...]
   57 -> label "FUNC_CODE_INST_CALLBR" $ do
-    notImplemented
+    -- This implementation shares a lot with the parser for `call`, but they
+    -- have different fields and so different handling of indices. In
+    -- particular, the handling of basic block destinations is unique to
+    -- `callbr`, and `callbr` doesn't support fast math flags.
+
+    let field = parseField r
+    -- pal <- field 0 numeric -- N.B. skipping param attributes
+    ccinfo <- field 1 unsigned
+    normal <- field 2 numeric
+    numIndirect <- field 3 numeric
+    indirectDests <- mapM (\idx -> field (4 + idx) numeric) [0..numIndirect - 1]
+    let ix0 = 4 + numIndirect
+    (mbFnTy, ix1) <- if testBit (ccinfo :: Word32) callExplicitTypeBit
+                       then do fnTy <- getType =<< field ix0 numeric
+                               return (Just fnTy, ix0+1)
+                       else    return (Nothing,   ix0)
+
+    (Typed opTy fn, ix2) <- getValueTypePair t r ix1
+                                `mplus` fail "Invalid callbr record"
+
+    op <- Assert.elimPtrTo "callbr callee is not a pointer type" opTy
+
+    fnty <- case mbFnTy of
+             Just ty | ty == op  -> return op
+                     | otherwise -> fail "Explicit call type does not match \
+                                         \pointee type of callee operand"
+
+             Nothing ->
+               case op of
+                 FunTy{} -> return op
+                 _       -> fail "Callee is not of pointer to function type"
+
+    label (show fn) $ do
+      (ret,as,va) <- elimFunTy fnty `mplus` fail "invalid CALLBR record"
+      args <- parseCallArgs t va r ix2 as
+      result ret (CallBr opTy fn args normal indirectDests) d
 
   -- [opty, opval]
   58 -> label "FUNC_CODE_INST_FREEZE" $ do
