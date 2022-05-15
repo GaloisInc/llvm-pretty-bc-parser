@@ -592,7 +592,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoFile diFile)) pm
 
     17 -> label "METADATA_DERIVED_TYPE" $ do
-      assertRecordSizeBetween 12 13
+      assertRecordSizeBetween 12 14
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       didt       <- DIDerivedType
@@ -610,11 +610,14 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> (if length (recordFields r) <= 12
              then pure Nothing
              else Just                 <$> parseField r 12 numeric) -- didtDwarfAddressSpace
+        <*> (if length (recordFields r) <= 13
+             then pure Nothing
+             else mdForwardRefOrNull ctx mt <$> parseField r 13 numeric) -- didtAnnotations
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoDerivedType didt)) pm
 
     18 -> label "METADATA_COMPOSITE_TYPE" $ do
-      assertRecordSizeBetween 16 21
+      assertRecordSizeBetween 16 22
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       dict       <- DICompositeType
@@ -648,6 +651,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> (if length (recordFields r) <= 20
              then pure Nothing
              else mdForwardRefOrNull ctx mt <$> parseField r 20 numeric) -- dictRank
+        <*> (if length (recordFields r) <= 21
+             then pure Nothing
+             else mdForwardRefOrNull ctx mt <$> parseField r 21 numeric) -- dictAnnotations
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoCompositeType dict)) pm
 
@@ -790,6 +796,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
             | not hasSPFlags = recordSize >= 21
             | otherwise      = True
 
+          hasAnnotations
+            | not hasSPFlags = False
+            | otherwise      = recordSize >= 19
+
       -- Some additional sanity checking
       when (not hasSPFlags && hasUnit)
            (assertRecordSizeBetween 19 21)
@@ -828,6 +838,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> (mdForwardRefOrNull ctx mt <$> parseField r (14 + offsetB) numeric) -- dispDeclaration
         <*> (mdForwardRefOrNull ctx mt <$> parseField r (15 + offsetB) numeric) -- dispVariables
         <*> (optFwdRef hasThrownTypes (17 + offsetB))                           -- dispThrownTypes
+        <*> (optFwdRef hasAnnotations (18 + offsetB))                           -- dispAnnotations
 
       -- TODO: in the LLVM parser, it then goes into the metadata table
       -- and updates function entries to point to subprograms. Is that
@@ -916,7 +927,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoTemplateValueParameter ditvp)) pm
 
     27 -> label "METADATA_GLOBAL_VAR" $ do
-      assertRecordSizeIn [11, 12]
+      assertRecordSizeBetween 11 13
       ctx        <- getContext
       field0     <- parseField r 0 numeric
       let isDistinct = testBit field0 0
@@ -933,9 +944,12 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> parseField r 8 nonzero                                  -- digvIsDefinition
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 9 numeric)  -- digvVariable
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 10 numeric) -- digvDeclaration
-        <*> if length (recordFields r) > 11
-            then Just                  <$> parseField r 11 numeric  -- digvAlignment
-            else pure Nothing
+        <*> (if length (recordFields r) > 11
+             then Just                  <$> parseField r 11 numeric  -- digvAlignment
+             else pure Nothing)
+        <*> (if length (recordFields r) > 12
+             then mdForwardRefOrNull ctx mt <$> parseField r 12 numeric -- digvAnnotations
+             else pure Nothing)
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoGlobalVariable digv)) pm
 
@@ -975,6 +989,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> parseField r (adj 6) numeric        -- dilvArg
         <*> parseField r (adj 7) numeric        -- dilvFlags
         <*> pure alignInBits                    -- dilvAlignment
+        <*> (if hasAlignment && length (recordFields r) > 9
+             then mdForwardRefOrNull ctx mt <$> parseField r 9 numeric -- dilvAnnotations
+             else pure Nothing)
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoLocalVariable dilv)) pm
 
