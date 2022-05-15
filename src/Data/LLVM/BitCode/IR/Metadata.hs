@@ -607,6 +607,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> parseField r 9 numeric                                  -- didtOffset
         <*> parseField r 10 numeric                                 -- didtFlags
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 11 numeric) -- didtExtraData
+        <*> (if length (recordFields r) <= 12
+             then pure Nothing
+             else Just                 <$> parseField r 12 numeric) -- didtDwarfAddressSpace
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoDerivedType didt)) pm
 
