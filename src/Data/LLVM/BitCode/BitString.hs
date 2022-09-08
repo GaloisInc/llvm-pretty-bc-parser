@@ -1,8 +1,9 @@
 module Data.LLVM.BitCode.BitString (
-    BitString(..)
+    BitString(BitString)
   , toBitString
   , showBitString
   , fromBitString
+  , bitStringValue
   , maskBits
   , take, drop
   ) where
@@ -32,6 +33,9 @@ instance Monoid BitString where
 -- | Given a number of bits to take, and an @Integer@, create a @BitString@.
 toBitString :: Int -> Integer -> BitString
 toBitString len val = BitString len (val .&. maskBits len)
+
+bitStringValue :: BitString -> Integer
+bitStringValue = bsData
 
 fromBitString :: (Num a, Bits a) => BitString -> a
 fromBitString (BitString l i) =

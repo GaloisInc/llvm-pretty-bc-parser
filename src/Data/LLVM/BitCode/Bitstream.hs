@@ -34,24 +34,13 @@ import Data.Tuple.Extra (thd3)
 
 -- | Parse a @Bool@ out of a single bit.
 boolean :: GetBits Bool
-boolean  = do
-  bs <- fixed 1
-  return (bsData bs == 1)
+boolean  = ((1 :: Word8) ==) . fromBitString <$> fixed 1
+
 
 -- | Parse a Num type out of n-bits.
 numeric :: (Num a, Bits a) => Int -> GetBits a
-numeric n = do
-  bs <- fixed n
-  let x = fromIntegral (bsData bs)
-  case bitSizeMaybe x of
-    Nothing -> return x
-    Just n'
-      | bsData bs < bit n' -> return x
-      | otherwise -> fail $ unwords
-           [ "Data.LLVM.BitCode.numeric: bitstring value of length", show n
-           , "( " ++ show (bsData bs) ++ ")"
-           , "could not be parsed into type with only", show n', "bits"
-           ]
+numeric n = fromBitString <$> fixed n
+
 
 -- | Get a @BitString@ formatted as vbr.
 vbr :: Int -> GetBits BitString
