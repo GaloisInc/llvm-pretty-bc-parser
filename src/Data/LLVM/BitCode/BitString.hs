@@ -6,7 +6,6 @@ module Data.LLVM.BitCode.BitString (
   , showBitString
   , fromBitString
   , bitStringValue
-  , maskBits
   , take, drop
   , NumBits, NumBytes, pattern Bits', pattern Bytes'
   , bitCount
