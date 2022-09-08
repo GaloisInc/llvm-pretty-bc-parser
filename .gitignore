@@ -7,3 +7,5 @@ cabal.sandbox.config
 /fuzz-temp-test.c
 /fuzz-temp-test.bc
 /fuzz-results
+.boring
+_darcs/
