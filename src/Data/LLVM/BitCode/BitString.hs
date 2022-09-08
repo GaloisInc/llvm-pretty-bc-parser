@@ -4,7 +4,7 @@ module Data.LLVM.BitCode.BitString (
   , showBitString
   , fromBitString
   , maskBits
-  , take, drop, splitAt
+  , take, drop
   ) where
 
 import Data.Bits ((.&.),(.|.),shiftL,shiftR,bit,bitSizeMaybe, Bits)
@@ -73,9 +73,3 @@ drop :: Int -> BitString -> BitString
 drop n (BitString l i)
   | n >= l    = mempty
   | otherwise = BitString (l - n) (i `shiftR` n)
-
-splitAt :: Int -> BitString -> (BitString,BitString)
-splitAt n bs@(BitString l i)
-  | n <= 0    = (mempty, bs)
-  | n >= l    = (bs, mempty)
-  | otherwise = (toBitString n i, toBitString (l - n) (i `shiftR` n))
