@@ -160,9 +160,9 @@ bytestring n = GetBits $ \ off -> case off of
 label :: String -> GetBits a -> GetBits a
 label l m = GetBits (BG.label l . unGetBits m)
 
--- | Isolate input length, in 32-bit words.
-isolate :: Int -> GetBits a -> GetBits a
-isolate ws m = GetBits (BG.isolate (ws * 4) . unGetBits m)
+-- | Isolate input to a sub-span of the specified byte length.
+isolate :: NumBytes -> GetBits a -> GetBits a
+isolate (Bytes' ws) m = GetBits (BG.isolate ws . unGetBits m)
 
 -- | Try to parse something, returning Nothing when it fails.
 --

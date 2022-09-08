@@ -107,9 +107,9 @@ getBitCodeBitstream  = label "llvm-bitstream" $ do
       -- the offset should always be 20 (5 word32 values)
       unless (fromBitString off == (20 :: Int))
           (fail ("invalid offset value: " ++ show off))
-      size <- fixed $ Bits' 32
+      size <- Bytes' . fromBitString <$> (fixed $ Bits' 32)
       skip $ Bits' 32 -- CPUType
-      isolate (fromBitString size `div` 4) getBitstream
+      isolate size getBitstream
 
 bcWrapperMagicConst :: BitString
 bcWrapperMagicConst  = mconcat [byte 0xDE, byte 0xC0, byte 0x17, byte 0x0B]
@@ -286,7 +286,7 @@ type BlockId = Word32
 data Block = Block
   { blockId           :: !BlockId
   , blockNewAbbrevLen :: !AbbrevIdWidth
-  , blockLength       :: !Int
+  , blockLength       :: !NumBytes
   , blockEntries      :: [Entry]
   } deriving (Show)
 
@@ -308,7 +308,9 @@ getGenericBlock bim = label "block " $ do
   blockid      <- vbrNum $ Bits' 8
   newabbrevlen <- Bits' <$> (vbrNum $ Bits' 4)
   align32bits
-  blocklen     <- numeric $ Bits' 32
+  -- Block length in the bitcode is the number of 32-bit longwords; internally it
+  -- is stored as the number of bytes.
+  blocklen     <- Bytes' . (*4) <$> (numeric $ Bits' 32)
   let am = lookupAbbrevMap blockid bim
   (entries,bim') <- isolate blocklen (getEntries newabbrevlen bim am False)
   let block = Block
