@@ -169,19 +169,29 @@ extractFromByteString !bitLim# !sBit# !nbits# bs =
                 !hop# = sBit# `andI#` 7#
                 !r8# = ((hop# +# nbits# +# 7#) `uncheckedIShiftRL#` 3#)
                 !mask# = (1# `uncheckedIShiftL#` nbits#) -# 1#
+
+#if MIN_VERSION_base(4,16,0)
+                word8ToInt !w8# = word2Int# (word8ToWord# w8#)
+#else
+-- technically #if !MIN_VERSION_ghc_prim(0,8,0), for GHC 9.2, but that isn't a define
+                word8ToInt = word2Int#
+#endif
+
+                getB# :: Int# -> Int#
                 getB# !i# =
                   case i# of
                     0# -> let !(W8# w#) = bs `BS.index` (I# s8#)
-                          in word2Int# w#
+                          in word8ToInt w#
                     _ -> let !(W8# w#) = (bs `BS.index` (I# (s8# +# i#)))
-                         in (word2Int# w#) `uncheckedIShiftL#` (8# *# i#)
+                         in (word8ToInt w#) `uncheckedIShiftL#` (8# *# i#)
+                getSB# :: Int# -> Int#
                 getSB# !i# =
                   case i# of
                     0# -> let !(W8# w#) = bs `BS.index` (I# s8#)
-                          in (word2Int# w#) `uncheckedIShiftRL#` hop#
+                          in (word8ToInt w#) `uncheckedIShiftRL#` hop#
                     _  -> let !(W8# w#) = bs `BS.index` (I# (s8# +# i#))
                               !shft# = (8# *# i#) -# hop#
-                          in (word2Int# w#) `uncheckedIShiftL#` shft#
+                          in (word8ToInt w#) `uncheckedIShiftL#` shft#
                 !vi# = mask# `andI#`
                        (case hop# of
                           0# -> case r8# of
@@ -207,7 +217,7 @@ extractFromByteString !bitLim# !sBit# !nbits# bs =
                                         getB# 6# `orI#` getB# 7#
                                   _ -> let join !(W8# w#) !(I# a#) =
                                              I# ((a# `uncheckedIShiftL#` 8#)
-                                                 `orI#` (word2Int# w#))
+                                                 `orI#` (word8ToInt w#))
                                            bs' = BS.take (I# (r8# +# 2#))
                                                  $ BS.drop (I# s8#) bs
                                            !(I# v#) = BS.foldr join (0::Int) bs'
@@ -249,7 +259,7 @@ extractFromByteString !bitLim# !sBit# !nbits# bs =
                                         getSB# 16# `orI#` getSB# 17#
                                  _ -> let join !(W8# w#) !(I# a#) =
                                             I# ((a# `uncheckedIShiftL#` 8#)
-                                                `orI#` (word2Int# w#))
+                                                `orI#` (word8ToInt w#))
                                           bs' = BS.take (I# (r8# +# 2#))
                                                 $ BS.drop (I# s8#) bs
                                           !(I# v#) = BS.foldr join (0::Int) bs'
