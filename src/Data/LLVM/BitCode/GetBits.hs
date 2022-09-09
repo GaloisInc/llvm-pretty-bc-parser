@@ -52,9 +52,8 @@ runGetBits m bs =
 instance Functor GetBits where
   {-# INLINE fmap #-}
   fmap f m = GetBits $
-    let g = unGetBits m
-    in \ !pos# inp -> let !(# b, n# #) = g pos# inp
-                      in (# f <$> b, n# #)
+    \ !pos# inp -> let !(# b, n# #) = unGetBits m pos# inp
+                   in (# f <$> b, n# #)
 
 instance Applicative GetBits where
   {-# INLINE pure #-}
@@ -62,33 +61,27 @@ instance Applicative GetBits where
 
   {-# INLINE (<*>) #-}
   f <*> x =
-    GetBits $ let k = unGetBits f
-                  l = unGetBits x
-              in \ !pos# inp -> let !(# g, n# #) = k pos# inp
-                                    !(# y, m# #) = l n# inp
-                                in (# case g of
-                                       Right g' -> case y of
-                                                     Right y' -> Right $ g' y'
-                                                     Left e -> Left e
-                                       Left e -> Left e
-                                   , m#
-                                   #)
+    GetBits $ \ !pos# inp ->
+                let !(# g, n# #) = unGetBits f pos# inp
+                in case g of
+                     Right g' ->
+                       let !(# y, m# #) = unGetBits x n# inp
+                       in case y of
+                            Right y' -> (# Right $ g' y', m# #)
+                            Left e -> (# Left e, m# #)
+                     Left e -> (# Left e, n# #)
 
 instance Monad GetBits where
   {-# INLINE return #-}
   return = pure
 
   {-# INLINE (>>=) #-}
-  m >>= f =
-    let k = unGetBits m
-    in GetBits $ \ !pos# inp ->
-        let !(# g, n# #) = k pos# inp
-            !(# gr, nr# #) = case g of
-              Left e -> (# Left e, n# #)
-              Right a ->
-                let l = unGetBits $ f a
-                in l n# inp
-        in (# gr, nr# #)
+  m >>= f = GetBits $ \ !pos# inp ->
+                        let !(# g, n# #) = unGetBits m pos# inp
+                            !(# gr, nr# #) = case g of
+                                               Left e -> (# Left e, n# #)
+                                               Right a -> unGetBits (f a) n# inp
+                        in (# gr, nr# #)
 
 #if !MIN_VERSION_base(4,13,0)
   {-# INLINE fail #-}
@@ -105,15 +98,11 @@ instance Alternative GetBits where
 
   {-# INLINE (<|>) #-}
   a <|> b = GetBits
-            $ let k = unGetBits a
-              in \ !pos# inp ->
-                            let !(# g, n# #) = k pos# inp
-                                !(# gr, nr# #) = case g of
-                                  Right x -> (# Right x, n# #)
-                                  Left _ ->
-                                    let l = unGetBits b
-                                    in l pos# inp
-                            in (# gr, nr# #)
+            $ \ !pos# inp ->
+                let !r@(# g, _ #) = unGetBits a pos# inp
+                in case g of
+                     Right _ -> r
+                     Left _ -> unGetBits b pos# inp
 
 instance MonadPlus GetBits where
   {-# INLINE mzero #-}
