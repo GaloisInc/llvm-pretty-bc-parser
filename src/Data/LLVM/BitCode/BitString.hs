@@ -11,7 +11,7 @@ module Data.LLVM.BitCode.BitString
   , take, drop
   , joinBitString
   , NumBits, NumBytes, pattern Bits', pattern Bytes'
-  , bitCount
+  , bitCount, bitsToBytes, bytesToBits
   , addBitCounts
   , subtractBitCounts
   )
@@ -40,15 +40,19 @@ pattern Bytes' n = NumBytes n
 bitCount :: NumBits -> Int
 bitCount (NumBits n) = n
 
+{-# INLINE addBitCounts #-}
 addBitCounts :: NumBits -> NumBits -> NumBits
 addBitCounts (NumBits a) (NumBits b) = NumBits $ a + b
 
+{-# INLINE subtractBitCounts #-}
 subtractBitCounts :: NumBits -> NumBits -> NumBits
 subtractBitCounts (NumBits a) (NumBits b) = NumBits $ a - b
 
+{-# INLINE bytesToBits #-}
 bitsToBytes :: NumBits -> (NumBytes, NumBits)
 bitsToBytes (NumBits n) = (NumBytes $ n `shiftR` 3, NumBits $ n .&. 7)
 
+{-# INLINE bitsToBytes #-}
 bytesToBits :: NumBytes -> NumBits
 bytesToBits (NumBytes n) = NumBits $ n `shiftL` 3
 

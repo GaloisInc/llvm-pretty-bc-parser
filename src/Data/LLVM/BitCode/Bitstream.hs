@@ -16,18 +16,15 @@ module Data.LLVM.BitCode.Bitstream (
   , parseMetadataStringLengths
   ) where
 
-import Data.LLVM.BitCode.BitString as BS
-import Data.LLVM.BitCode.GetBits
+import           Data.LLVM.BitCode.BitString as BS
+import           Data.LLVM.BitCode.GetBits
 
-import Control.Monad (unless,replicateM,guard)
-import Data.Bits (Bits, bitSizeMaybe, bit)
-import Data.Word (Word8,Word16,Word32)
-import qualified Data.Binary.Get as BG
+import           Control.Monad ( unless, replicateM, guard )
+import           Data.Bits ( Bits )
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import qualified Data.Map as Map
-import Data.Bifunctor (bimap)
-import Data.Tuple.Extra (thd3)
+import           Data.Word ( Word8, Word16, Word32 )
 
 
 -- Primitive Reads -------------------------------------------------------------
@@ -80,15 +77,13 @@ data Bitstream = Bitstream
   } deriving (Show)
 
 parseBitstream :: S.ByteString -> Either String Bitstream
-parseBitstream = bimap thd3 thd3
-                 . BG.runGetOrFail (runGetBits getBitstream)
-                 . L.fromStrict
+parseBitstream = runGetBits getBitstream
 
 parseBitCodeBitstream :: S.ByteString -> Either String Bitstream
 parseBitCodeBitstream = parseBitCodeBitstreamLazy . L.fromStrict
 
 parseBitCodeBitstreamLazy :: L.ByteString -> Either String Bitstream
-parseBitCodeBitstreamLazy = bimap thd3 thd3 . BG.runGetOrFail (runGetBits getBitCodeBitstream)
+parseBitCodeBitstreamLazy = runGetBits getBitCodeBitstream . L.toStrict
 
 -- | The magic constant at the beginning of all llvm-bitcode files.
 bcMagicConst :: BitString
@@ -450,7 +445,4 @@ interpAbbrevOp op = label (show op) $ case op of
 -- Metadata String Lengths -----------------------------------------------------
 
 parseMetadataStringLengths :: Int -> S.ByteString -> Either String [Int]
-parseMetadataStringLengths n =
-  bimap thd3 thd3
-  . BG.runGetOrFail (runGetBits (replicateM n (vbrNum $ Bits' 6)))
-  . L.fromStrict
+parseMetadataStringLengths n = runGetBits (replicateM n (vbrNum $ Bits' 6))
