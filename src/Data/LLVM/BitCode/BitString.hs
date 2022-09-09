@@ -1,3 +1,5 @@
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PatternSynonyms #-}
 
 module Data.LLVM.BitCode.BitString
@@ -11,13 +13,15 @@ module Data.LLVM.BitCode.BitString
   , take, drop
   , joinBitString
   , NumBits, NumBytes, pattern Bits', pattern Bytes'
-  , bitCount, bitsToBytes, bytesToBits
+  , bitCount, bitCount#
+  , bitsToBytes, bytesToBits
   , addBitCounts
   , subtractBitCounts
   )
 where
 
-import Data.Bits ((.&.),(.|.),shiftL,shiftR,bit,bitSizeMaybe, Bits)
+import Data.Bits ( bit, bitSizeMaybe, Bits )
+import GHC.Exts
 import Numeric ( showIntAtBase, showHex )
 
 import Prelude hiding (take,drop,splitAt)
@@ -40,21 +44,26 @@ pattern Bytes' n = NumBytes n
 bitCount :: NumBits -> Int
 bitCount (NumBits n) = n
 
+bitCount# :: NumBits -> Int#
+bitCount# (NumBits (I# n#)) = n#
+
 {-# INLINE addBitCounts #-}
 addBitCounts :: NumBits -> NumBits -> NumBits
-addBitCounts (NumBits a) (NumBits b) = NumBits $ a + b
+addBitCounts (NumBits (I# a#)) (NumBits (I# b#)) = NumBits (I# (a# +# b#))
 
 {-# INLINE subtractBitCounts #-}
 subtractBitCounts :: NumBits -> NumBits -> NumBits
-subtractBitCounts (NumBits a) (NumBits b) = NumBits $ a - b
+subtractBitCounts (NumBits (I# a#)) (NumBits (I# b#)) = NumBits (I# (a# -# b#))
 
 {-# INLINE bytesToBits #-}
 bitsToBytes :: NumBits -> (NumBytes, NumBits)
-bitsToBytes (NumBits n) = (NumBytes $ n `shiftR` 3, NumBits $ n .&. 7)
+bitsToBytes (NumBits (I# n#)) = ( NumBytes (I# (n# `uncheckedIShiftRL#` 3#))
+                                , NumBits (I# (n# `andI#` 7#))
+                                )
 
 {-# INLINE bitsToBytes #-}
 bytesToBits :: NumBytes -> NumBits
-bytesToBits (NumBytes n) = NumBits $ n `shiftL` 3
+bytesToBits (NumBytes (I# n#)) = NumBits (I# (n# `uncheckedIShiftL#` 3#))
 
 ----------------------------------------------------------------------
 
@@ -90,17 +99,19 @@ emptyBitString = BitString (NumBits 0) 0
 -- BitString.
 
 joinBitString :: BitString -> BitString -> BitString
-joinBitString a b =
-  let bitSizeA = bitCount $ bsLength a
-  in BitString { bsLength = addBitCounts (bsLength a) (bsLength b)
-               , bsData = bsData a .|. (bsData b `shiftL` bitSizeA)
-               }
+joinBitString (BitString (Bits' (I# szA#)) (I# a#))
+              (BitString (Bits' (I# szB#)) (I# b#)) =
+  BitString { bsLength = NumBits (I# (szA# +# szB#))
+            , bsData = I# (a# `orI#` (b# `uncheckedIShiftL#` szA#))
+            }
 
 
 -- | Given a number of bits to take, and an @Integer@, create a @BitString@.
 
 toBitString :: NumBits -> Int -> BitString
-toBitString len val = BitString len (val .&. maskBits len)
+toBitString len@(Bits' (I# len#)) (I# val#) =
+  let !mask# = (1# `uncheckedIShiftL#` len#) -# 1#
+  in BitString len (I# (val# `andI#` mask#))
 
 
 -- | Extract the referenced Integer value from a BitString
@@ -140,13 +151,6 @@ showBitString bs = showString padding . showString bin
   fmt _   = error "invalid binary digit value"
 
 
--- | Generate a mask from a number of bits desired.
-maskBits :: NumBits -> Int
-maskBits (NumBits len)
-  | len <= 0  = 0
-  | otherwise = pred (bit len)
-
-
 -- | Extract a smaller BitString with the specified number of bits from the
 -- \"start\" of a larger BitString.
 take :: NumBits -> BitString -> BitString
@@ -159,8 +163,10 @@ take n bs@(BitString l i)
 -- return the remaining as a smaller BitString.
 
 drop :: NumBits -> BitString -> BitString
-drop n (BitString l i)
+drop !n !(BitString l i)
   | n >= l    = emptyBitString
-  | otherwise = BitString
-                (NumBits $ bitCount l - bitCount n)
-                (i `shiftR` (bitCount n))
+  | otherwise =
+      let !(I# n#) = bitCount n
+          !(I# l#) = bitCount l
+          !(I# i#) = i
+      in BitString (NumBits (I# (l# -# n#))) (I# (i# `uncheckedIShiftRL#` n#))
