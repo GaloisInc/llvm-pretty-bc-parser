@@ -70,7 +70,7 @@ emptyBitString = BitString (NumBits 0) 0
 
 
 -- | Join two BitString representations together to form a single larger
--- BitString.  The first BitString is the "lower" value portion of the resulting
+-- BitString.  The first BitString is the \"lower\" value portion of the resulting
 -- BitString.
 
 joinBitString :: BitString -> BitString -> BitString
@@ -130,8 +130,7 @@ maskBits (NumBits len)
 
 
 -- | Extract a smaller BitString with the specified number of bits from the
--- "start" of a larger BitString.
-
+-- \"start\" of a larger BitString.
 take :: NumBits -> BitString -> BitString
 take n bs@(BitString l i)
   | n >= l    = bs

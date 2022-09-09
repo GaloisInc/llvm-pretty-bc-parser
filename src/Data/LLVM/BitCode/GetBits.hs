@@ -125,16 +125,30 @@ instance MonadPlus GetBits where
 -- extract is not valid... i.e. > bitLimit).  Returns the Integer value along
 -- with the bit position following the extraction.
 
-extractFromByteString :: NumBits -> NumBits -> NumBits -> ByteString
+extractFromByteString :: NumBits {-^ the last bit accessible in the ByteString -}
+                      -> NumBits {-^ the bit to start extraction at -}
+                      -> NumBits {-^ the number of bits to extract -}
+                      -> ByteString {-^ the ByteString to extract from -}
                       -> Either String (Integer, NumBits)
 extractFromByteString bitLimit startBit numBits bs =
   let Bytes' s8 = fst (bitsToBytes startBit)
       Bytes' r8 = fst (bitsToBytes numBits)
       rcnt = r8 + 2 -- 2 == pre-shift overflow byte on either side
+
+      -- Extract the relevant bits from the ByteCode, with padding to byte
+      -- boundaries into ws.
       ws = BS.take rcnt $ BS.drop s8 bs
+
+      -- Combine the extracted bytes into an Integer value in wi.
       wi = BS.foldr (\w a -> a `shiftL` 8 .|. fromIntegral w) (0::Integer) ws
+
+      -- Mask is 0-bit based set of bits wanted in the result
       mask = ((1::Integer) `shiftL` bitCount numBits) - 1
+
+      -- Shift the desired value down to byte alignment and then discard any
+      -- excess high bits.
       vi = wi `shiftR` (bitCount startBit .&. 7) .&. mask
+
       updPos = addBitCounts startBit numBits
   in if updPos > bitLimit
      then Left ("Attempt to read bits past limit (newPos="
