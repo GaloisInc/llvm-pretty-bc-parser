@@ -56,6 +56,9 @@ Library
                        Data.LLVM.BitCode.Record
 
   Ghc-options:         -Wall
+                       -Wunbanged-strict-patterns
+                       -O2
+                       -funbox-strict-fields
 
   Build-depends:       array       >= 0.3,
                        base        >= 4.8 && < 5,
@@ -72,7 +75,7 @@ Library
 Executable llvm-disasm
   Main-is:             LLVMDis.hs
   Default-language:    Haskell2010
-  Ghc-options:         -Wall
+  Ghc-options:         -Wall -Wunbanged-strict-patterns -O2
   Hs-source-dirs:      llvm-disasm
   Build-depends:       array                 >= 0.3,
                        base,
