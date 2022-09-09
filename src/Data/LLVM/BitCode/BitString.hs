@@ -23,6 +23,8 @@ import Numeric (showIntAtBase)
 import Prelude hiding (take,drop,splitAt)
 
 ----------------------------------------------------------------------
+-- Define some convenience newtypes to clarify whether the count of bits or count
+-- of bytes is being referenced, and to convert between the two.
 
 newtype NumBits = NumBits Int deriving (Show, Eq, Ord)
 newtype NumBytes = NumBytes Int deriving (Show, Eq, Ord)
@@ -43,6 +45,14 @@ addBitCounts (NumBits a) (NumBits b) = NumBits $ a + b
 
 subtractBitCounts :: NumBits -> NumBits -> NumBits
 subtractBitCounts (NumBits a) (NumBits b) = NumBits $ a - b
+
+bitsToBytes :: NumBits -> (NumBytes, NumBits)
+bitsToBytes (NumBits n) = (NumBytes $ n `shiftR` 3, NumBits $ n .&. 7)
+
+bytesToBits :: NumBytes -> NumBits
+bytesToBits (NumBytes n) = NumBits $ n `shiftL` 3
+
+----------------------------------------------------------------------
 
 data BitString = BitString
   { bsLength :: !NumBits
