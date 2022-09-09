@@ -87,9 +87,9 @@ parseBitCodeBitstreamLazy = runGetBits getBitCodeBitstream . L.toStrict
 
 -- | The magic constant at the beginning of all llvm-bitcode files.
 bcMagicConst :: BitString
-bcMagicConst  = BitString (Bits' 8) 0x42
+bcMagicConst  = toBitString (Bits' 8) 0x42
                 `joinBitString`
-                BitString (Bits' 8) 0x43
+                toBitString (Bits' 8) 0x43
 
 -- | Parse a @Bitstream@ from either a normal bitcode file, or a wrapped
 -- bitcode.
@@ -112,7 +112,7 @@ bcWrapperMagicConst :: BitString
 bcWrapperMagicConst  =
   foldr1 joinBitString [ byte 0xDE, byte 0xC0, byte 0x17, byte 0x0B]
   where
-  byte = BitString (Bits' 8)
+  byte = toBitString (Bits' 8)
 
 guardWrapperMagic :: GetBits ()
 guardWrapperMagic  = do

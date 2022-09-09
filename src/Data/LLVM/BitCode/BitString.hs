@@ -2,7 +2,7 @@
 
 module Data.LLVM.BitCode.BitString
   (
-    BitString(BitString)
+    BitString
   , emptyBitString
   , toBitString
   , showBitString

@@ -169,7 +169,7 @@ fixed n = GetBits $ pure
           $ \s@(BitPosition (cur,lim)) ->
               \inp ->
                 case extractFromByteString lim cur n inp of
-                  Right (v,p) -> ( const $ pure $ BitString n v
+                  Right (v,p) -> ( const $ pure $ toBitString n v
                                  , BitPosition (p,lim)
                                  )
                   Left e -> (const $ Left e, s)
