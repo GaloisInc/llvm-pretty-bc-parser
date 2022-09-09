@@ -31,13 +31,13 @@ import qualified Control.Monad.Fail
 -- Bit-level Parsing -----------------------------------------------------------
 
 newtype GetBits a =
-  GetBits { unGetBits :: Either String -- Left is outer fail
-                         (BitPosition -> BS.ByteString
-                           -> (# BitsGetter a, BitPosition #)) }
+  GetBits { unGetBits :: BitPosition -> BS.ByteString
+                      -> (# BitsGetter a, BitPosition #)
+          }
 
 type BitPosition = (# Int#, Int# #)
 
-type BitsGetter a = BS.ByteString -> Either String a -- Left is inner fail
+type BitsGetter a = Either String a -- Left is fail
 
 
 -- | Run a @GetBits@ action, returning its value, and the number of bits offset
@@ -45,33 +45,34 @@ type BitsGetter a = BS.ByteString -> Either String a -- Left is inner fail
 runGetBits :: GetBits a -> ByteString -> Either String a
 runGetBits m bs =
   let !startPos# = (# 0#, bitCount# $ bytesToBits $ Bytes' $ BS.length bs #)
-  in do k <- unGetBits m
-        let !(# g, _ #) = k startPos# bs
-        g bs
+      !(# g, _ #) = unGetBits m startPos# bs
+  in g
 
 
 instance Functor GetBits where
   {-# INLINE fmap #-}
-  fmap f m = GetBits $ case unGetBits m of
-    Left e -> Left e
-    Right g -> Right $ \ !pos# inp -> let !(# b, n# #) = g pos# inp
-                                      in (# \bs -> f <$> b bs, n# #)
+  fmap f m = GetBits $
+    let g = unGetBits m
+    in \ !pos# inp -> let !(# b, n# #) = g pos# inp
+                      in (# f <$> b, n# #)
 
 instance Applicative GetBits where
   {-# INLINE pure #-}
-  pure x = GetBits $ pure $ \ !pos# _ -> (# const $ pure x, pos# #)
+  pure x = GetBits $ \ !pos# _ -> (# pure x, pos# #)
 
   {-# INLINE (<*>) #-}
   f <*> x =
-    GetBits $ do k <- unGetBits f
-                 l <- unGetBits x
-                 return $ \ !pos# inp -> let !(# g, n# #) = k pos# inp
-                                             !(# y, m# #) = l n# inp
-                                          in (# \_ -> do g' <- g inp
-                                                         y' <- y inp
-                                                         return $ g' y'
-                                             , m#
-                                             #)
+    GetBits $ let k = unGetBits f
+                  l = unGetBits x
+              in \ !pos# inp -> let !(# g, n# #) = k pos# inp
+                                    !(# y, m# #) = l n# inp
+                                in (# case g of
+                                       Right g' -> case y of
+                                                     Right y' -> Right $ g' y'
+                                                     Left e -> Left e
+                                       Left e -> Left e
+                                   , m#
+                                   #)
 
 instance Monad GetBits where
   {-# INLINE return #-}
@@ -79,45 +80,40 @@ instance Monad GetBits where
 
   {-# INLINE (>>=) #-}
   m >>= f =
-    case unGetBits m of
-      Left e -> GetBits $ Left e
-      Right k -> GetBits $ pure $ \ !pos# inp ->
+    let k = unGetBits m
+    in GetBits $ \ !pos# inp ->
         let !(# g, n# #) = k pos# inp
-            !(# gr, nr# #) = case g inp of  -- KWQ: this is weak, assumes bs == inp
+            !(# gr, nr# #) = case g of
               Left e -> (# Left e, n# #)
-              Right a -> case unGetBits $ f a of
-                Left e -> (# Left e, n# #)
-                Right l -> let !(# h, x# #) = l n# inp
-                           in (# h inp, x# #)
-        in (# const gr, nr# #)
+              Right a ->
+                let l = unGetBits $ f a
+                in l n# inp
+        in (# gr, nr# #)
 
 #if !MIN_VERSION_base(4,13,0)
   {-# INLINE fail #-}
-  fail = GetBits . Left
+  fail e = GetBits $ \ p _ -> (# Left e, p #)
 #endif
 
 instance MonadFail GetBits where
   {-# INLINE fail #-}
-  fail = GetBits . Left
+  fail e = GetBits $ \ p _ -> (# Left e, p #)
 
 instance Alternative GetBits where
   {-# INLINE empty #-}
-  empty   = GetBits $ Left "GetBits is empty!"
+  empty = GetBits $ \ p _ -> (# Left "GetBits is empty!", p #)
 
   {-# INLINE (<|>) #-}
   a <|> b = GetBits
-            $ case unGetBits a of
-                Right k ->
-                  Right $ \ !pos# inp ->
+            $ let k = unGetBits a
+              in \ !pos# inp ->
                             let !(# g, n# #) = k pos# inp
-                                !(# gr, nr# #) = case g inp of
+                                !(# gr, nr# #) = case g of
                                   Right x -> (# Right x, n# #)
-                                  Left _ -> case unGetBits b of
-                                    Left e -> (# Left e, n# #)
-                                    Right l -> let !(# h, m# #) = l pos# inp
-                                               in (# h inp, m# #)
-                            in (# const gr, nr# #)
-                Left _ -> unGetBits b
+                                  Left _ ->
+                                    let l = unGetBits b
+                                    in l pos# inp
+                            in (# gr, nr# #)
 
 instance MonadPlus GetBits where
   {-# INLINE mzero #-}
@@ -282,35 +278,35 @@ extractFromByteString !bitLim# !sBit# !nbits# bs =
 
 -- | Read zeros up to an alignment of 32-bits.
 align32bits :: GetBits ()
-align32bits  = GetBits $ pure $ \ !pos# inp ->
+align32bits  = GetBits $ \ !pos# inp ->
   let !(# curBit#, ttlBits# #) = pos#
       !s32# = curBit# `andI#` 31#
       !r32# = 32# -# s32#  -- num bits to reach next 32-bit boundary
       nonZero = "alignments @" <> show (I# curBit#)
                 <> " not zeroes up to 32-bit boundary"
   in if isTrue# (s32# ==# 0#)
-     then (# const $ Right (), pos# #)
+     then (# Right (), pos# #)
      else case extractFromByteString ttlBits# curBit# r32# inp of
             Right getRes ->
               let !(# vi#, newPos# #) = getRes ()
               in if isTrue# (vi# ==# 0#)
-                 then (# const $ Right (), (# newPos#, ttlBits# #) #)
-                 else (# const $ Left nonZero, pos# #)
-            Left e -> (# const $ Left e, pos# #)
+                 then (# Right (), (# newPos#, ttlBits# #) #)
+                 else (# Left nonZero, pos# #)
+            Left e -> (# Left e, pos# #)
 
 
 -- | Read out n bits as a @BitString@.
 fixed :: NumBits -> GetBits BitString
-fixed !(Bits' (I# n#)) = GetBits $ pure
+fixed !(Bits' (I# n#)) = GetBits
   $ \ !s@(# cur#, lim# #) ->
       \inp ->
         case extractFromByteString lim# cur# n# inp of
           Right getRes ->
             let !(# v#, p# #) = getRes ()
-            in (# const $ pure $ toBitString (Bits' (I# n#)) (I# v#)
+            in (# pure $ toBitString (Bits' (I# n#)) (I# v#)
                , (# p#, lim# #)
                #)
-          Left e -> (# const $ Left e, s #)
+          Left e -> (# Left e, s #)
 
 
 -- | Read out n bytes as a @ByteString@, aligning to a 32-bit boundary before and
@@ -318,7 +314,7 @@ fixed !(Bits' (I# n#)) = GetBits $ pure
 bytestring :: NumBytes -> GetBits ByteString
 bytestring n@(Bytes' nbytes) = do
   align32bits
-  r <- GetBits $ pure
+  r <- GetBits
        $ \ !(# pos#, lim# #) ->
            \inp ->
              let !sbyte# = pos# `uncheckedIShiftRL#` 3# -- known to be aligned
@@ -326,35 +322,29 @@ bytestring n@(Bytes' nbytes) = do
                  !end# = (# endAt#, lim# #)
                  err = "Sub-bytestring attempted beyond end of input bytestring"
              in if isTrue# (endAt# <=# lim#)
-                then (# const $ pure $ BS.take nbytes $ BS.drop (I# sbyte#) inp, end# #)
-                else (# const $ Left err, end# #)
+                then (# pure $ BS.take nbytes $ BS.drop (I# sbyte#) inp, end# #)
+                else (# Left err, end# #)
   align32bits
   return r
 
 
 -- | Add a label to the error tag stack.
 label :: String -> GetBits a -> GetBits a
-label l m = case unGetBits m of
-              Left e -> GetBits $ Left $ e <> "\n  " <> l
-              Right k -> GetBits $ pure
-                         $ \ !pos# inp ->
-                             let !(# j, n# #) = k pos# inp
-                             in case j inp of
-                                  Left e -> (# const $ Left $ e <> "\n  " <> l, n# #)
-                                  Right r -> (# const $ Right r, n# #)
+label l m = GetBits $ \ !pos# inp ->
+                        let !(# j, n# #) = unGetBits m pos# inp
+                        in case j of
+                             Left e -> (# Left $ e <> "\n  " <> l, n# #)
+                             Right r -> (# Right r, n# #)
 
 
 -- | Isolate input to a sub-span of the specified byte length.
 isolate :: NumBytes -> GetBits a -> GetBits a
 isolate ws m =
-  case unGetBits m of
-    Right k -> GetBits $ pure
-               $ \ !(# pos#, lim# #) ->
-                   \inp ->
-                     let !l# = pos# +# bitCount# (bytesToBits ws)
-                     in let !(# r, (# x#, _ #) #) = k (# pos#, l# #) inp
-                        in (# r, (# x#, lim# #) #)
-    Left e -> GetBits $ Left e
+  GetBits $ \ !(# pos#, lim# #) ->
+              \inp ->
+                let !l# = pos# +# bitCount# (bytesToBits ws)
+                    !(# r, (# x#, _ #) #) = unGetBits m (# pos#, l# #) inp
+                in (# r, (# x#, lim# #) #)
 
 
 -- | Try to parse something, returning Nothing when it fails.
@@ -366,12 +356,12 @@ try m = (Just <$> m) `mplus` return Nothing
 -- | Skips the specified number of bits
 
 skip :: NumBits -> GetBits ()
-skip !(Bits' (I# n#)) = GetBits $ pure
-  $ \ !(# cur#, lim# #) ->
-      let !newLoc# = cur# +# n#
-          !newPos# = (# newLoc#, lim# #)
-      in if isTrue# (newLoc# ># lim#)
-         then \_ -> (# const $ Left "skipped past end of bytestring"
-                    , newPos#
-                      #)
-         else \_ -> (# const $ Right (), newPos# #)
+skip !(Bits' (I# n#)) =
+  GetBits $ \ !(# cur#, lim# #) ->
+              let !newLoc# = cur# +# n#
+                  !newPos# = (# newLoc#, lim# #)
+              in if isTrue# (newLoc# ># lim#)
+                 then \_ -> (# Left "skipped past end of bytestring"
+                            , newPos#
+                              #)
+                 else \_ -> (# Right (), newPos# #)
