@@ -18,7 +18,7 @@ module Data.LLVM.BitCode.BitString
 where
 
 import Data.Bits ((.&.),(.|.),shiftL,shiftR,bit,bitSizeMaybe, Bits)
-import Numeric (showIntAtBase)
+import Numeric ( showIntAtBase, showHex )
 
 import Prelude hiding (take,drop,splitAt)
 
@@ -60,7 +60,23 @@ bytesToBits (NumBytes n) = NumBits $ n `shiftL` 3
 
 data BitString = BitString
   { bsLength :: !NumBits
-  , bsData   :: !Integer
+  , bsData   :: !Int
+    -- Note: the bsData was originally an Integer, which allows an essentially
+    -- unlimited size value.  However, this adds some overhead to various
+    -- computations, and since LLVM Bitcode is unlikely to ever represent values
+    -- > native size (64 bits) as discrete values.  By changing this to @Int@,
+    -- the use of uboxed calculations is enabled for better performance.
+    --
+    -- The use of Int is potentially unsound because GHC only guarantees it's a
+    -- signed 32-bit integer.  However current implementation in all environments
+    -- where it's reasonable to use this parser have a 64-bit Int
+    -- implementatinon.  This can be verified via:
+    --
+    --  > import Data.Bits
+    --  > bitSizeMaybe (maxBound :: Int) >= Just 64
+    --
+    -- There's no good location here to automate this check (perhaps
+    -- GetBits.hs:runGetBits?), which is why it isn't verified at runtime.
   } deriving (Show, Eq)
 
 -- | Create an empty BitString
@@ -83,13 +99,13 @@ joinBitString a b =
 
 -- | Given a number of bits to take, and an @Integer@, create a @BitString@.
 
-toBitString :: NumBits -> Integer -> BitString
+toBitString :: NumBits -> Int -> BitString
 toBitString len val = BitString len (val .&. maskBits len)
 
 
 -- | Extract the referenced Integer value from a BitString
 
-bitStringValue :: BitString -> Integer
+bitStringValue :: BitString -> Int
 bitStringValue = bsData
 
 
@@ -101,15 +117,17 @@ fromBitString (BitString l i) =
   case bitSizeMaybe x of
     Nothing -> x
     Just n
-      | 0 <= ival && ival < bit n -> x
+      -- Verify that the bitstring size is less than the target size, or if it is
+      -- greater, that the extra upper bits are all zero.
+      | n >= bitCount l || (ival < bit n) -> x
       | otherwise -> error (unwords
            [ "Data.LLVM.BitCode.BitString.fromBitString: bitstring value of length", show l
-           , "(", show i, ")"
+           , "(mask=0x" <> showHex i ")"
            , "could not be parsed into type with only", show n, "bits"
            ])
  where
- x    = fromInteger ival
- ival = i .&. maskBits l
+ x    = fromInteger ival  -- use Num's conversion
+ ival = toInteger i
 
 
 showBitString :: BitString -> ShowS
@@ -123,7 +141,7 @@ showBitString bs = showString padding . showString bin
 
 
 -- | Generate a mask from a number of bits desired.
-maskBits :: NumBits -> Integer
+maskBits :: NumBits -> Int
 maskBits (NumBits len)
   | len <= 0  = 0
   | otherwise = pred (bit len)

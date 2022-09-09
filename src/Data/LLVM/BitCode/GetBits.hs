@@ -140,10 +140,10 @@ extractFromByteString bitLimit startBit numBits bs =
       ws = BS.take rcnt $ BS.drop s8 bs
 
       -- Combine the extracted bytes into an Integer value in wi.
-      wi = BS.foldr (\w a -> a `shiftL` 8 .|. fromIntegral w) (0::Integer) ws
+      wi = BS.foldr (\w a -> a `shiftL` 8 .|. fromIntegral w) (0::Int) ws
 
       -- Mask is 0-bit based set of bits wanted in the result
-      mask = ((1::Integer) `shiftL` bitCount numBits) - 1
+      mask = ((1::Int) `shiftL` bitCount numBits) - 1
 
       -- Shift the desired value down to byte alignment and then discard any
       -- excess high bits.
