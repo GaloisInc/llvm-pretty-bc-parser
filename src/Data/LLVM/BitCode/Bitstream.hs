@@ -34,30 +34,19 @@ import Data.Tuple.Extra (thd3)
 
 -- | Parse a @Bool@ out of a single bit.
 boolean :: GetBits Bool
-boolean  = do
-  bs <- fixed 1
-  return (bsData bs == 1)
+boolean  = ((1 :: Word8) ==) . fromBitString <$> fixed (Bits' 1)
+
 
 -- | Parse a Num type out of n-bits.
-numeric :: (Num a, Bits a) => Int -> GetBits a
-numeric n = do
-  bs <- fixed n
-  let x = fromIntegral (bsData bs)
-  case bitSizeMaybe x of
-    Nothing -> return x
-    Just n'
-      | bsData bs < bit n' -> return x
-      | otherwise -> fail $ unwords
-           [ "Data.LLVM.BitCode.numeric: bitstring value of length", show n
-           , "( " ++ show (bsData bs) ++ ")"
-           , "could not be parsed into type with only", show n', "bits"
-           ]
+numeric :: (Num a, Bits a) => NumBits -> GetBits a
+numeric n = fromBitString <$> fixed n
+
 
 -- | Get a @BitString@ formatted as vbr.
-vbr :: Int -> GetBits BitString
+vbr :: NumBits -> GetBits BitString
 vbr n = loop mempty
   where
-  len      = n - 1
+  len      = subtractBitCounts n (Bits' 1)
   loop acc = acc `seq` do
     chunk <- fixed len
     cont  <- boolean
@@ -67,13 +56,13 @@ vbr n = loop mempty
        else return acc'
 
 -- | Process a variable-bit encoded integer.
-vbrNum :: (Num a, Bits a) => Int -> GetBits a
+vbrNum :: (Num a, Bits a) => NumBits -> GetBits a
 vbrNum n = fromBitString <$> vbr n
 
 -- | Decode a 6-bit encoded character.
 char6 :: GetBits Word8
 char6  = do
-  word <- numeric 6
+  word <- numeric $ Bits' 6
   case word of
     n | 0  <= n && n <= 25 -> return (n + 97)
       | 26 <= n && n <= 51 -> return (n + 39)
@@ -103,7 +92,7 @@ parseBitCodeBitstreamLazy = bimap thd3 thd3 . BG.runGetOrFail (runGetBits getBit
 
 -- | The magic constant at the beginning of all llvm-bitcode files.
 bcMagicConst :: BitString
-bcMagicConst  = BitString 8 0x42 `mappend` BitString 8 0x43
+bcMagicConst  = BitString (Bits' 8) 0x42 `mappend` BitString (Bits' 8) 0x43
 
 -- | Parse a @Bitstream@ from either a normal bitcode file, or a wrapped
 -- bitcode.
@@ -113,31 +102,31 @@ getBitCodeBitstream  = label "llvm-bitstream" $ do
   case mb of
     Nothing -> getBitstream
     Just () -> do
-      skip 32 -- Version
-      off <- fixed 32
+      skip $ Bits' 32 -- Version
+      off <- fixed $ Bits' 32
       -- the offset should always be 20 (5 word32 values)
       unless (fromBitString off == (20 :: Int))
           (fail ("invalid offset value: " ++ show off))
-      size <- fixed 32
-      skip 32 -- CPUType
-      isolate (fromBitString size `div` 4) getBitstream
+      size <- Bytes' . fromBitString <$> (fixed $ Bits' 32)
+      skip $ Bits' 32 -- CPUType
+      isolate size getBitstream
 
 bcWrapperMagicConst :: BitString
 bcWrapperMagicConst  = mconcat [byte 0xDE, byte 0xC0, byte 0x17, byte 0x0B]
   where
-  byte = BitString 8
+  byte = BitString (Bits' 8)
 
 guardWrapperMagic :: GetBits ()
 guardWrapperMagic  = do
-  magic <- fixed 32
+  magic <- fixed (Bits' 32)
   guard (magic == bcWrapperMagicConst)
 
 -- | Parse a @Bitstream@.
 getBitstream :: GetBits Bitstream
 getBitstream  = label "bitstream" $ do
-  bc       <- fixed 16
+  bc       <- fixed $ Bits' 16
   unless (bc == bcMagicConst) (fail "Invalid magic number")
-  appMagic <- numeric 16
+  appMagic <- numeric $ Bits' 16
   entries  <- getTopLevelEntries
   return Bitstream
     { bsAppMagic = appMagic
@@ -153,7 +142,7 @@ data Entry
 
 -- | Parse top-level entries.
 getTopLevelEntries :: GetBits [Entry]
-getTopLevelEntries  = fst <$> getEntries 2 Map.empty emptyAbbrevMap True
+getTopLevelEntries  = fst <$> getEntries (Bits' 2) Map.empty emptyAbbrevMap True
 
 -- | Get as many entries as we can parse.
 getEntries :: AbbrevIdWidth -> BlockInfoMap -> AbbrevMap -> Bool
@@ -195,7 +184,7 @@ getEntries aw bim0 am0 endBlocksFail = loop bim0 am0
 
 -- Abbreviation IDs ------------------------------------------------------------
 
-type AbbrevIdWidth = Int
+type AbbrevIdWidth = NumBits
 
 data AbbrevId
   = END_BLOCK
@@ -226,12 +215,12 @@ data DefineAbbrev = DefineAbbrev
 -- | Parse an abbreviation definition.
 getDefineAbbrev :: GetBits DefineAbbrev
 getDefineAbbrev  =
-  label "define abbrev" (DefineAbbrev `fmap` (getAbbrevOps =<< vbrNum 5))
+  label "define abbrev" (DefineAbbrev `fmap` (getAbbrevOps =<< vbrNum (Bits' 5)))
 
 data AbbrevOp
   = OpLiteral !BitString
-  | OpFixed   !Int
-  | OpVBR     !Int
+  | OpFixed   !NumBits
+  | OpVBR     !NumBits
   | OpArray    AbbrevOp
   | OpChar6
   | OpBlob
@@ -251,12 +240,12 @@ getAbbrevOp  = label "abbrevop" $ do
   let one = fmap (\x -> (x,1))
   isLiteral <- boolean
   if isLiteral
-     then one (OpLiteral <$> vbr 8)
+     then one (OpLiteral <$> (vbr $ Bits' 8))
      else do
-       enc <- numeric 3
+       enc <- numeric $ Bits' 3
        case enc :: Word8 of
-         1 -> one (OpFixed <$> vbrNum 5)
-         2 -> one (OpVBR   <$> vbrNum 5)
+         1 -> one (OpFixed . Bits' <$> vbrNum (Bits' 5))
+         2 -> one (OpVBR   . Bits' <$> vbrNum (Bits' 5))
          3 -> do
            (op,n) <- getAbbrevOp
            return (OpArray op, n+1)
@@ -297,7 +286,7 @@ type BlockId = Word32
 data Block = Block
   { blockId           :: !BlockId
   , blockNewAbbrevLen :: !AbbrevIdWidth
-  , blockLength       :: !Int
+  , blockLength       :: !NumBytes
   , blockEntries      :: [Entry]
   } deriving (Show)
 
@@ -316,10 +305,12 @@ getBlock bim = do
 -- | A generic block.
 getGenericBlock :: BlockInfoMap -> GetBits (Block,BlockInfoMap)
 getGenericBlock bim = label "block " $ do
-  blockid      <- vbrNum 8
-  newabbrevlen <- vbrNum 4
+  blockid      <- vbrNum $ Bits' 8
+  newabbrevlen <- Bits' <$> (vbrNum $ Bits' 4)
   align32bits
-  blocklen     <- numeric 32
+  -- Block length in the bitcode is the number of 32-bit longwords; internally it
+  -- is stored as the number of bytes.
+  blocklen     <- Bytes' . (*4) <$> (numeric $ Bits' 32)
   let am = lookupAbbrevMap blockid bim
   (entries,bim') <- isolate blocklen (getEntries newabbrevlen bim am False)
   let block = Block
@@ -386,9 +377,9 @@ data UnabbrevRecord = UnabbrevRecord
 -- | Parse an unabbreviated record.
 getUnabbrevRecord :: GetBits UnabbrevRecord
 getUnabbrevRecord  = label "unabbreviated record" $ do
-  code   <- vbrNum 6
-  numops <- vbrNum 6
-  ops    <- replicateM numops (vbr 6)
+  code   <- vbrNum $ Bits' 6
+  numops <- vbrNum $ Bits' 6
+  ops    <- replicateM numops (vbr $ Bits' 6)
   return UnabbrevRecord
     { unabbrevCode = code
     , unabbrevOps  = ops
@@ -442,13 +433,13 @@ interpAbbrevOp op = label (show op) $ case op of
   OpVBR width -> FieldVBR <$> vbr width
 
   OpArray ty -> do
-    len <- vbrNum 6
+    len <- vbrNum $ Bits' 6
     FieldArray <$> replicateM len (interpAbbrevOp ty)
 
   OpChar6 -> FieldChar6 <$> char6
 
   OpBlob -> do
-    len   <- vbrNum 6
+    len   <- Bytes' <$> (vbrNum $ Bits' 6)
     bytes <- bytestring len
     return (FieldBlob bytes)
 
@@ -458,5 +449,5 @@ interpAbbrevOp op = label (show op) $ case op of
 parseMetadataStringLengths :: Int -> S.ByteString -> Either String [Int]
 parseMetadataStringLengths n =
   bimap thd3 thd3
-  . BG.runGetOrFail (runGetBits (replicateM n (vbrNum 6)))
+  . BG.runGetOrFail (runGetBits (replicateM n (vbrNum $ Bits' 6)))
   . L.fromStrict

@@ -145,17 +145,17 @@ unsigned  = numeric
 boolean :: Match Field Bool
 boolean  = decode <=< (fieldFixed ||| fieldLiteral ||| fieldVbr)
   where
-  decode bs
-    | bsData bs == 1 = return True
-    | bsData bs == 0 = return False
-    | otherwise      = mzero
+  decode bs = case bitStringValue bs of
+                0 -> return False
+                1 -> return True
+                _ -> mzero
 
 nonzero :: Match Field Bool
 nonzero  = decode <=< (fieldFixed ||| fieldLiteral ||| fieldVbr)
   where
-  decode bs
-    | bsData bs == 0 = return False
-    | otherwise      = return True
+  decode bs = return $ case bitStringValue bs of
+                         0 -> False
+                         _ -> True
 
 char :: Match Field Word8
 char = numeric

@@ -88,33 +88,35 @@ instance MonadPlus GetBits where
 -- given the use of 32-bit padding already, it seems likely that all bitcode
 -- files get padded to a 32-bit boundary.
 data SubWord
-  = SubWord !Int !Word32
+  = SubWord !NumBits !Word32
     deriving (Show)
 
 aligned :: SubWord
-aligned = SubWord 0 0
+aligned = SubWord (Bits' 0) 0
 
-splitWord :: Int -> SubWord -> (BitString, Either Int SubWord)
+splitWord :: NumBits -> SubWord -> (BitString, Either NumBits SubWord)
 splitWord n (SubWord l w)
-  | n <= l    = (toBitString n (fromIntegral w), Right (SubWord (l - n) (w `shiftR` n)))
-  | otherwise = (toBitString l (fromIntegral w), Left (n - l))
+  | n <= l = ( toBitString n (fromIntegral w)
+             , Right (SubWord (subtractBitCounts l n) (w `shiftR` bitCount n))
+             )
+  | otherwise = (toBitString l (fromIntegral w), Left (subtractBitCounts n l))
 
 -- | @getBitString n@ grabs a @BitString@ of length @n@ from the next incoming
 -- word, yielding the remainder partial word.  On @n@ = @0@, it does not
 -- actually consume the next word.  Should not be called to read more than one
 -- 32-bit word at a time (will fail on @n@ > 32).
-getBitString :: Int -> BG.Get (BitString, SubWord)
-getBitString 0 = return (mempty, aligned)
-getBitString n | n > 32 =
+getBitString :: NumBits -> BG.Get (BitString, SubWord)
+getBitString (Bits' 0) = return (mempty, aligned)
+getBitString n | n > Bits' 32 =
   fail $ "getBitString: refusing to read " ++ show n ++ " (> 32) bits."
-getBitString n = getBitStringPartial n . SubWord 32 =<< BG.getWord32le
+getBitString n = getBitStringPartial n . SubWord (Bits' 32) =<< BG.getWord32le
 
 -- | @getBitStringPartial n sw@ returns a @BitString@ of length @n@ from either
 -- the current subword @sw@ (with some @l@ bits available), potentially also
 -- reading the next incoming word if @n@ > @l@.  Should not be called to read
 -- more than one 32-bit word at a time (will fail on @n@ > 32).
-getBitStringPartial :: Int -> SubWord -> BG.Get (BitString, SubWord)
-getBitStringPartial n _ | n > 32 =
+getBitStringPartial :: NumBits -> SubWord -> BG.Get (BitString, SubWord)
+getBitStringPartial n _ | n > Bits' 32 =
   fail $ "getBitStringPartial: refusing to read " ++ show n ++ " (> 32) bits."
 getBitStringPartial n sw = case splitWord n sw of
   (bs, Right off) -> return (bs, off)
@@ -129,8 +131,8 @@ skipZeroByte = do
   when (x /= 0) $ fail "alignment padding was not zeros"
 
 -- | Get a @ByteString@ of @n@ bytes, and then align to 32 bits.
-getByteString :: Int -> BG.Get (ByteString, SubWord)
-getByteString n = do
+getByteString :: NumBytes -> BG.Get (ByteString, SubWord)
+getByteString (Bytes' n) = do
   bs <- BG.getByteString n
   replicateM_ ((- n) `mod` 4) skipZeroByte
   return (bs, aligned)
@@ -145,11 +147,11 @@ align32bits  = GetBits $ \ off -> case off of
   SubWord _ _ -> fail "alignment padding was not zeros"
 
 -- | Read out n bits as a @BitString@.
-fixed :: Int -> GetBits BitString
+fixed :: NumBits -> GetBits BitString
 fixed n = GetBits $ getBitStringPartial n
 
 -- | Read out n bytes as a @ByteString@, aligning to a 32-bit boundary before and after.
-bytestring :: Int -> GetBits ByteString
+bytestring :: NumBytes -> GetBits ByteString
 bytestring n = GetBits $ \ off -> case off of
   SubWord _ 0 -> getByteString n
   SubWord _ _ -> fail "alignment padding was not zeros"
@@ -158,9 +160,9 @@ bytestring n = GetBits $ \ off -> case off of
 label :: String -> GetBits a -> GetBits a
 label l m = GetBits (BG.label l . unGetBits m)
 
--- | Isolate input length, in 32-bit words.
-isolate :: Int -> GetBits a -> GetBits a
-isolate ws m = GetBits (BG.isolate (ws * 4) . unGetBits m)
+-- | Isolate input to a sub-span of the specified byte length.
+isolate :: NumBytes -> GetBits a -> GetBits a
+isolate (Bytes' ws) m = GetBits (BG.isolate ws . unGetBits m)
 
 -- | Try to parse something, returning Nothing when it fails.
 --
@@ -169,7 +171,7 @@ isolate ws m = GetBits (BG.isolate (ws * 4) . unGetBits m)
 try :: GetBits a -> GetBits (Maybe a)
 try m = (Just <$> m) `mplus` return Nothing
 
-skip :: Int -> GetBits ()
+skip :: NumBits -> GetBits ()
 skip n = do
   _ <- fixed n
   return ()

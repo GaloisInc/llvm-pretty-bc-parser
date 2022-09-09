@@ -1,7 +1,8 @@
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Data.LLVM.BitCode.IR.Constants where
 
@@ -18,6 +19,7 @@ import           Control.Monad (mplus,mzero,foldM,(<=<), when)
 import           Control.Monad.ST (runST,ST)
 import           Data.Array.ST (newArray,readArray,MArray,STUArray)
 import           Data.Bits (shiftL,shiftR,testBit, Bits)
+import           Data.LLVM.BitCode.BitString ( pattern Bits' )
 import qualified Data.LLVM.BitCode.BitString as BitS
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, isJust)
@@ -539,11 +541,11 @@ fp80build ty r cs getTy =
   do v1 <- parseField r 0 fieldLiteral
      v2 <- parseField r 1 fieldLiteral
      let -- Note bs1 <> bs2 results in bs2|bs1 layout, shifting bs2 to higher bits
-         v64_0 = BitS.take 64 (BitS.take 16 v2 <> v1)
-         v64_1 = BitS.drop 48 v2
+         v64_0 = BitS.take (Bits' 64) (BitS.take (Bits' 16) v2 <> v1)
+         v64_1 = BitS.drop (Bits' 48) v2
          -- result is v64_1|v64_0 being v0|v1
          fullexp :: Word16
-         fullexp = BitS.fromBitString $ BitS.take 16 v64_1 -- includes sign bit
+         fullexp = BitS.fromBitString $ BitS.take (Bits' 16) v64_1 -- includes sign bit
          significnd :: Word64
          significnd = BitS.fromBitString $ v64_0
          fp80Val = FP80_LongDouble fullexp significnd
