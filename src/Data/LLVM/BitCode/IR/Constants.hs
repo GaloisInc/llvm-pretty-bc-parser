@@ -541,7 +541,8 @@ fp80build ty r cs getTy =
   do v1 <- parseField r 0 fieldLiteral
      v2 <- parseField r 1 fieldLiteral
      let -- Note bs1 <> bs2 results in bs2|bs1 layout, shifting bs2 to higher bits
-         v64_0 = BitS.take (Bits' 64) (BitS.take (Bits' 16) v2 <> v1)
+         v64_0 = BitS.take (Bits' 64)
+                 $ BitS.take (Bits' 16) v2 `BitS.joinBitString` v1
          v64_1 = BitS.drop (Bits' 48) v2
          -- result is v64_1|v64_0 being v0|v1
          fullexp :: Word16

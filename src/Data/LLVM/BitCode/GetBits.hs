@@ -106,7 +106,7 @@ splitWord n (SubWord l w)
 -- actually consume the next word.  Should not be called to read more than one
 -- 32-bit word at a time (will fail on @n@ > 32).
 getBitString :: NumBits -> BG.Get (BitString, SubWord)
-getBitString (Bits' 0) = return (mempty, aligned)
+getBitString (Bits' 0) = return (emptyBitString, aligned)
 getBitString n | n > Bits' 32 =
   fail $ "getBitString: refusing to read " ++ show n ++ " (> 32) bits."
 getBitString n = getBitStringPartial n . SubWord (Bits' 32) =<< BG.getWord32le
@@ -122,7 +122,7 @@ getBitStringPartial n sw = case splitWord n sw of
   (bs, Right off) -> return (bs, off)
   (bs, Left n') -> do
     (rest, off) <- getBitString n'
-    return (bs `mappend` rest, off)
+    return (bs `joinBitString` rest, off)
 
 -- | Skip a byte of input, which must be zero.
 skipZeroByte :: BG.Get ()

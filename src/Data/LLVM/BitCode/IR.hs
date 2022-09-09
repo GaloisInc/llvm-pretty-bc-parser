@@ -22,7 +22,7 @@ import Data.Word (Word16)
 -- | The magic number that identifies a @Bitstream@ structure as LLVM IR.
 llvmIrMagic :: Word16
 llvmIrMagic  = fromBitString (toBitString (Bits' 8) 0xc0
-                              `mappend`
+                              `joinBitString`
                               toBitString (Bits' 8) 0xde)
 
 -- | Parse an LLVM Module out of a Bitstream object.

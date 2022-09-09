@@ -44,13 +44,13 @@ numeric n = fromBitString <$> fixed n
 
 -- | Get a @BitString@ formatted as vbr.
 vbr :: NumBits -> GetBits BitString
-vbr n = loop mempty
+vbr n = loop emptyBitString
   where
   len      = subtractBitCounts n (Bits' 1)
   loop acc = acc `seq` do
     chunk <- fixed len
     cont  <- boolean
-    let acc' = acc `mappend` chunk
+    let acc' = acc `joinBitString` chunk
     if cont
        then loop acc'
        else return acc'
@@ -92,7 +92,9 @@ parseBitCodeBitstreamLazy = bimap thd3 thd3 . BG.runGetOrFail (runGetBits getBit
 
 -- | The magic constant at the beginning of all llvm-bitcode files.
 bcMagicConst :: BitString
-bcMagicConst  = BitString (Bits' 8) 0x42 `mappend` BitString (Bits' 8) 0x43
+bcMagicConst  = BitString (Bits' 8) 0x42
+                `joinBitString`
+                BitString (Bits' 8) 0x43
 
 -- | Parse a @Bitstream@ from either a normal bitcode file, or a wrapped
 -- bitcode.
@@ -112,7 +114,8 @@ getBitCodeBitstream  = label "llvm-bitstream" $ do
       isolate size getBitstream
 
 bcWrapperMagicConst :: BitString
-bcWrapperMagicConst  = mconcat [byte 0xDE, byte 0xC0, byte 0x17, byte 0x0B]
+bcWrapperMagicConst  =
+  foldr1 joinBitString [ byte 0xDE, byte 0xC0, byte 0x17, byte 0x0B]
   where
   byte = BitString (Bits' 8)
 
