@@ -16,18 +16,15 @@ module Data.LLVM.BitCode.Bitstream (
   , parseMetadataStringLengths
   ) where
 
-import Data.LLVM.BitCode.BitString as BS
-import Data.LLVM.BitCode.GetBits
+import           Data.LLVM.BitCode.BitString as BS
+import           Data.LLVM.BitCode.GetBits
 
-import Control.Monad (unless,replicateM,guard)
-import Data.Bits (Bits, bitSizeMaybe, bit)
-import Data.Word (Word8,Word16,Word32)
-import qualified Data.Binary.Get as BG
+import           Control.Monad ( unless, replicateM, guard )
+import           Data.Bits ( Bits )
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import qualified Data.Map as Map
-import Data.Bifunctor (bimap)
-import Data.Tuple.Extra (thd3)
+import           Data.Word ( Word8, Word16, Word32 )
 
 
 -- Primitive Reads -------------------------------------------------------------
@@ -44,13 +41,13 @@ numeric n = fromBitString <$> fixed n
 
 -- | Get a @BitString@ formatted as vbr.
 vbr :: NumBits -> GetBits BitString
-vbr n = loop mempty
+vbr n = loop emptyBitString
   where
   len      = subtractBitCounts n (Bits' 1)
   loop acc = acc `seq` do
     chunk <- fixed len
     cont  <- boolean
-    let acc' = acc `mappend` chunk
+    let acc' = acc `joinBitString` chunk
     if cont
        then loop acc'
        else return acc'
@@ -80,19 +77,19 @@ data Bitstream = Bitstream
   } deriving (Show)
 
 parseBitstream :: S.ByteString -> Either String Bitstream
-parseBitstream = bimap thd3 thd3
-                 . BG.runGetOrFail (runGetBits getBitstream)
-                 . L.fromStrict
+parseBitstream = runGetBits getBitstream
 
 parseBitCodeBitstream :: S.ByteString -> Either String Bitstream
 parseBitCodeBitstream = parseBitCodeBitstreamLazy . L.fromStrict
 
 parseBitCodeBitstreamLazy :: L.ByteString -> Either String Bitstream
-parseBitCodeBitstreamLazy = bimap thd3 thd3 . BG.runGetOrFail (runGetBits getBitCodeBitstream)
+parseBitCodeBitstreamLazy = runGetBits getBitCodeBitstream . L.toStrict
 
 -- | The magic constant at the beginning of all llvm-bitcode files.
 bcMagicConst :: BitString
-bcMagicConst  = BitString (Bits' 8) 0x42 `mappend` BitString (Bits' 8) 0x43
+bcMagicConst  = toBitString (Bits' 8) 0x42
+                `joinBitString`
+                toBitString (Bits' 8) 0x43
 
 -- | Parse a @Bitstream@ from either a normal bitcode file, or a wrapped
 -- bitcode.
@@ -112,9 +109,10 @@ getBitCodeBitstream  = label "llvm-bitstream" $ do
       isolate size getBitstream
 
 bcWrapperMagicConst :: BitString
-bcWrapperMagicConst  = mconcat [byte 0xDE, byte 0xC0, byte 0x17, byte 0x0B]
+bcWrapperMagicConst  =
+  foldr1 joinBitString [ byte 0xDE, byte 0xC0, byte 0x17, byte 0x0B]
   where
-  byte = BitString (Bits' 8)
+  byte = toBitString (Bits' 8)
 
 guardWrapperMagic :: GetBits ()
 guardWrapperMagic  = do
@@ -447,7 +445,4 @@ interpAbbrevOp op = label (show op) $ case op of
 -- Metadata String Lengths -----------------------------------------------------
 
 parseMetadataStringLengths :: Int -> S.ByteString -> Either String [Int]
-parseMetadataStringLengths n =
-  bimap thd3 thd3
-  . BG.runGetOrFail (runGetBits (replicateM n (vbrNum $ Bits' 6)))
-  . L.fromStrict
+parseMetadataStringLengths n = runGetBits (replicateM n (vbrNum $ Bits' 6))

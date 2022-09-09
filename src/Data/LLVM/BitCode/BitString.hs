@@ -1,23 +1,30 @@
 {-# LANGUAGE PatternSynonyms #-}
 
-module Data.LLVM.BitCode.BitString (
-    BitString(BitString)
+module Data.LLVM.BitCode.BitString
+  (
+    BitString
+  , emptyBitString
   , toBitString
   , showBitString
   , fromBitString
   , bitStringValue
   , take, drop
+  , joinBitString
   , NumBits, NumBytes, pattern Bits', pattern Bytes'
-  , bitCount
+  , bitCount, bitsToBytes, bytesToBits
   , addBitCounts
   , subtractBitCounts
-  ) where
+  )
+where
 
 import Data.Bits ((.&.),(.|.),shiftL,shiftR,bit,bitSizeMaybe, Bits)
-import Data.Semigroup
 import Numeric (showIntAtBase)
 
 import Prelude hiding (take,drop,splitAt)
+
+----------------------------------------------------------------------
+-- Define some convenience newtypes to clarify whether the count of bits or count
+-- of bytes is being referenced, and to convert between the two.
 
 newtype NumBits = NumBits Int deriving (Show, Eq, Ord)
 newtype NumBytes = NumBytes Int deriving (Show, Eq, Ord)
@@ -33,34 +40,61 @@ pattern Bytes' n = NumBytes n
 bitCount :: NumBits -> Int
 bitCount (NumBits n) = n
 
+{-# INLINE addBitCounts #-}
 addBitCounts :: NumBits -> NumBits -> NumBits
 addBitCounts (NumBits a) (NumBits b) = NumBits $ a + b
 
+{-# INLINE subtractBitCounts #-}
 subtractBitCounts :: NumBits -> NumBits -> NumBits
 subtractBitCounts (NumBits a) (NumBits b) = NumBits $ a - b
+
+{-# INLINE bytesToBits #-}
+bitsToBytes :: NumBits -> (NumBytes, NumBits)
+bitsToBytes (NumBits n) = (NumBytes $ n `shiftR` 3, NumBits $ n .&. 7)
+
+{-# INLINE bitsToBytes #-}
+bytesToBits :: NumBytes -> NumBits
+bytesToBits (NumBytes n) = NumBits $ n `shiftL` 3
+
+----------------------------------------------------------------------
 
 data BitString = BitString
   { bsLength :: !NumBits
   , bsData   :: !Integer
-  } deriving Show
+  } deriving (Show, Eq)
 
-instance Eq BitString where
-  BitString n i == BitString m j = n == m && i == j
+-- | Create an empty BitString
 
-instance Semigroup BitString where
-  BitString n@(NumBits n') i <> BitString m j =
-    BitString (addBitCounts n m) (i .|. (j `shiftL` n'))
+emptyBitString :: BitString
+emptyBitString = BitString (NumBits 0) 0
 
-instance Monoid BitString where
-  mempty = BitString (NumBits 0) 0
-  mappend = (<>)
+
+-- | Join two BitString representations together to form a single larger
+-- BitString.  The first BitString is the \"lower\" value portion of the resulting
+-- BitString.
+
+joinBitString :: BitString -> BitString -> BitString
+joinBitString a b =
+  let bitSizeA = bitCount $ bsLength a
+  in BitString { bsLength = addBitCounts (bsLength a) (bsLength b)
+               , bsData = bsData a .|. (bsData b `shiftL` bitSizeA)
+               }
+
 
 -- | Given a number of bits to take, and an @Integer@, create a @BitString@.
+
 toBitString :: NumBits -> Integer -> BitString
 toBitString len val = BitString len (val .&. maskBits len)
 
+
+-- | Extract the referenced Integer value from a BitString
+
 bitStringValue :: BitString -> Integer
 bitStringValue = bsData
+
+
+-- | Extract a target (Num) value of the desired type from a BitString (using
+-- fromInteger to perform the target type conversion).
 
 fromBitString :: (Num a, Bits a) => BitString -> a
 fromBitString (BitString l i) =
@@ -76,6 +110,7 @@ fromBitString (BitString l i) =
  where
  x    = fromInteger ival
  ival = i .&. maskBits l
+
 
 showBitString :: BitString -> ShowS
 showBitString bs = showString padding . showString bin
@@ -93,14 +128,21 @@ maskBits (NumBits len)
   | len <= 0  = 0
   | otherwise = pred (bit len)
 
+
+-- | Extract a smaller BitString with the specified number of bits from the
+-- \"start\" of a larger BitString.
 take :: NumBits -> BitString -> BitString
 take n bs@(BitString l i)
   | n >= l    = bs
   | otherwise = toBitString n i
 
+
+-- | Remove the specified number of bits from the beginning of a BitString and
+-- return the remaining as a smaller BitString.
+
 drop :: NumBits -> BitString -> BitString
 drop n (BitString l i)
-  | n >= l    = mempty
+  | n >= l    = emptyBitString
   | otherwise = BitString
                 (NumBits $ bitCount l - bitCount n)
                 (i `shiftR` (bitCount n))
