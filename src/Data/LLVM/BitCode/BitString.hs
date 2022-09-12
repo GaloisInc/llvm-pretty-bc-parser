@@ -74,13 +74,13 @@ data BitString = BitString
     -- unlimited size value.  However, this adds some overhead to various
     -- computations, and since LLVM Bitcode is unlikely to ever represent values
     -- greater than the native size (64 bits) as discrete values.  By changing
-    -- this to @Int@, the use of uboxed calculations is enabled for better
+    -- this to @Int@, the use of unboxed calculations is enabled for better
     -- performance.
     --
     -- The use of Int is potentially unsound because GHC only guarantees it's a
-    -- signed 32-bit integer.  However current implementation in all environments
-    -- where it's reasonable to use this parser have a 64-bit Int
-    -- implementatinon.  This can be verified via:
+    -- signed integer of at least 32-bits.  However current implementations in
+    -- all environments where it's reasonable to use this parser have a 64-bit
+    -- Int implementation.  This can be verified via:
     --
     --  > import Data.Bits
     --  > bitSizeMaybe (maxBound :: Int) >= Just 64
@@ -138,8 +138,8 @@ fromBitString (BitString l i) =
            , "could not be parsed into type with only", show n, "bits"
            ])
  where
- x    = fromInteger ival  -- use Num's conversion
- ival = toInteger i
+ x    = fromInteger ival  -- use Num to convert the Integer to the target type
+ ival = toInteger i  -- convert input to an Integer for ^^
 
 
 showBitString :: BitString -> ShowS

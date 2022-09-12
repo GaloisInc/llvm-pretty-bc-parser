@@ -18,6 +18,7 @@ import           Data.LLVM.BitCode.BitString
 
 import           Control.Applicative ( Alternative(..) )
 import           Control.Monad ( MonadPlus(..) )
+import           Data.Bits ( shiftR, shiftL, (.&.), (.|.) )
 import           Data.ByteString ( ByteString )
 import qualified Data.ByteString as BS
 import           GHC.Exts
@@ -35,7 +36,7 @@ newtype GetBits a =
                       -> (# BitsGetter a, BitPosition #)
           }
 
-type BitPosition = (# Int#, Int# #)
+type BitPosition = (# Int#, Int# #)  -- (# current bit pos, maximum bit pos #)
 
 type BitsGetter a = Either String a -- Left is fail
 
@@ -123,31 +124,36 @@ instance MonadPlus GetBits where
 -- compositions.  Their functionality should be identical, but it may be easier
 -- to debug the first.
 
--- extractFromByteString bitLimit startBit numBits bs =
---   let Bytes' s8 = fst (bitsToBytes startBit)
---       Bytes' r8 = fst (bitsToBytes numBits)
---       rcnt = r8 + 2 -- 2 == pre-shift overflow byte on either side
+extractFromByteString' :: NumBits {-^ the last bit accessible in the ByteString -}
+                       -> NumBits {-^ the bit to start extraction at -}
+                       -> NumBits {-^ the number of bits to extract -}
+                       -> ByteString {-^ the ByteString to extract from -}
+                       -> Either String (Int, NumBits)
+extractFromByteString' bitLimit startBit numBits bs =
+  let Bytes' s8 = fst (bitsToBytes startBit)
+      Bytes' r8 = fst (bitsToBytes numBits)
+      rcnt = r8 + 2 -- 2 == pre-shift overflow byte on either side
 
---       -- Extract the relevant bits from the ByteCode, with padding to byte
---       -- boundaries into ws.
---       ws = BS.take rcnt $ BS.drop s8 bs
+      -- Extract the relevant bits from the ByteCode, with padding to byte
+      -- boundaries into ws.
+      ws = BS.take rcnt $ BS.drop s8 bs
 
---       -- Combine the extracted bytes into an Integer value in wi.
---       wi = BS.foldr (\w a -> a `shiftL` 8 .|. fromIntegral w) (0::Int) ws
+      -- Combine the extracted bytes into an Integer value in wi.
+      wi = BS.foldr (\w a -> a `shiftL` 8 .|. fromIntegral w) (0::Int) ws
 
---       -- Mask is 0-bit based set of bits wanted in the result
---       mask = ((1::Int) `shiftL` bitCount numBits) - 1
+      -- Mask is 0-bit based set of bits wanted in the result
+      mask = ((1::Int) `shiftL` bitCount numBits) - 1
 
---       -- Shift the desired value down to byte alignment and then discard any
---       -- excess high bits.
---       vi = wi `shiftR` (bitCount startBit .&. 7) .&. mask
+      -- Shift the desired value down to byte alignment and then discard any
+      -- excess high bits.
+      vi = wi `shiftR` (bitCount startBit .&. 7) .&. mask
 
---       updPos = addBitCounts startBit numBits
---   in if updPos > bitLimit
---      then Left ("Attempt to read bits past limit (newPos="
---                 <> show updPos <> ", limit=" <> show bitLimit <> ")"
---                )
---      else Right (vi, updPos)
+      updPos = addBitCounts startBit numBits
+  in if updPos > bitLimit
+     then Left ("Attempt to read bits past limit (newPos="
+                <> show updPos <> ", limit=" <> show bitLimit <> ")"
+               )
+     else Right (vi, updPos)
 
 extractFromByteString :: Int# {-^ the last bit accessible in the ByteString -}
                       -> Int# {-^ the bit to start extraction at -}
@@ -169,14 +175,18 @@ extractFromByteString !bitLim# !sBit# !nbits# bs =
                 !hop# = sBit# `andI#` 7#
                 !r8# = ((hop# +# nbits# +# 7#) `uncheckedIShiftRL#` 3#)
                 !mask# = (1# `uncheckedIShiftL#` nbits#) -# 1#
-
+                -- Here, s8# is the size in 8-bit bytes, hop# is the number of
+                -- bits shifted from the byte boundary, r8# is the rounded number
+                -- of bytes actually needed to retrieve to get the value to
+                -- account for shifting, and mask# is the mask for the final
+                -- target set of bits after shifting.
 #if MIN_VERSION_base(4,16,0)
                 word8ToInt !w8# = word2Int# (word8ToWord# w8#)
 #else
 -- technically #if !MIN_VERSION_ghc_prim(0,8,0), for GHC 9.2, but that isn't a define
                 word8ToInt = word2Int#
 #endif
-
+                -- getB# gets a value from a byte starting at bit0 of the byte
                 getB# :: Int# -> Int#
                 getB# !i# =
                   case i# of
@@ -184,6 +194,8 @@ extractFromByteString !bitLim# !sBit# !nbits# bs =
                           in word8ToInt w#
                     _ -> let !(W8# w#) = (bs `BS.index` (I# (s8# +# i#)))
                          in (word8ToInt w#) `uncheckedIShiftL#` (8# *# i#)
+                -- getSB# gets a value from a byte shifting from a non-zero start
+                -- bit within the byte.
                 getSB# :: Int# -> Int#
                 getSB# !i# =
                   case i# of
