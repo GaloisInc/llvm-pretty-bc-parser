@@ -6,7 +6,7 @@
 module Data.LLVM.BitCode.GetBits (
     GetBits
   , runGetBits
-  , fixed, align32bits
+  , fixed, fixedInt, align32bits
   , bytestring
   , label
   , isolate
@@ -334,6 +334,16 @@ fixed !(Bits' (I# n#)) = GetBits
             in (# pure $ toBitString (Bits' (I# n#)) (I# v#)
                , (# p#, lim# #)
                #)
+          Left e -> (# Left e, s #)
+
+fixedInt :: NumBits -> GetBits Int
+fixedInt !(Bits' (I# n#)) = GetBits
+  $ \ !s@(# cur#, lim# #) ->
+      \inp ->
+        case extractFromByteString lim# cur# n# inp of
+          Right getRes ->
+            let !(# v#, p# #) = getRes ()
+            in (# pure (I# v#) , (# p#, lim# #) #)
           Left e -> (# Left e, s #)
 
 

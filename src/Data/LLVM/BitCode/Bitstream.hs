@@ -1,4 +1,7 @@
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PatternGuards #-}
 
 module Data.LLVM.BitCode.Bitstream (
@@ -16,27 +19,33 @@ module Data.LLVM.BitCode.Bitstream (
   , parseMetadataStringLengths
   ) where
 
-import           Data.LLVM.BitCode.BitString as BS
-import           Data.LLVM.BitCode.GetBits
-
 import           Control.Monad ( unless, replicateM, guard )
 import           Data.Bits ( Bits )
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
+import           Data.LLVM.BitCode.BitString as BS
+import           Data.LLVM.BitCode.GetBits
 import qualified Data.Map as Map
 import           Data.Word ( Word8, Word16, Word32 )
+import           GHC.Exts
+import           GHC.Word
 
 
 -- Primitive Reads -------------------------------------------------------------
 
 -- | Parse a @Bool@ out of a single bit.
 boolean :: GetBits Bool
-boolean  = ((1 :: Word8) ==) . fromBitString <$> fixed (Bits' 1)
+boolean = do i <- fixedInt (Bits' 1)
+             return $ 1 == i
 
 
 -- | Parse a Num type out of n-bits.
 numeric :: (Num a, Bits a) => NumBits -> GetBits a
+#ifdef QUICK
+numeric n = fromInteger . toInteger <$> fixedInt n
+#else
 numeric n = fromBitString <$> fixed n
+#endif
 
 
 -- | Get a @BitString@ formatted as vbr.
@@ -52,13 +61,48 @@ vbr n = loop emptyBitString
        then loop acc'
        else return acc'
 
+vbrInt :: NumBits -> GetBits Int
+vbrInt n@(Bits' (I# n#)) =
+  let !cmask# = 1# `uncheckedIShiftL#` (n# -# 1#)
+      loop = do ic <- fixedInt n
+                let !(I# ic#) = ic
+                if isTrue# ((ic# `andI#` cmask#) ==# 0#)
+                  then return ic
+                  else do nxt <- loop
+                          let !(I# nxt#) = nxt
+                          let nxtshft# = nxt# `uncheckedIShiftL#` (n# -# 1#)
+                          return (I# ((ic# `xorI#` cmask#)`orI#` nxtshft#))
+  in loop
+
+
 -- | Process a variable-bit encoded integer.
 vbrNum :: (Num a, Bits a) => NumBits -> GetBits a
+#ifdef QUICK
+vbrNum = fmap (fromInteger . toInteger) . vbrInt
+#else
 vbrNum n = fromBitString <$> vbr n
+#endif
 
 -- | Decode a 6-bit encoded character.
 char6 :: GetBits Word8
 char6  = do
+#ifdef QUICK
+  (I# i#) <- fixedInt (Bits' 6)
+#if MIN_VERSION_base(4,16,0)
+  let toWrd8 iv# = W8# (wordToWord8# (int2Word# iv#))
+#else
+  let toWrd8 iv# = W8# (int2Word# iv#)
+#endif
+  if isTrue# (i# <=# 25#)
+  then return (toWrd8 (i# +# 97#))
+  else if isTrue# (i# <=# 51#)
+       then return (toWrd8 (i# +# 39#))
+       else if isTrue# (i# <=# 61#)
+            then return (toWrd8 (i# -# 4#))
+            else if isTrue# (i# ==# 62#)
+                 then return (fromIntegral (fromEnum '.'))
+                 else return (fromIntegral (fromEnum '_'))
+#else
   word <- numeric $ Bits' 6
   case word of
     n | 0  <= n && n <= 25 -> return (n + 97)
@@ -67,6 +111,7 @@ char6  = do
     62                     -> return (fromIntegral (fromEnum '.'))
     63                     -> return (fromIntegral (fromEnum '_'))
     _                      -> fail "invalid char6"
+#endif
 
 
 -- Bitstream Parsing -----------------------------------------------------------
