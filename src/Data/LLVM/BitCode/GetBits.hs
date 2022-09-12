@@ -161,13 +161,19 @@ extractFromByteString :: Int# {-^ the last bit accessible in the ByteString -}
                       -> ByteString {-^ the ByteString to extract from -}
                       -> Either String (() -> (# Int#, Int# #))
 extractFromByteString !bitLim# !sBit# !nbits# bs =
-     if isTrue# ((1# `uncheckedIShiftL#` (nbits#)) /=# 0#)
+#ifndef QUICK
+     if isTrue# ((1# `uncheckedIShiftL#` (nbits#)) ==# 0#)
         -- (nbits# -# 1#) above would allow 64-bit value extraction, but this
         -- function cannot actually support a size of 64, because Int# is signed,
         -- so it doesn't properly use the high bit in numeric operations.  This
         -- seems to be OK at this point because LLVM bitcode does not attempt to
         -- encode actual 64-bit values.
      then
+       -- BitString stores an Int, but number of extracted bits is larger than
+       -- an Int can represent.
+       Left "Attempt to extracted large value"
+     else
+#endif
        let !updPos# = sBit# +# nbits#
        in if isTrue# (updPos# <=# bitLim#)
           then
@@ -287,16 +293,18 @@ extractFromByteString !bitLim# !sBit# !nbits# bs =
                        )
             in Right $ \_ -> (# vi#, updPos# #)
           else Left "Attempt to read bits past limit"
-     else
-       -- BitString stores an Int, but number of extracted bits is larger than
-       -- an Int can represent.
-       Left "Attempt to extracted large value"
 
 
 -- Basic Interface -------------------------------------------------------------
 
 -- | Read zeros up to an alignment of 32-bits.
 align32bits :: GetBits ()
+#ifdef QUICK
+align32bits  = GetBits $ \ !pos# _ ->
+  let !(# curBit#, ttlBits# #) = pos#
+      !cadj# = curBit# +# 0x1f#
+  in (# Right (), (# cadj# `xorI#` (cadj# `andI#` 0x1f#), ttlBits# #) #)
+#else
 align32bits  = GetBits $ \ !pos# inp ->
   let !(# curBit#, ttlBits# #) = pos#
       !s32# = curBit# `andI#` 31#
@@ -312,6 +320,7 @@ align32bits  = GetBits $ \ !pos# inp ->
                  then (# Right (), (# newPos#, ttlBits# #) #)
                  else (# Left nonZero, pos# #)
             Left e -> (# Left e, pos# #)
+#endif
 
 
 -- | Read out n bits as a @BitString@.
@@ -349,11 +358,15 @@ bytestring n@(Bytes' nbytes) = do
 
 -- | Add a label to the error tag stack.
 label :: String -> GetBits a -> GetBits a
+#ifdef QUICK
+label _ m = m
+#else
 label l m = GetBits $ \ !pos# inp ->
                         let !(# j, n# #) = unGetBits m pos# inp
                         in case j of
                              Left e -> (# Left $ e <> "\n  " <> l, n# #)
                              Right r -> (# Right r, n# #)
+#endif
 
 
 -- | Isolate input to a sub-span of the specified byte length.

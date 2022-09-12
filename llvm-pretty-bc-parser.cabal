@@ -24,6 +24,10 @@ Flag regressions
   Description:         Enable regression testing build
   Default:             False
 
+Flag quick
+  Description:         Disable traces and validation of LLVM input; minimal parsing checking
+  Default:             False
+
 Source-repository head
   type:                git
   location:            http://github.com/galoisinc/llvm-pretty-bc-parser
@@ -59,6 +63,9 @@ Library
                        -Wunbanged-strict-patterns
                        -O2
                        -funbox-strict-fields
+
+  if flag(quick)
+    CPP-Options:       -DQUICK
 
   Build-depends:       array       >= 0.3,
                        base        >= 4.8 && < 5,

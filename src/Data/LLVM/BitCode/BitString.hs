@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PatternSynonyms #-}
 
@@ -20,9 +21,14 @@ module Data.LLVM.BitCode.BitString
   )
 where
 
+#ifdef QUICK
+import Data.Bits ( Bits )
+import Numeric ( showIntAtBase )
+#else
 import Data.Bits ( bit, bitSizeMaybe, Bits )
-import GHC.Exts
 import Numeric ( showIntAtBase, showHex )
+#endif
+import GHC.Exts
 
 import Prelude hiding (take,drop,splitAt)
 
@@ -125,6 +131,9 @@ bitStringValue = bsData
 -- fromInteger to perform the target type conversion).
 
 fromBitString :: (Num a, Bits a) => BitString -> a
+#ifdef QUICK
+fromBitString (BitString _ i) = x
+#else
 fromBitString (BitString l i) =
   case bitSizeMaybe x of
     Nothing -> x
@@ -137,6 +146,7 @@ fromBitString (BitString l i) =
            , "(mask=0x" <> showHex i ")"
            , "could not be parsed into type with only", show n, "bits"
            ])
+#endif
  where
  x    = fromInteger ival  -- use Num to convert the Integer to the target type
  ival = toInteger i  -- convert input to an Integer for ^^
