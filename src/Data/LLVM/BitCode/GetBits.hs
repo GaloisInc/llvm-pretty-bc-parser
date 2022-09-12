@@ -183,7 +183,9 @@ extractFromByteString !bitLim# !sBit# !nbits# bs =
 #if MIN_VERSION_base(4,16,0)
                 word8ToInt !w8# = word2Int# (word8ToWord# w8#)
 #else
--- technically #if !MIN_VERSION_ghc_prim(0,8,0), for GHC 9.2, but that isn't a define
+                -- technically #if !MIN_VERSION_ghc_prim(0,8,0), for GHC 9.2, but
+                -- since ghc_prim isn't a direct dependency and is re-exported
+                -- from base, this define needs to reference the base version.
                 word8ToInt = word2Int#
 #endif
                 -- getB# gets a value from a byte starting at bit0 of the byte
@@ -227,6 +229,8 @@ extractFromByteString !bitLim# !sBit# !nbits# bs =
                                         getB# 2# `orI#` getB# 3# `orI#`
                                         getB# 4# `orI#` getB# 5# `orI#`
                                         getB# 6# `orI#` getB# 7#
+                                  -- This is the catch-all loop for other sizes
+                                  -- not addressed above.
                                   _ -> let join !(W8# w#) !(I# a#) =
                                              I# ((a# `uncheckedIShiftL#` 8#)
                                                  `orI#` (word8ToInt w#))
@@ -255,6 +259,8 @@ extractFromByteString !bitLim# !sBit# !nbits# bs =
                                        getSB# 2# `orI#` getSB# 3# `orI#`
                                        getSB# 4# `orI#` getSB# 5# `orI#`
                                        getSB# 6# `orI#` getSB# 7#
+                                 -- n.b. these are hand-unrolled cases for common
+                                 -- sizes this is called for.
                                  9# -> getSB# 0# `orI#` getSB# 1# `orI#`
                                        getSB# 2# `orI#` getSB# 3# `orI#`
                                        getSB# 4# `orI#` getSB# 5# `orI#`
@@ -269,6 +275,8 @@ extractFromByteString !bitLim# !sBit# !nbits# bs =
                                         getSB# 12# `orI#` getSB# 13# `orI#`
                                         getSB# 14# `orI#` getSB# 15# `orI#`
                                         getSB# 16# `orI#` getSB# 17#
+                                 -- This is the catch-all loop for other sizes
+                                 -- not addressed above.
                                  _ -> let join !(W8# w#) !(I# a#) =
                                             I# ((a# `uncheckedIShiftL#` 8#)
                                                 `orI#` (word8ToInt w#))
