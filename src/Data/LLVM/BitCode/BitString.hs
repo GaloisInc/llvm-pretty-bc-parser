@@ -73,8 +73,9 @@ data BitString = BitString
     -- Note: the bsData was originally an Integer, which allows an essentially
     -- unlimited size value.  However, this adds some overhead to various
     -- computations, and since LLVM Bitcode is unlikely to ever represent values
-    -- > native size (64 bits) as discrete values.  By changing this to @Int@,
-    -- the use of uboxed calculations is enabled for better performance.
+    -- greater than the native size (64 bits) as discrete values.  By changing
+    -- this to @Int@, the use of uboxed calculations is enabled for better
+    -- performance.
     --
     -- The use of Int is potentially unsound because GHC only guarantees it's a
     -- signed 32-bit integer.  However current implementation in all environments
