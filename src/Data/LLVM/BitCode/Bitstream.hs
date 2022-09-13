@@ -136,10 +136,9 @@ parseBitCodeBitstreamLazy :: L.ByteString -> Either String Bitstream
 parseBitCodeBitstreamLazy = runGetBits getBitCodeBitstream . L.toStrict
 
 -- | The magic constant at the beginning of all llvm-bitcode files.
-bcMagicConst :: BitString
-bcMagicConst  = toBitString (Bits' 8) 0x42
-                `joinBitString`
-                toBitString (Bits' 8) 0x43
+
+bcMagicConst :: Word
+bcMagicConst = 0x4342
 
 -- | Parse a @Bitstream@ from either a normal bitcode file, or a wrapped
 -- bitcode.
@@ -158,21 +157,18 @@ getBitCodeBitstream  = label "llvm-bitstream" $ do
       skip $ Bits' 32 -- CPUType
       isolate size getBitstream
 
-bcWrapperMagicConst :: BitString
-bcWrapperMagicConst  =
-  foldr1 joinBitString [ byte 0xDE, byte 0xC0, byte 0x17, byte 0x0B]
-  where
-  byte = toBitString (Bits' 8)
+bcWrapperMagicConst :: Word
+bcWrapperMagicConst = 0x0b16c0de
 
 guardWrapperMagic :: GetBits ()
 guardWrapperMagic  = do
-  magic <- fixed (Bits' 32)
+  magic <- fixedWord (Bits' 32)
   guard (magic == bcWrapperMagicConst)
 
 -- | Parse a @Bitstream@.
 getBitstream :: GetBits Bitstream
 getBitstream  = label "bitstream" $ do
-  bc       <- fixed $ Bits' 16
+  bc       <- fixedWord $ Bits' 16
   unless (bc == bcMagicConst) (fail "Invalid magic number")
   appMagic <- numeric $ Bits' 16
   entries  <- getTopLevelEntries
