@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE RecursiveDo #-}
@@ -16,13 +17,15 @@ import           Data.LLVM.BitCode.IR.Attrs
 import           Data.LLVM.BitCode.Match
 import           Data.LLVM.BitCode.Parse
 import           Data.LLVM.BitCode.Record
-import           Data.LLVM.BitCode.Record
 
 import           Text.LLVM.AST
 import           Text.LLVM.Labels
 import           Text.LLVM.PP
 
-import           Control.Monad (when,unless,mplus,mzero,foldM,(<=<))
+import           Control.Monad ( when, mplus, mzero, foldM, (<=<) )
+#ifndef QUICK
+import           Control.Monad ( unless )
+#endif
 import           Data.Bits (shiftR,bit,shiftL,testBit,(.&.),(.|.),complement,Bits)
 import           Data.Int (Int32)
 import           Data.Word (Word32)
@@ -384,7 +387,11 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [n]
   1 -> label "FUNC_CODE_DECLARE_BLOCKS"
-             (Assert.recordSizeGreater r 0 >> return d)
+             (
+#ifndef QUICK
+               Assert.recordSizeGreater r 0 >>
+#endif
+               return d)
 
   -- [opval,ty,opval,opcode]
   2 -> label "FUNC_CODE_INST_BINOP" $ do
@@ -413,7 +420,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   3 -> label "FUNC_CODE_INST_CAST" $ do
     let field = parseField r
     (tv,ix) <- getValueTypePair t r 0
+#ifndef QUICK
     Assert.recordSizeIn r [ix + 2]
+#endif
     resty   <- getType =<< field ix numeric
     cast'   <-             field (ix+1) castOp
     result resty (cast' tv resty) d
@@ -464,13 +473,19 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   10 -> label "FUNC_CODE_INST_RET" $ case length (recordFields r) of
     0 -> effect RetVoid d
     _ -> do
+#ifdef QUICK
+      (tv, _) <- getValueTypePair t r 0
+#else
       (tv, ix) <- getValueTypePair t r 0
       Assert.recordSizeIn r [ix]
+#endif
       effect (Ret tv) d
 
   -- [bb#,bb#,cond] or [bb#]
   11 -> label "FUNC_CODE_INST_BR" $ do
+#ifndef QUICK
     Assert.recordSizeIn r [1, 3]
+#endif
     let field = parseField r
     bb1 <- field 0 numeric
     let jump   = effect (Jump bb1) d
@@ -525,7 +540,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [attrs,cc,normBB,unwindBB,fnty,op0,op1..]
   13 -> label "FUNC_CODE_INST_INVOKE" $ do
+#ifndef QUICK
     Assert.recordSizeGreater r 3
+#endif
     let field = parseField r
     ccinfo      <- field 1 unsigned
     normal      <- field 2 numeric
@@ -578,7 +595,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [instty,opty,op,align]
   19 -> label "FUNC_CODE_INST_ALLOCA" $ do
+#ifndef QUICK
     Assert.recordSizeIn r [4]
+#endif
 
     let field = parseField r
 
@@ -598,16 +617,22 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
         explicitType = testBit align 6
         ity = if explicitType then PtrTo instty else instty
 
+#ifdef QUICK
+    ret <- return instty
+#else
     ret <- if explicitType
            then return instty
            else Assert.elimPtrTo "In return type:" instty
+#endif
 
     result ity (Alloca ret sval (Just aval)) d
 
   -- [opty,op,align,vol]
   20 -> label "FUNC_CODE_INST_LOAD" $ do
     (tv,ix) <- getValueTypePair t r 0
+#ifndef QUICK
     Assert.recordSizeIn r [ix + 2, ix + 3]
+#endif
 
     (ret,ix') <-
       if length (recordFields r) == ix + 3
@@ -626,7 +651,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   -- 22 is unused
 
   23 -> label "FUNC_CODE_INST_VAARG" $ do
+#ifndef QUICK
     Assert.recordSizeGreater r 2
+#endif
     let field = parseField r
     ty    <- getType     =<< field 0 numeric
     op    <- getValue t ty =<< field 1 numeric
@@ -650,8 +677,10 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   26 -> label "FUNC_CODE_INST_EXTRACTVAL" $ do
     (tv, ix) <- getValueTypePair t r 0
 
+#ifndef QUICK
     when (length (recordFields r) == ix) $
       fail "`extractval` instruction had zero indices"
+#endif
 
     ixs <- parseIndexes r ix
     let instr = ExtractValue tv ixs
@@ -664,9 +693,11 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   27 -> label "FUNC_CODE_INST_INSERTVAL" $ do
     (tv,ix)   <- getValueTypePair t r 0
 
+#ifndef QUICK
     -- See comment in FUNC_CODE_INST_EXTRACTVAL
     when (length (recordFields r) == ix) $
       fail "Invalid instruction with zero indices"
+#endif
 
     (elt,ix') <- getValueTypePair t r ix
     ixs       <- parseIndexes r ix'
@@ -699,32 +730,37 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [paramattrs, cc, mb fmf, mb fnty, fnid, arg0 .. arg n, varargs]
   34 -> label "FUNC_CODE_INST_CALL" $ do
+#ifndef QUICK
     Assert.recordSizeGreater r 2
+#endif
     let field = parseField r
 
     -- pal <- field 0 numeric -- N.B. skipping param attributes
     ccinfo <- field 1 numeric
     let ix0 = if testBit ccinfo 17 then 3 else 2 -- N.B. skipping fast-math flags
-    (mbFnTy, ix1) <- if testBit (ccinfo :: Word32) callExplicitTypeBit
+    r1 <- if testBit (ccinfo :: Word32) callExplicitTypeBit
                        then do fnTy <- getType =<< field ix0 numeric
                                return (Just fnTy, ix0+1)
                        else    return (Nothing,   ix0)
+    let ix1 = snd r1
 
     (Typed opTy fn, ix2) <- getValueTypePair t r ix1
                                 `mplus` fail "Invalid record"
 
     op <- Assert.elimPtrTo "Callee is not a pointer type" opTy
 
-    fnty <- case mbFnTy of
+#ifdef QUICK
+    let fnty = op
+#else
+    fnty <- case fst r1 of
              Just ty | ty == op  -> return op
-                     | otherwise -> fail "Explicit call type does not match \
-                                         \pointee type of callee operand"
-
+                     | otherwise -> fail ("Explicit call type does not match "
+                                          <> " pointee type of callee operand")
              Nothing ->
                case op of
                  FunTy{} -> return op
                  _       -> fail "Callee is not of pointer to function type"
-
+#endif
 
     label (show fn) $ do
       (ret,as,va) <- elimFunTy fnty `mplus` fail "invalid CALL record"
@@ -733,7 +769,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [Line,Col,ScopeVal, IAVal]
   35 -> label "FUNC_CODE_DEBUG_LOC" $ do
+#ifndef QUICK
     Assert.recordSizeGreater r 3
+#endif
 
     let field = parseField r
     line    <- field 0 numeric
@@ -761,7 +799,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [ordering, synchscope]
   36 -> label "FUNC_CODE_INST_FENCE" $ do
+#ifndef QUICK
     Assert.recordSizeIn r [2]
+#endif
     mordval <- getDecodedOrdering =<< parseField r 0 unsigned
     -- TODO: parse scope
     case mordval of
@@ -785,7 +825,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
   -- [ty,val,val,num,id0,val0...]
   40 -> label "FUNC_CODE_LANDINGPAD_OLD" $ do
+#ifndef QUICK
     Assert.recordSizeGreater r 3
+#endif
     let field = parseField r
     ty          <- getType =<< field 0 numeric
     (persFn,ix) <- getValueTypePair t r 1
@@ -799,7 +841,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   41 -> label "FUNC_CODE_LOADATOMIC" $ do
     (tv,ix) <- getValueTypePair t r 0
 
+#ifndef QUICK
     Assert.recordSizeIn r [ix + 4, ix+ 5]
+#endif
 
     (ret,ix') <-
       if length (recordFields r) == ix + 5
@@ -809,18 +853,24 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
          else do ty <- Assert.elimPtrTo "" (typedType tv)
                  return (ty, ix)
 
+#ifndef QUICK
     Assert.ptrTo "load atomic : <ty>, <ty>*" tv (Typed ret ())
+#endif
 
     ordval <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
+#ifndef QUICK
     when (ordval `elem` Nothing:map Just [Release, AcqRel]) $
       fail $ "Invalid atomic ordering: " ++ show ordval
+#endif
 
     aval    <- parseField r ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
 
+#ifndef QUICK
     when (ordval /= Nothing && align == Nothing)
          (fail "Invalid record")
+#endif
 
     result ret (Load (tv { typedType = PtrTo ret }) ordval align) d
 
@@ -836,8 +886,10 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (ptr,ix)  <- getValueTypePair t r 0
     (val,ix') <- getValueTypePair t r ix
 
+#ifndef QUICK
     Assert.recordSizeIn r [ix' + 2]
     Assert.ptrTo "store : <ty> <value>, <ty>* <pointer>" ptr val
+#endif
 
     aval      <- field ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
@@ -849,13 +901,17 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (ptr, ix)  <- getValueTypePair t r 0
     (val, ix') <- getValueTypePair t r ix
 
+#ifndef QUICK
     Assert.recordSizeIn r [ix' + 4]
     Assert.ptrTo "store atomic : <ty> <value>, <ty>* <pointer>" ptr val
+#endif
 
     -- TODO: There's no spot in the AST for this ordering. Should there be?
     ordering <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
+#ifndef QUICK
     when (ordering `elem` Nothing:map Just [Acquire, AcqRel]) $
       fail $ "Invalid atomic ordering: " ++ show ordering
+#endif
 
     -- TODO: parse sync scope (ssid)
 
@@ -874,6 +930,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     new        <- getValue t (typedType val) =<< parseField r ix' numeric
     let ix''   = ix' + 1 -- TODO: is this right?
 
+#ifndef QUICK
     -- TODO: record size assertion
     -- Assert.recordSizeGreater r (ix'' + 5)
 
@@ -885,6 +942,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
       , "cmp type:  " ++ show (typedType val)
       , "new type:  " ++ show (typedType new)
       ]
+#endif
 
     volatile <- parseField r ix'' boolean
 
@@ -926,7 +984,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     result ty (CmpXchg weak volatile ptr val new Nothing successOrdering failureOrdering) d
 
   47 -> label "FUNC_CODE_LANDINGPAD" $ do
+#ifndef QUICK
     Assert.recordSizeGreater r 2
+#endif
     let field = parseField r
     ty         <- getType =<< field 0 numeric
     isCleanup  <- (/=(0::Int)) <$> field 1 numeric
@@ -935,22 +995,30 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     result ty (LandingPad ty Nothing isCleanup clauses) d
 
   48 -> label "FUNC_CODE_CLEANUPRET" $ do
+#ifndef QUICK
     -- Assert.recordSizeIn r [1, 2]
+#endif
     notImplemented
 
   49 -> label "FUNC_CODE_CATCHRET" $ do
+#ifndef QUICK
     -- Assert.recordSizeIn r [2]
+#endif
     notImplemented
 
   50 -> label "FUNC_CODE_CATCHPAD" $ do
     notImplemented
 
   51 -> label "FUNC_CODE_CLEANUPPAD" $ do
+#ifndef QUICK
     -- Assert.recordSizeGreater r [1]
+#endif
     notImplemented
 
   52 -> label "FUNC_CODE_CATCHSWITCH" $ do
+#ifndef QUICK
     -- Assert.recordSizeGreater r [1]
+#endif
     notImplemented
 
   -- 53 is unused
@@ -993,8 +1061,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
     fnty <- case mbFnTy of
              Just ty | ty == op  -> return op
-                     | otherwise -> fail "Explicit call type does not match \
-                                         \pointee type of callee operand"
+                     | otherwise -> fail ("Explicit call type does not match "
+                                          <> "pointee type of callee operand")
 
              Nothing ->
                case op of
@@ -1058,12 +1126,16 @@ parseFunctionBlockEntry globals t d (metadataBlockId -> Just es) = do
     else return d -- silently drop unexpected local unnamed metadata
 
 parseFunctionBlockEntry globals t d (metadataAttachmentBlockId -> Just es) = do
+#ifdef QUICK
+  (_,_,instrAtt,fnAtt,_) <- parseMetadataBlock globals t es
+#else
   (_,(globalUnnamedMds, localUnnamedMds),instrAtt,fnAtt,_)
      <- parseMetadataBlock globals t es
   unless (null localUnnamedMds)
      (fail "parseFunctionBlockEntry PANIC: unexpected local unnamed metadata")
   unless (null globalUnnamedMds)
      (fail "parseFunctionBlockEntry PANIC: unexpected global unnamed metadata")
+#endif
   return d { partialBody     = addInstrAttachments instrAtt (partialBody d)
            , partialMetadata = Map.union fnAtt (partialMetadata d)
            }
@@ -1164,14 +1236,17 @@ parseAtomicRMW old t r d = do
   (ptr, ix0) <- getValueTypePair t r 0
 
   (val, ix1) <- case typedType ptr of
-    PtrTo ty@(PrimType prim) -> do
+    PtrTo ty -> do
 
+#ifndef QUICK
       -- Catch pointers of the wrong type
-      when (case prim of
+      when (let (PrimType prim) = ty in
+            case prim of
               Integer   _ -> False
               FloatType _ -> False
               _           -> True) $
         fail $ "Expected pointer to integer or float, found " ++ show ty
+#endif
 
       if old
         then -- FUNC_CODE_INST_ATOMICRMW_OLD
@@ -1364,12 +1439,13 @@ parseNewSwitchLabels :: Word32 -> Record -> Int -> Int -> Parse [(Integer,Int)]
 parseNewSwitchLabels width r = loop
   where
   field = parseField r
-  len   = length (recordFields r)
 
   -- parse each group of cases as one or more numbers, and a basic block.
   loop numCases n
     | numCases <= 0 = return []
-    | n >= len      = fail "invalid SWITCH record"
+#ifndef QUICK
+    | n >= length (recordFields r) = fail "invalid SWITCH record"
+#endif
     | otherwise     = do
       numItems <- field n  numeric
       (ls,n')  <- parseItems numItems (n + 1)

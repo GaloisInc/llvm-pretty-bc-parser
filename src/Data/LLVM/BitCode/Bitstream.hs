@@ -26,8 +26,9 @@ import qualified Data.ByteString.Lazy as L
 import           Data.LLVM.BitCode.BitString as BS
 import           Data.LLVM.BitCode.GetBits
 import qualified Data.Map as Map
-import           Data.Word ( Word8, Word16, Word32 )
+#ifdef QUICK
 import           GHC.Exts
+#endif
 import           GHC.Word
 
 
@@ -61,6 +62,7 @@ vbr n = loop emptyBitString
        then loop acc'
        else return acc'
 
+#ifdef QUICK
 vbrInt :: NumBits -> GetBits Int
 vbrInt n@(Bits' (I# n#)) =
   let !cmask# = 1# `uncheckedIShiftL#` (n# -# 1#)
@@ -73,6 +75,7 @@ vbrInt n@(Bits' (I# n#)) =
                           let nxtshft# = nxt# `uncheckedIShiftL#` (n# -# 1#)
                           return (I# ((ic# `xorI#` cmask#)`orI#` nxtshft#))
   in loop
+#endif
 
 
 -- | Process a variable-bit encoded integer.
