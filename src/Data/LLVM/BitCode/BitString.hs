@@ -2,6 +2,8 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Data.LLVM.BitCode.BitString
   (
@@ -16,6 +18,7 @@ module Data.LLVM.BitCode.BitString
   , NumBits, NumBytes, pattern Bits', pattern Bytes'
   , bitCount, bitCount#
   , bitsToBytes, bytesToBits
+  , bitMask
   , addBitCounts
   , subtractBitCounts
   )
@@ -31,6 +34,7 @@ import Numeric ( showIntAtBase, showHex )
 import GHC.Exts
 
 import Prelude hiding (take,drop,splitAt)
+
 
 ----------------------------------------------------------------------
 -- Define some convenience newtypes to clarify whether the count of bits or count
@@ -75,25 +79,26 @@ bytesToBits (NumBytes (I# n#)) = NumBits (I# (n# `uncheckedIShiftL#` 3#))
 
 data BitString = BitString
   { bsLength :: !NumBits
-  , bsData   :: !Int
+  , bsData   :: !Word
     -- Note: the bsData was originally an Integer, which allows an essentially
     -- unlimited size value.  However, this adds some overhead to various
     -- computations, and since LLVM Bitcode is unlikely to ever represent values
     -- greater than the native size (64 bits) as discrete values.  By changing
-    -- this to @Int@, the use of unboxed calculations is enabled for better
-    -- performance.
+    -- this to @Word@ (which is verified to be 64 bits), the use of unboxed
+    -- calculations is enabled for better performance.
     --
-    -- The use of Int is potentially unsound because GHC only guarantees it's a
-    -- signed integer of at least 32-bits.  However current implementations in
-    -- all environments where it's reasonable to use this parser have a 64-bit
-    -- Int implementation.  This can be verified via:
-    --
-    --  > import Data.Bits
-    --  > bitSizeMaybe (maxBound :: Int) >= Just 64
-    --
-    -- There's no good location here to automate this check (perhaps
-    -- GetBits.hs:runGetBits?), which is why it isn't verified at runtime.
+    -- Note that Word is used instead of Word64; in GHC pre 9.x, Word64 was
+    -- intended to represent a 64-bit value on a 32-bit system.
   } deriving (Show, Eq)
+
+-- Verify a Word is 64-bits (at compile time)
+$(return $ if isTrue# ((int2Word# 3#) `eqWord#`
+                       (((int2Word# 0xF0#) `uncheckedShiftL#` 58#)
+                        `uncheckedShiftRL#` 62#))
+           then []
+           else error "Word type must be 64-bits!"
+ )
+
 
 -- | Create an empty BitString
 
@@ -106,24 +111,26 @@ emptyBitString = BitString (NumBits 0) 0
 -- BitString.
 
 joinBitString :: BitString -> BitString -> BitString
-joinBitString (BitString (Bits' (I# szA#)) (I# a#))
-              (BitString (Bits' (I# szB#)) (I# b#)) =
+joinBitString (BitString (Bits' (I# szA#)) (W# a#))
+              (BitString (Bits' (I# szB#)) (W# b#)) =
   BitString { bsLength = NumBits (I# (szA# +# szB#))
-            , bsData = I# (a# `orI#` (b# `uncheckedIShiftL#` szA#))
+            , bsData = W# (a# `or#` (b# `uncheckedShiftL#` szA#))
             }
+
+bitMask :: NumBits -> Word#
+bitMask (Bits' (I# len#)) =
+  ((int2Word# 1#) `uncheckedShiftL#` len#) `minusWord#` (int2Word# 1#)
 
 
 -- | Given a number of bits to take, and an @Integer@, create a @BitString@.
 
-toBitString :: NumBits -> Int -> BitString
-toBitString len@(Bits' (I# len#)) (I# val#) =
-  let !mask# = (1# `uncheckedIShiftL#` len#) -# 1#
-  in BitString len (I# (val# `andI#` mask#))
+toBitString :: NumBits -> Word -> BitString
+toBitString len (W# val#) = BitString len (W# (val# `and#` (bitMask len)))
 
 
 -- | Extract the referenced Integer value from a BitString
 
-bitStringValue :: BitString -> Int
+bitStringValue :: BitString -> Word
 bitStringValue = bsData
 
 
@@ -174,10 +181,10 @@ take n bs@(BitString l i)
 -- return the remaining as a smaller BitString.
 
 drop :: NumBits -> BitString -> BitString
-drop !n !(BitString l i)
+drop !n !(BitString l v)
   | n >= l    = emptyBitString
   | otherwise =
       let !(I# n#) = bitCount n
           !(I# l#) = bitCount l
-          !(I# i#) = i
-      in BitString (NumBits (I# (l# -# n#))) (I# (i# `uncheckedIShiftRL#` n#))
+          !(W# v#) = v
+      in BitString (NumBits (I# (l# -# n#))) (W# (v# `uncheckedShiftRL#` n#))

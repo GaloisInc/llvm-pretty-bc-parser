@@ -36,14 +36,14 @@ import           GHC.Word
 
 -- | Parse a @Bool@ out of a single bit.
 boolean :: GetBits Bool
-boolean = do i <- fixedInt (Bits' 1)
+boolean = do i <- fixedWord (Bits' 1)
              return $ 1 == i
 
 
 -- | Parse a Num type out of n-bits.
 numeric :: (Num a, Bits a) => NumBits -> GetBits a
 #ifdef QUICK
-numeric n = fromInteger . toInteger <$> fixedInt n
+numeric n = fromInteger . toInteger <$> fixedWord n
 #else
 numeric n = fromBitString <$> fixed n
 #endif
@@ -63,17 +63,17 @@ vbr n = loop emptyBitString
        else return acc'
 
 #ifdef QUICK
-vbrInt :: NumBits -> GetBits Int
-vbrInt n@(Bits' (I# n#)) =
-  let !cmask# = 1# `uncheckedIShiftL#` (n# -# 1#)
-      loop = do ic <- fixedInt n
-                let !(I# ic#) = ic
-                if isTrue# ((ic# `andI#` cmask#) ==# 0#)
+vbrWord :: NumBits -> GetBits Word
+vbrWord n@(Bits' (I# n#)) =
+  let !contBitMask# = (int2Word# 1#) `uncheckedShiftL#` (n# -# 1#)
+      loop = do ic <- fixedWord n
+                let !(W# ic#) = ic
+                if isTrue# ((ic# `and#` contBitMask#) `eqWord#` (int2Word# 0#))
                   then return ic
                   else do nxt <- loop
-                          let !(I# nxt#) = nxt
-                          let nxtshft# = nxt# `uncheckedIShiftL#` (n# -# 1#)
-                          return (I# ((ic# `xorI#` cmask#)`orI#` nxtshft#))
+                          let !(W# nxt#) = nxt
+                          let nxtshft# = nxt# `uncheckedShiftL#` (n# -# 1#)
+                          return (W# ((ic# `xor#` contBitMask#)`or#` nxtshft#))
   in loop
 #endif
 
@@ -81,7 +81,7 @@ vbrInt n@(Bits' (I# n#)) =
 -- | Process a variable-bit encoded integer.
 vbrNum :: (Num a, Bits a) => NumBits -> GetBits a
 #ifdef QUICK
-vbrNum = fmap (fromInteger . toInteger) . vbrInt
+vbrNum = fmap (fromInteger . toInteger) . vbrWord
 #else
 vbrNum n = fromBitString <$> vbr n
 #endif
@@ -90,18 +90,20 @@ vbrNum n = fromBitString <$> vbr n
 char6 :: GetBits Word8
 char6  = do
 #ifdef QUICK
-  (I# i#) <- fixedInt (Bits' 6)
+  (W# w#) <- fixedWord (Bits' 6)
+  let !i# = word2Int# w#
 #if MIN_VERSION_base(4,16,0)
-  let toWrd8 iv# = W8# (wordToWord8# (int2Word# iv#))
+  let wordToWord8 = wordToWord8#
 #else
-  let toWrd8 iv# = W8# (int2Word# iv#)
+  let wordToWord8 :: Word# -> Word#
+      wordToWord8 !a# = a#
 #endif
   if isTrue# (i# <=# 25#)
-  then return (toWrd8 (i# +# 97#))
+  then return (W8# (wordToWord8 (w# `plusWord#` (int2Word# 97#))))
   else if isTrue# (i# <=# 51#)
-       then return (toWrd8 (i# +# 39#))
+       then return (W8# (wordToWord8 (w# `plusWord#` (int2Word# 39#))))
        else if isTrue# (i# <=# 61#)
-            then return (toWrd8 (i# -# 4#))
+            then return (W8# (wordToWord8 (w# `minusWord#` (int2Word# 4#))))
             else if isTrue# (i# ==# 62#)
                  then return (fromIntegral (fromEnum '.'))
                  else return (fromIntegral (fromEnum '_'))

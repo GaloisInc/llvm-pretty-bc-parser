@@ -6,7 +6,7 @@
 module Data.LLVM.BitCode.GetBits (
     GetBits
   , runGetBits
-  , fixed, fixedInt, align32bits
+  , fixed, fixedWord, align32bits
   , bytestring
   , label
   , isolate
@@ -159,7 +159,7 @@ extractFromByteString :: Int# {-^ the last bit accessible in the ByteString -}
                       -> Int# {-^ the bit to start extraction at -}
                       -> Int# {-^ the number of bits to extract -}
                       -> ByteString {-^ the ByteString to extract from -}
-                      -> Either String (() -> (# Int#, Int# #))
+                      -> Either String (() -> (# Word#, Int# #))
 extractFromByteString !bitLim# !sBit# !nbits# bs =
 #ifndef QUICK
      if isTrue# ((1# `uncheckedIShiftL#` (nbits#)) ==# 0#)
@@ -180,116 +180,115 @@ extractFromByteString !bitLim# !sBit# !nbits# bs =
             let !s8# = sBit# `uncheckedIShiftRL#` 3#
                 !hop# = sBit# `andI#` 7#
                 !r8# = ((hop# +# nbits# +# 7#) `uncheckedIShiftRL#` 3#)
-                !mask# = (1# `uncheckedIShiftL#` nbits#) -# 1#
+                !mask# = bitMask (Bits' (I# nbits#))
                 -- Here, s8# is the size in 8-bit bytes, hop# is the number of
                 -- bits shifted from the byte boundary, r8# is the rounded number
                 -- of bytes actually needed to retrieve to get the value to
                 -- account for shifting, and mask# is the mask for the final
                 -- target set of bits after shifting.
 #if MIN_VERSION_base(4,16,0)
-                word8ToInt !w8# = word2Int# (word8ToWord# w8#)
+                word8ToWord :: Word8# -> Word#
+                word8ToWord = word8ToWord#
 #else
-                -- technically #if !MIN_VERSION_ghc_prim(0,8,0), for GHC 9.2, but
-                -- since ghc_prim isn't a direct dependency and is re-exported
-                -- from base, this define needs to reference the base version.
-                word8ToInt = word2Int#
+                word8ToWord :: Word# -> Word#
+                word8ToWord !w# = w#
 #endif
                 -- getB# gets a value from a byte starting at bit0 of the byte
-                getB# :: Int# -> Int#
+                getB# :: Int# -> Word#
                 getB# !i# =
                   case i# of
                     0# -> let !(W8# w#) = bs `BS.index` (I# s8#)
-                          in word8ToInt w#
+                          in word8ToWord w#
                     _ -> let !(W8# w#) = (bs `BS.index` (I# (s8# +# i#)))
-                         in (word8ToInt w#) `uncheckedIShiftL#` (8# *# i#)
+                         in (word8ToWord w#) `uncheckedShiftL#` (8# *# i#)
                 -- getSB# gets a value from a byte shifting from a non-zero start
                 -- bit within the byte.
-                getSB# :: Int# -> Int#
+                getSB# :: Int# -> Word#
                 getSB# !i# =
                   case i# of
                     0# -> let !(W8# w#) = bs `BS.index` (I# s8#)
-                          in (word8ToInt w#) `uncheckedIShiftRL#` hop#
+                          in (word8ToWord w#) `uncheckedShiftRL#` hop#
                     _  -> let !(W8# w#) = bs `BS.index` (I# (s8# +# i#))
                               !shft# = (8# *# i#) -# hop#
-                          in (word8ToInt w#) `uncheckedIShiftL#` shft#
-                !vi# = mask# `andI#`
+                          in (word8ToWord w#) `uncheckedShiftL#` shft#
+                !vi# = mask# `and#`
                        (case hop# of
                           0# -> case r8# of
                                   1# -> getB# 0#
-                                  2# -> getB# 0# `orI#` getB# 1#
-                                  3# -> getB# 0# `orI#` getB# 1# `orI#`
+                                  2# -> getB# 0# `or#` getB# 1#
+                                  3# -> getB# 0# `or#` getB# 1# `or#`
                                         getB# 2#
-                                  4# -> getB# 0# `orI#` getB# 1# `orI#`
-                                        getB# 2# `orI#` getB# 3#
-                                  5# -> getB# 0# `orI#` getB# 1# `orI#`
-                                        getB# 2# `orI#` getB# 3# `orI#`
+                                  4# -> getB# 0# `or#` getB# 1# `or#`
+                                        getB# 2# `or#` getB# 3#
+                                  5# -> getB# 0# `or#` getB# 1# `or#`
+                                        getB# 2# `or#` getB# 3# `or#`
                                         getB# 4#
-                                  6# -> getB# 0# `orI#` getB# 1# `orI#`
-                                        getB# 2# `orI#` getB# 3# `orI#`
-                                        getB# 4# `orI#` getB# 5#
-                                  7# -> getB# 0# `orI#` getB# 1# `orI#`
-                                        getB# 2# `orI#` getB# 3# `orI#`
-                                        getB# 4# `orI#` getB# 5# `orI#`
+                                  6# -> getB# 0# `or#` getB# 1# `or#`
+                                        getB# 2# `or#` getB# 3# `or#`
+                                        getB# 4# `or#` getB# 5#
+                                  7# -> getB# 0# `or#` getB# 1# `or#`
+                                        getB# 2# `or#` getB# 3# `or#`
+                                        getB# 4# `or#` getB# 5# `or#`
                                         getB# 6#
-                                  8# -> getB# 0# `orI#` getB# 1# `orI#`
-                                        getB# 2# `orI#` getB# 3# `orI#`
-                                        getB# 4# `orI#` getB# 5# `orI#`
-                                        getB# 6# `orI#` getB# 7#
+                                  8# -> getB# 0# `or#` getB# 1# `or#`
+                                        getB# 2# `or#` getB# 3# `or#`
+                                        getB# 4# `or#` getB# 5# `or#`
+                                        getB# 6# `or#` getB# 7#
                                   -- This is the catch-all loop for other sizes
                                   -- not addressed above.
-                                  _ -> let join !(W8# w#) !(I# a#) =
-                                             I# ((a# `uncheckedIShiftL#` 8#)
-                                                 `orI#` (word8ToInt w#))
+                                  _ -> let join !(W8# w#) !(W# a#) =
+                                             W# ((a# `uncheckedShiftL#` 8#)
+                                                 `or#` (word8ToWord w#))
                                            bs' = BS.take (I# (r8# +# 2#))
                                                  $ BS.drop (I# s8#) bs
-                                           !(I# v#) = BS.foldr join (0::Int) bs'
-                                       in mask# `andI#` (v# `uncheckedIShiftRL#` hop#)
+                                           !(W# v#) = BS.foldr join (0::Word) bs'
+                                       in v# `uncheckedShiftRL#` hop#
                           _ -> case r8# of
                                  1# -> getSB# 0#
-                                 2# -> getSB# 0# `orI#` getSB# 1#
-                                 3# -> getSB# 0# `orI#` getSB# 1# `orI#`
+                                 2# -> getSB# 0# `or#` getSB# 1#
+                                 3# -> getSB# 0# `or#` getSB# 1# `or#`
                                        getSB# 2#
-                                 4# -> getSB# 0# `orI#` getSB# 1# `orI#`
-                                       getSB# 2# `orI#` getSB# 3#
-                                 5# -> getSB# 0# `orI#` getSB# 1# `orI#`
-                                       getSB# 2# `orI#` getSB# 3# `orI#`
+                                 4# -> getSB# 0# `or#` getSB# 1# `or#`
+                                       getSB# 2# `or#` getSB# 3#
+                                 5# -> getSB# 0# `or#` getSB# 1# `or#`
+                                       getSB# 2# `or#` getSB# 3# `or#`
                                        getSB# 4#
-                                 6# -> getSB# 0# `orI#` getSB# 1# `orI#`
-                                       getSB# 2# `orI#` getSB# 3# `orI#`
-                                       getSB# 4# `orI#` getSB# 5#
-                                 7# -> getSB# 0# `orI#` getSB# 1# `orI#`
-                                       getSB# 2# `orI#` getSB# 3# `orI#`
-                                       getSB# 4# `orI#` getSB# 5# `orI#`
+                                 6# -> getSB# 0# `or#` getSB# 1# `or#`
+                                       getSB# 2# `or#` getSB# 3# `or#`
+                                       getSB# 4# `or#` getSB# 5#
+                                 7# -> getSB# 0# `or#` getSB# 1# `or#`
+                                       getSB# 2# `or#` getSB# 3# `or#`
+                                       getSB# 4# `or#` getSB# 5# `or#`
                                        getSB# 6#
-                                 8# -> getSB# 0# `orI#` getSB# 1# `orI#`
-                                       getSB# 2# `orI#` getSB# 3# `orI#`
-                                       getSB# 4# `orI#` getSB# 5# `orI#`
-                                       getSB# 6# `orI#` getSB# 7#
+                                 8# -> getSB# 0# `or#` getSB# 1# `or#`
+                                       getSB# 2# `or#` getSB# 3# `or#`
+                                       getSB# 4# `or#` getSB# 5# `or#`
+                                       getSB# 6# `or#` getSB# 7#
                                  -- n.b. these are hand-unrolled cases for common
-                                 -- sizes this is called for.
-                                 9# -> getSB# 0# `orI#` getSB# 1# `orI#`
-                                       getSB# 2# `orI#` getSB# 3# `orI#`
-                                       getSB# 4# `orI#` getSB# 5# `orI#`
-                                       getSB# 6# `orI#` getSB# 7# `orI#`
+                                 -- sizes this function is called for.
+                                 9# -> getSB# 0# `or#` getSB# 1# `or#`
+                                       getSB# 2# `or#` getSB# 3# `or#`
+                                       getSB# 4# `or#` getSB# 5# `or#`
+                                       getSB# 6# `or#` getSB# 7# `or#`
                                        getSB# 8#
-                                 18# -> getSB# 0# `orI#` getSB# 1# `orI#`
-                                        getSB# 2# `orI#` getSB# 3# `orI#`
-                                        getSB# 4# `orI#` getSB# 5# `orI#`
-                                        getSB# 6# `orI#` getSB# 7# `orI#`
-                                        getSB# 8# `orI#` getSB# 9# `orI#`
-                                        getSB# 10# `orI#` getSB# 11# `orI#`
-                                        getSB# 12# `orI#` getSB# 13# `orI#`
-                                        getSB# 14# `orI#` getSB# 15# `orI#`
-                                        getSB# 16# `orI#` getSB# 17#
+                                 18# -> getSB# 0# `or#` getSB# 1# `or#`
+                                        getSB# 2# `or#` getSB# 3# `or#`
+                                        getSB# 4# `or#` getSB# 5# `or#`
+                                        getSB# 6# `or#` getSB# 7# `or#`
+                                        getSB# 8# `or#` getSB# 9# `or#`
+                                        getSB# 10# `or#` getSB# 11# `or#`
+                                        getSB# 12# `or#` getSB# 13# `or#`
+                                        getSB# 14# `or#` getSB# 15# `or#`
+                                        getSB# 16# `or#` getSB# 17#
                                  -- This is the catch-all loop for other sizes
                                  -- not addressed above.
-                                 _ -> let join !(W8# w#) !(I# a#) =
-                                            I# ((a# `uncheckedIShiftL#` 8#)
-                                                `orI#` (word8ToInt w#))
+                                 _ -> let join !(W8# w#) !(W# a#) =
+                                            W# ((a# `uncheckedShiftL#` 8#)
+                                                `or#` (word8ToWord w#))
                                           bs' = BS.take (I# (r8# +# 2#))
                                                 $ BS.drop (I# s8#) bs
-                                          !(I# v#) = BS.foldr join (0::Int) bs'
-                                      in mask# `andI#` (v# `uncheckedIShiftRL#` hop#)
+                                          !(W# v#) = BS.foldr join (0::Word) bs'
+                                      in v# `uncheckedShiftRL#` hop#
                        )
             in Right $ \_ -> (# vi#, updPos# #)
           else Left "Attempt to read bits past limit"
@@ -316,7 +315,7 @@ align32bits  = GetBits $ \ !pos# inp ->
      else case extractFromByteString ttlBits# curBit# r32# inp of
             Right getRes ->
               let !(# vi#, newPos# #) = getRes ()
-              in if isTrue# (vi# ==# 0#)
+              in if isTrue# (vi# `eqWord#` (int2Word# 0#))
                  then (# Right (), (# newPos#, ttlBits# #) #)
                  else (# Left nonZero, pos# #)
             Left e -> (# Left e, pos# #)
@@ -331,19 +330,19 @@ fixed !(Bits' (I# n#)) = GetBits
         case extractFromByteString lim# cur# n# inp of
           Right getRes ->
             let !(# v#, p# #) = getRes ()
-            in (# pure $ toBitString (Bits' (I# n#)) (I# v#)
+            in (# pure $ toBitString (Bits' (I# n#)) (W# v#)
                , (# p#, lim# #)
                #)
           Left e -> (# Left e, s #)
 
-fixedInt :: NumBits -> GetBits Int
-fixedInt !(Bits' (I# n#)) = GetBits
+fixedWord :: NumBits -> GetBits Word
+fixedWord !(Bits' (I# n#)) = GetBits
   $ \ !s@(# cur#, lim# #) ->
       \inp ->
         case extractFromByteString lim# cur# n# inp of
           Right getRes ->
             let !(# v#, p# #) = getRes ()
-            in (# pure (I# v#) , (# p#, lim# #) #)
+            in (# pure (W# v#) , (# p#, lim# #) #)
           Left e -> (# Left e, s #)
 
 
@@ -405,5 +404,5 @@ skip !(Bits' (I# n#)) =
               in if isTrue# (newLoc# ># lim#)
                  then \_ -> (# Left "skipped past end of bytestring"
                             , newPos#
-                              #)
+                            #)
                  else \_ -> (# Right (), newPos# #)
