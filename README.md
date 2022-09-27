@@ -55,7 +55,11 @@ Developers' documentation: [doc/developing.md](./doc/developing.md)
 
 llvm-pretty-bc-parser endeavors to support three versions of GHC at a time. See
 the developers' documentation for more details and a rationale:
-[doc/developing.md](./doc/developing.md).
+[doc/developing.md](./doc/developing.md). Currently supported:
+
+- GHC 8.10.7
+- GHC 9.0.2
+- GHC 9.2.4
 
 [fuzz-workflow]: https://github.com/GaloisInc/llvm-pretty-bc-parser/blob/master/.github/workflows/llvm-quick-fuzz.yml
 [llvm13]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F13.0
