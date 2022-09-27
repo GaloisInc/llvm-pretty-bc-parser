@@ -16,6 +16,8 @@ import Data.LLVM.BitCode.Match
 import Data.LLVM.BitCode.Parse
 import Data.LLVM.BitCode.Record
 import Text.LLVM.AST
+import Text.LLVM.Triple.AST (TargetTriple)
+import Text.LLVM.Triple.Parse (parseTriple)
 
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import Control.Monad (foldM,guard,when,forM_)
@@ -34,6 +36,7 @@ data PartialModule = PartialModule
   , partialGlobals    :: GlobalList
   , partialDefines    :: DefineList
   , partialDeclares   :: DeclareList
+  , partialTriple     :: TargetTriple
   , partialDataLayout :: DataLayout
   , partialInlineAsm  :: InlineAsm
   , partialComdat     :: !(Seq (String,SelectionKind))
@@ -51,6 +54,7 @@ emptyPartialModule  = PartialModule
   , partialGlobals    = mempty
   , partialDefines    = mempty
   , partialDeclares   = mempty
+  , partialTriple     = mempty
   , partialDataLayout = mempty
   , partialInlineAsm  = mempty
   , partialAliasIx    = 0
@@ -75,6 +79,7 @@ finalizeModule pm = label "finalizeModule" $ do
   defines <- T.mapM (finalizePartialDefine lkp) (partialDefines pm)
   return emptyModule
     { modSourceName = partialSourceName pm
+    , modTriple     = partialTriple pm
     , modDataLayout = partialDataLayout pm
     , modNamedMd    = F.toList (partialNamedMd pm)
     , modUnnamedMd  = sortOn umIndex (F.toList unnamed)
@@ -167,9 +172,10 @@ parseModuleBlockEntry pm (valueSymtabBlockId -> Just _es) = do
   -- MODULE_BLOCK
   return pm
 
-parseModuleBlockEntry pm (moduleCodeTriple -> Just _) = do
+parseModuleBlockEntry pm (moduleCodeTriple -> Just r) = do
   -- MODULE_CODE_TRIPLE
-  return pm
+  triple <- UTF8.decode <$> parseFields r 0 char
+  return (pm { partialTriple = parseTriple triple })
 
 parseModuleBlockEntry pm (moduleCodeDatalayout -> Just r) = do
   -- MODULE_CODE_DATALAYOUT
