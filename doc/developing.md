@@ -83,3 +83,17 @@ See [the README in that directory](../fuzzing/README.md).
 ### `unit-test`
 
 These are run with `cabal test` or `cabal new-test`.
+
+## Supported GHC Versions
+
+A policy on which GHC versions to support must balance the benefits of wide
+applicability/support against the drawbacks of additional costs of development,
+including developer time and CI budgets. Our policy is to support three versions
+of GHC at a time. We try to support new versions of GHC as soon as they are
+supported by all of libraries that llvm-pretty-bc-parser depends on.
+
+When updating the supported GHC versions, remember to update:
+
+- [The README](../README.md)
+- [The Cabal file](../llvm-pretty-bc-parser.cabal)'s `Tested-with` field
+- [CI workflows](../.github/workflows)
