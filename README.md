@@ -30,7 +30,7 @@ compilers.
 |           | v10.0   | ✓                             |              |                      |
 |           | v11.0   | ✓                             |              |                      |
 |           | v12.0   | ✓                             |              |                      |
-|           | v13.0   |                               |              | See [issues][llvm13] |
+|           | v13.0   | ✓                             |              | See [issues][llvm13] |
 |           | v14.0   |                               |              | See [issues][llvm14] |
 | `clang++` | v3.4    |                               |              |                      |
 |           | v3.5    |                               |              |                      |
