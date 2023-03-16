@@ -70,9 +70,12 @@ jobs:
           { curl -sSL ${{ matrix.llvm }} -o llvm.tar.xz && tar xf llvm.tar.xz && mv clang+llvm-* llvm ; }
           echo "$PWD/llvm/bin" >> $GITHUB_PATH
 
+      - name: Configure
+        run: cabal configure --enable-tests -j2 -ffuzz -fregressions
+
       - shell: bash
         name: Build
-        run: cabal build -ffuzz llvm-disasm fuzz-llvm-disasm
+        run: cabal build llvm-disasm fuzz-llvm-disasm
 
       - shell: bash
         run: ln -s $PWD/llvm/bin/clang $PWD/llvm/bin/clangy
@@ -80,7 +83,7 @@ jobs:
       - shell: bash
         name: Run fuzzing
         run: |
-          cabal exec -ffuzz fuzz-llvm-disasm -- -n 50 --junit-xml results.xml -o results --collapse --clang-flags="-O -w" --clang-flags="-O -w -g" -c clangy
+          cabal exec fuzz-llvm-disasm -- -n 50 --junit-xml results.xml -o results --collapse --clang-flags="-O -w" --clang-flags="-O -w -g" -c clangy
           test $(grep "failures=\"0\"" results.xml | wc -l) -eq 2
         env:
           CSMITH_PATH: "csmith-include"

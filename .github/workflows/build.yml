@@ -58,6 +58,9 @@ jobs:
           key: ${{ env.CACHE_VERSION }}-cabal-${{ matrix.os }}-${{ matrix.ghc }}-${{ github.sha }}
           restore-keys: ${{ env.CACHE_VERSION }}-cabal-${{ matrix.os }}-${{ matrix.ghc }}-
 
+      - name: Configure
+        run: cabal configure --enable-tests -j2 -ffuzz -fregressions
+
       - name: Build
         run: cabal build --enable-tests
 
