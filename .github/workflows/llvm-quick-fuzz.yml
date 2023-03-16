@@ -11,23 +11,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest]
+        os: [ubuntu-22.04]
         # See doc/developing.md
         ghc: ["8.10.7"]
-        llvm: [ "https://github.com/llvm/llvm-project/releases/download/llvmorg-12.0.0/clang+llvm-12.0.0-x86_64-apple-darwin.tar.xz"
-              , "https://github.com/llvm/llvm-project/releases/download/llvmorg-11.0.0/clang+llvm-11.0.0-x86_64-apple-darwin.tar.xz"
-              , "https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.1/clang+llvm-10.0.1-x86_64-apple-darwin.tar.xz"
-              , "https://github.com/llvm/llvm-project/releases/download/llvmorg-9.0.1/clang+llvm-9.0.1-x86_64-apple-darwin.tar.xz"
-              , "https://releases.llvm.org/8.0.0/clang+llvm-8.0.0-x86_64-apple-darwin.tar.xz"
-              , "https://releases.llvm.org/7.0.0/clang+llvm-7.0.0-x86_64-apple-darwin.tar.xz"
-              , "https://releases.llvm.org/6.0.0/clang+llvm-6.0.0-x86_64-apple-darwin.tar.xz"
-              , "https://releases.llvm.org/5.0.2/clang+llvm-5.0.2-x86_64-apple-darwin.tar.xz"
-              , "https://releases.llvm.org/4.0.1/clang+llvm-4.0.1-x86_64-apple-darwin.tar.xz"
-              , "https://releases.llvm.org/3.9.0/clang+llvm-3.9.0-x86_64-apple-darwin.tar.xz"
-              , "https://releases.llvm.org/3.8.0/clang+llvm-3.8.0-x86_64-apple-darwin.tar.xz"
-              , "https://releases.llvm.org/3.7.0/clang+llvm-3.7.0-x86_64-apple-darwin.tar.xz"
-              , "https://releases.llvm.org/3.6.2/clang+llvm-3.6.2-x86_64-apple-darwin.tar.xz"
-              , "https://releases.llvm.org/3.5.2/clang+llvm-3.5.2-x86_64-apple-darwin.tar.xz"
+        llvm: [ "https://github.com/llvm/llvm-project/releases/download/llvmorg-12.0.0/clang+llvm-12.0.0-x86_64-linux-gnu-ubuntu-20.04.tar.xz"
+              , "https://github.com/llvm/llvm-project/releases/download/llvmorg-11.0.0/clang+llvm-11.0.0-x86_64-linux-gnu-ubuntu-20.04.tar.xz"
+              , "https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.0/clang+llvm-10.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz"
+              , "https://releases.llvm.org/9.0.0/clang+llvm-9.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz"
+              , "https://releases.llvm.org/8.0.0/clang+llvm-8.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz"
+              , "https://releases.llvm.org/7.0.1/clang+llvm-7.0.1-x86_64-linux-gnu-ubuntu-16.04.tar.xz"
+              , "https://releases.llvm.org/6.0.1/clang+llvm-6.0.1-x86_64-linux-gnu-ubuntu-16.04.tar.xz"
+              , "https://releases.llvm.org/5.0.2/clang+llvm-5.0.2-x86_64-linux-gnu-ubuntu-16.04.tar.xz"
+              , "https://releases.llvm.org/4.0.1/clang+llvm-4.0.1-x86_64-linux-gnu-debian8.tar.xz"
+              , "https://releases.llvm.org/3.9.0/clang+llvm-3.9.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz"
+              , "https://releases.llvm.org/3.8.0/clang+llvm-3.8.0-x86_64-linux-gnu-ubuntu-16.04.tar.xz"
+              , "https://releases.llvm.org/3.7.1/clang+llvm-3.7.1-x86_64-linux-gnu-ubuntu-14.04.tar.xz"
+              , "https://releases.llvm.org/3.6.2/clang+llvm-3.6.2-x86_64-linux-gnu-ubuntu-14.04.tar.xz"
+              , "https://releases.llvm.org/3.5.2/clang+llvm-3.5.2-x86_64-linux-gnu-ubuntu-14.04.tar.xz"
               ]
     name: llvm-quick-fuzz - ${{ matrix.llvm }}
     steps:
@@ -42,14 +42,14 @@ jobs:
 
       - shell: bash
         run: |
-          brew install csmith creduce
-          ln -s /usr/local/opt/csmith/include/csmith-* $PWD/csmith-include
+          sudo apt-get -y install csmith libcsmith-dev creduce
+          ln -s /usr/include/csmith $PWD/csmith-include
 
       - shell: bash
         name: Install LLVM
         run: |
-          { curl -sSL ${{ matrix.llvm }} -o llvm.tar.xz && tar xzf llvm.tar.xz && mv clang+llvm-* llvm ; } || \
-          { curl -sSL ${{ matrix.llvm }} -o llvm.tar.xz && tar xzf llvm.tar.xz && mv clang+llvm-* llvm ; }
+          { curl -sSL ${{ matrix.llvm }} -o llvm.tar.xz && tar xf llvm.tar.xz && mv clang+llvm-* llvm ; } || \
+          { curl -sSL ${{ matrix.llvm }} -o llvm.tar.xz && tar xf llvm.tar.xz && mv clang+llvm-* llvm ; }
           echo "$PWD/llvm/bin" >> $GITHUB_PATH
 
       - shell: bash
@@ -62,7 +62,7 @@ jobs:
       - shell: bash
         name: Run fuzzing
         run: |
-          cabal exec -ffuzz fuzz-llvm-disasm -- -n 50 --junit-xml results.xml -o results --collapse -I /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include --clang-flags="-O -w" --clang-flags="-O -w -g" -c clangy
+          cabal exec -ffuzz fuzz-llvm-disasm -- -n 50 --junit-xml results.xml -o results --collapse --clang-flags="-O -w" --clang-flags="-O -w -g" -c clangy
           test $(grep "failures=\"0\"" results.xml | wc -l) -eq 2
         env:
           CSMITH_PATH: "csmith-include"
