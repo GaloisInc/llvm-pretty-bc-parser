@@ -360,19 +360,8 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     return (getTy, Typed (PrimType (Integer 1)) (ValConstExpr cst):cs)
 
   18 -> label "CST_CODE_INLINEASM_OLD" $ do
-    let field = parseField r
-    ty    <- getTy
-    flags <- field 0 numeric
-    let sideEffect = testBit (flags :: Int) 0
-        alignStack = (flags `shiftR` 1) == 1
-
-    alen <- field 1 numeric
-    asm  <- UTF8.decode <$> parseSlice r 2 alen char
-
-    clen <- field (2+alen) numeric
-    cst  <- UTF8.decode <$> parseSlice r (3+alen) clen char
-
-    return (getTy, Typed ty (ValAsm sideEffect alignStack asm cst):cs)
+    tv <- parseInlineAsm InlineAsmCode18 getTy r
+    return (getTy, tv:cs)
 
   19 -> label "CST_CODE_CE_SHUFFLEVEC_EX" $ do
     notImplemented
@@ -415,28 +404,9 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
       FloatType Double   -> build (ValDouble . castDouble)
       x                  -> Assert.unknownEntity "element type" x
 
-  23 -> label "CST_CODE_INLINEASM" $ do
-    let field = parseField r
-    mask <- field 0 numeric
-
-    let test = testBit (mask :: Word32)
-        hasSideEffects = test 0
-        isAlignStack   = test 1
-        _asmDialect    = mask `shiftR` 2
-
-    asmStrSize <- field 1 numeric
-    Assert.recordSizeGreater r (1 + asmStrSize)
-
-    constStrSize <- field (2 + asmStrSize) numeric
-    Assert.recordSizeGreater r (2 + asmStrSize + constStrSize)
-
-    asmStr   <- fmap UTF8.decode $ parseSlice r  2               asmStrSize   char
-    constStr <- fmap UTF8.decode $ parseSlice r (3 + asmStrSize) constStrSize char
-
-    ty <- getTy
-    let val = ValAsm hasSideEffects isAlignStack asmStr constStr
-
-    return (getTy, Typed ty val : cs)
+  23 -> label "CST_CODE_INLINEASM_OLD2" $ do
+    tv <- parseInlineAsm InlineAsmCode23 getTy r
+    return (getTy, tv:cs)
 
   -- [opty, flags, n x operands]
   24 -> label "CST_CODE_CE_GEP_WITH_INRANGE_INDEX" $ do
@@ -460,6 +430,20 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   26 -> label "CST_CODE_POISON" $ do
     ty <- getTy
     return (getTy, Typed ty ValPoison : cs)
+
+  27 -> label "CST_CODE_DSO_LOCAL_EQUIVALENT" $ do
+    notImplemented
+
+  28 -> label "CST_CODE_INLINEASM_OLD3" $ do
+    tv <- parseInlineAsm InlineAsmCode28 getTy r
+    return (getTy, tv:cs)
+
+  29 -> label "CST_CODE_NO_CFI_VALUE" $ do
+    notImplemented
+
+  30 -> label "CST_CODE_INLINEASM" $ do
+    tv <- parseInlineAsm InlineAsmCode30 getTy r
+    return (getTy, tv:cs)
 
   code -> Assert.unknownEntity "constant record code" code
 
@@ -497,6 +481,61 @@ resolveNull :: Type -> Parse PValue
 resolveNull ty = case typeNull ty of
   HasNull nv    -> return nv
   ResolveNull i -> resolveNull =<< getType' =<< getTypeId i
+
+-- | The different codes for inline @asm@ constants. Each one has minor
+-- differences in how they are parsed.
+data InlineAsmCode
+  = InlineAsmCode18
+    -- ^ @CST_CODE_INLINEASM_OLD = 18@. The original.
+  | InlineAsmCode23
+    -- ^ @CST_CODE_INLINEASM_OLD2 = 23@. This adds an @asmdialect@ field.
+  | InlineAsmCode28
+    -- ^ @CST_CODE_INLINEASM_OLD3 = 28@. This adds an @unwind@ field (which is
+    -- referred to as @canThrow@ in the LLVM source code).
+  | InlineAsmCode30
+    -- ^ @CST_CODE_INLINEASM = 30@. This adds an explicit function type field.
+
+-- | Parse a 'ValAsm' value. There are several variations on this theme that are
+-- captured in the 'InlineAsmCode' argument.
+parseInlineAsm :: InlineAsmCode -> Parse Type -> Record -> Parse (Typed PValue)
+parseInlineAsm code getTy r = do
+  let field = parseField r
+
+  -- If using InlineAsmCode30 or later, we parse the type as an explicit
+  -- field.
+  let parseTy  = do ty <- getType =<< field 0 numeric
+                    return (PtrTo ty, 1)
+  -- If using an older InlineAsmCode, then we retrieve the type from the
+  -- current context.
+  let useCurTy = do ty <- getTy
+                    return (ty, 0)
+  (ty, ix) <- case code of
+                InlineAsmCode18 -> useCurTy
+                InlineAsmCode23 -> useCurTy
+                InlineAsmCode28 -> useCurTy
+                InlineAsmCode30 -> parseTy
+
+  mask <- field ix numeric
+
+  let test = testBit (mask :: Word32)
+      hasSideEffects = test 0
+      isAlignStack   = test 1
+      -- We don't store these in the llvm-pretty AST at the moment:
+      _asmDialect    = test 2 -- Only with InlineAsmCode23 or later
+      _canThrow      = test 3 -- Only with InlineAsmCode28 or later
+
+  asmStrSize <- field (ix + 1) numeric
+  Assert.recordSizeGreater r (ix + 1 + asmStrSize)
+
+  constStrSize <- field (ix + 2 + asmStrSize) numeric
+  Assert.recordSizeGreater r (ix + 2 + asmStrSize + constStrSize)
+
+  asmStr   <- fmap UTF8.decode $ parseSlice r (ix + 2)              asmStrSize   char
+  constStr <- fmap UTF8.decode $ parseSlice r (ix + 3 + asmStrSize) constStrSize char
+
+  let val = ValAsm hasSideEffects isAlignStack asmStr constStr
+
+  return (Typed ty val)
 
 
 -- Float/Double Casting --------------------------------------------------------
