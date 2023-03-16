@@ -5,13 +5,16 @@ on:
     branches: [master, "release-**"]
   pull_request:
 
+env:
+  LLVM_VERSION: 12
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-22.04]
         # See doc/developing.md
         ghc: ["8.10.7", "9.0.2", "9.2.4"]
     name: build - ${{ matrix.ghc }} - ${{ matrix.os }}
@@ -21,7 +24,14 @@ jobs:
           submodules: true
 
       - name: Install LLVM (for running tests)
-        run: sudo apt-get -y install llvm
+        run: |
+          sudo apt-get -y install llvm-${{ env.LLVM_VERSION }}
+          # Inspired by https://gist.github.com/junkdog/70231d6953592cd6f27def59fe19e50d
+          sudo update-alternatives \
+            --install /usr/bin/llvm-config       llvm-config      /usr/bin/llvm-config-${{ env.LLVM_VERSION }} 100 \
+            --slave   /usr/bin/llvm-as           llvm-as          /usr/bin/llvm-as-${{ env.LLVM_VERSION }} \
+            --slave   /usr/bin/llvm-dis          llvm-dis         /usr/bin/llvm-dis-${{ env.LLVM_VERSION }} \
+            --slave   /usr/bin/llvm-link         llvm-link        /usr/bin/llvm-link-${{ env.LLVM_VERSION }}
 
       - uses: haskell/actions/setup@v1
         id: setup-haskell
