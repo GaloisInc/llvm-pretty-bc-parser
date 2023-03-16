@@ -16,7 +16,6 @@ import           Data.LLVM.BitCode.IR.Attrs
 import           Data.LLVM.BitCode.Match
 import           Data.LLVM.BitCode.Parse
 import           Data.LLVM.BitCode.Record
-import           Data.LLVM.BitCode.Record
 
 import           Text.LLVM.AST
 import           Text.LLVM.Labels

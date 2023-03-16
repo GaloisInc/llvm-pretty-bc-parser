@@ -124,12 +124,12 @@ instance MonadPlus GetBits where
 -- compositions.  Their functionality should be identical, but it may be easier
 -- to debug the first.
 
-extractFromByteString' :: NumBits {-^ the last bit accessible in the ByteString -}
-                       -> NumBits {-^ the bit to start extraction at -}
-                       -> NumBits {-^ the number of bits to extract -}
-                       -> ByteString {-^ the ByteString to extract from -}
-                       -> Either String (Int, NumBits)
-extractFromByteString' bitLimit startBit numBits bs =
+_extractFromByteString' :: NumBits {-^ the last bit accessible in the ByteString -}
+                        -> NumBits {-^ the bit to start extraction at -}
+                        -> NumBits {-^ the number of bits to extract -}
+                        -> ByteString {-^ the ByteString to extract from -}
+                        -> Either String (Int, NumBits)
+_extractFromByteString' bitLimit startBit numBits bs =
   let Bytes' s8 = fst (bitsToBytes startBit)
       Bytes' r8 = fst (bitsToBytes numBits)
       rcnt = r8 + 2 -- 2 == pre-shift overflow byte on either side
