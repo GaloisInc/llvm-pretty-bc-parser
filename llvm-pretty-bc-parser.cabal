@@ -141,7 +141,7 @@ Executable regression-test
                        filepath,
                        foldl,
                        text,
-                       turtle,
+                       turtle >= 1.6,
                        llvm-pretty,
                        llvm-pretty-bc-parser
   if flag(regressions)

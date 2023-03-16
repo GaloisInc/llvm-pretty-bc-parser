@@ -17,6 +17,7 @@ import           Data.Maybe (fromMaybe, listToMaybe)
 import           Data.Semigroup hiding ( Option )
 import           Data.Text (Text)
 import qualified Data.Text as Text
+import qualified Data.Text.IO as TextIO
 import           Data.Typeable (Typeable)
 import           System.Console.GetOpt (ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo)
 import qualified System.Directory as Dir
@@ -148,26 +149,26 @@ main = T.runManaged $ do
   opts      <- liftIO getOptions
 
   -- (1)
-  src       <- liftIO $ T.decodeString <$> findSrc
+  src       <- liftIO findSrc
   buildDir  <- T.mktempdir "/tmp" "regression-build"
   T.cptree src buildDir
 
   -- (2)
   outputDir <- T.mktempdir "/tmp" "regression-out"
   bcfiles   <- liftIO $ forM (optTests opts) $ \testFile -> do
-    let llName = buildDir  T.</> T.decodeString testFile
+    let llName = buildDir  T.</> testFile
     let bcName = llName    T.<.> "bc"
 
     -- (3)
-    echoText $ "Assembling: " <> pathToText llName
-    T.cp (T.decodeString testFile) llName
+    echoText $ "Assembling: " <> Text.pack llName
+    T.cp testFile llName
 
     -- (4)
     (code, stdout, stderr) <-
       T.procStrictWithErr (optLlvmAs opts)
         [ "-o"
-        , pathToText bcName
-        , pathToText llName
+        , Text.pack bcName
+        , Text.pack llName
         ]
         (pure "")
     exitWithMsg ("Couldn't assemble " <> Text.pack testFile) code stdout stderr
@@ -194,34 +195,34 @@ main = T.runManaged $ do
     -- A bit hacky: some directories contain this text, assume the longest
     -- filepath is the binary
     let dist = "dist" <> if optNew opts then "-newstyle" else ""
-    paths <- T.fold (T.find (T.has "llvm-disasm") (T.fromText dist)) Foldl.list
-    T.cp (maximumBy (comparing (length . T.encodeString)) paths)
-         (outputDir T.</> T.fromText ("llvm-disasm-" <> rev))
+    paths <- T.fold (T.find (T.has "llvm-disasm") (Text.unpack dist)) Foldl.list
+    T.cp (maximumBy (comparing length) paths)
+         (outputDir T.</> Text.unpack ("llvm-disasm-" <> rev))
 
   -- (6)
   T.cd outputDir
   -- [a, b] <- liftIO $ forM revs $ \rev ->
   resAandB <- liftIO $ forM revs $ \rev ->
     forM bcfiles $ \bcfile -> do
-      let exe = pathToText outputDir <> "/" <> "llvm-disasm-" <> rev
+      let exe = Text.pack outputDir <> "/" <> "llvm-disasm-" <> rev
       let ast = ["--ast" | optAST opts]
-      let pat = pathToText bcfile
+      let pat = Text.pack bcfile
       (code, stdout, stderr) <-
         T.procStrictWithErr exe (ast ++ [pat]) (pure "")
 
       exitWithMsg ("Failed when disassembling " <> pat <> " with " <> exe)
         code stdout stderr
 
-      let newPath = bcfile T.<.> rev T.<.> "ll"
-      T.writeTextFile newPath stdout
+      let newPath = bcfile T.<.> Text.unpack rev T.<.> "ll"
+      TextIO.writeFile newPath stdout
       pure newPath
 
   -- (7)
   case resAandB of
    (a:b:[]) ->
     liftIO $ forM_ (zip a b) $ \(ll1, ll2) -> do
-    let ll1t = pathToText ll1
-        ll2t = pathToText ll2
+    let ll1t = Text.pack ll1
+        ll2t = Text.pack ll2
 
     echoText $ "Diffing: " <> ll1t <> " " <> ll2t
     (code, stdout, stderr) <-
@@ -234,11 +235,7 @@ main = T.runManaged $ do
         -- should never happen, but this avoids requiring MonadFail on matching
         -- [a, b] <- {...step 6...}
 
-  where echoText     = liftIO . T.echo . T.unsafeTextToLine
-        pathToText p =
-          case T.toText p of
-            Left err  -> error (show $ "Couldn't convert path to text: " <> err)
-            Right str -> str
+  where echoText = liftIO . T.echo . T.unsafeTextToLine
         exitWithMsg msg code stdout stderr =
           when (code /= T.ExitSuccess) $
             mapM_ (mapM_ T.echo . T.textToLines) [msg, stdout, stderr] >>
