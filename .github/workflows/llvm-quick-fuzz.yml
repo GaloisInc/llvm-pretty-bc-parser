@@ -5,6 +5,15 @@ on:
     # * is a special character in YAML so you have to quote this string
     - cron:  '* 3 * * *'
 
+env:
+  # The CACHE_VERSION can be updated to force the use of a new cache if
+  # the current cache contents become corrupted/invalid.  This can
+  # sometimes happen when (for example) the OS version is changed but
+  # older .so files are cached, which can have various effects
+  # (e.g. cabal complains it can't find a valid version of the "happy"
+  # tool).
+  CACHE_VERSION: 1
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -40,6 +49,15 @@ jobs:
         with:
           ghc-version: ${{ matrix.ghc }}
 
+      - uses: actions/cache/restore@v3
+        name: Restore cabal store cache
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.cabal-store }}
+            dist-newstyle
+          key: ${{ env.CACHE_VERSION }}-cabal-${{ matrix.os }}-${{ matrix.ghc }}-${{ github.sha }}
+          restore-keys: ${{ env.CACHE_VERSION }}-cabal-${{ matrix.os }}-${{ matrix.ghc }}-
+
       - shell: bash
         run: |
           sudo apt-get -y install csmith libcsmith-dev creduce
@@ -66,3 +84,12 @@ jobs:
           test $(grep "failures=\"0\"" results.xml | wc -l) -eq 2
         env:
           CSMITH_PATH: "csmith-include"
+
+      - uses: actions/cache/save@v3
+        name: Save cabal store cache
+        if: always()
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.cabal-store }}
+            dist-newstyle
+          key: ${{ env.CACHE_VERSION }}-cabal-${{ matrix.os }}-${{ matrix.ghc }}-${{ github.sha }}
