@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Main where
 
@@ -13,97 +14,88 @@ import qualified Data.ByteString.Lazy as L
 import           Data.Char (ord,isSpace,chr)
 import           Data.Generics (everywhere, mkT) -- SYB
 import           Data.List (sort)
-import           Data.Monoid ( Endo(..) )
+import           Data.Proxy ( Proxy(..) )
 import           Data.Typeable (Typeable)
-import           System.Console.GetOpt
-           ( ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo )
+import qualified Options.Applicative as OA
 import           System.Directory (getTemporaryDirectory, listDirectory, removeFile)
-import           System.Environment (getArgs,getProgName)
-import           System.Exit (exitFailure,exitSuccess,ExitCode(..))
-import           System.FilePath ((<.>),dropExtension,takeFileName)
+import           System.Exit (ExitCode(..))
+import           System.FilePath ((<.>),(</>),dropExtension,takeFileName)
 import           System.IO
     (openBinaryTempFile,hClose,openTempFile,hPutStrLn)
 import qualified System.Process as Proc
+import           Test.Tasty
+import           Test.Tasty.HUnit ( assertFailure, testCase )
+import qualified Test.Tasty.Options as TO
+import qualified Test.Tasty.Runners as TR
 import           Text.Show.Pretty (ppShow)
 
 
 -- Option Parsing --------------------------------------------------------------
 
-data Options = Options { optTests     :: [FilePath] -- ^ Tests
-                       , optLlvmAs    :: String     -- ^ llvm-as  name
-                       , optLlvmDis   :: String     -- ^ llvm-dis name
-                       , optRoundtrip :: Bool
-                       , optKeep      :: Bool
-                       , optHelp      :: Bool
-                       } deriving (Show)
+newtype LLVMAs = LLVMAs FilePath
 
--- | There are default tests because these run during @cabal test@
-defaultOptions :: Options
-defaultOptions  = Options { optTests     = []
-                          , optLlvmAs    = "llvm-as"
-                          , optLlvmDis   = "llvm-dis"
-                          , optRoundtrip = True
-                          , optKeep      = False
-                          , optHelp      = False
-                          }
+instance TO.IsOption LLVMAs where
+  defaultValue = LLVMAs "llvm-as"
+  parseValue = Just . LLVMAs
+  optionName = pure "with-llvm-as"
+  optionHelp = pure "path to llvm-as"
+  showDefaultValue (LLVMAs as) = Just as
+  optionCLParser = TO.mkOptionCLParser $
+    OA.metavar "FILEPATH"
 
-options :: [OptDescr (Endo Options)]
-options  =
-  [ Option "" ["with-llvm-as"] (ReqArg setLlvmAs "FILEPATH")
-    "path to llvm-as"
-  , Option "" ["with-llvm-dis"] (ReqArg setLlvmDis "FILEPATH")
-    "path to llvm-dis"
-  , Option "r" ["roundtrip"] (NoArg setRoundtrip)
-    "disable roundtrip tests (AST/AST diff)"
-  , Option "k" ["keep"] (NoArg setKeep)
-    "keep all generated files for manual inspection"
-  , Option "h" ["help"] (NoArg setHelp)
-    "display this message"
-  ]
-  where setLlvmAs str  = Endo (\opt -> opt { optLlvmAs    = str })
-        setLlvmDis str = Endo (\opt -> opt { optLlvmDis   = str })
-        setRoundtrip   = Endo (\opt -> opt { optRoundtrip = False })
-        setKeep        = Endo (\opt -> opt { optKeep      = True })
-        setHelp        = Endo (\opt -> opt { optHelp      = True })
+newtype LLVMDis = LLVMDis FilePath
 
-addTest :: String -> Endo Options
-addTest test = Endo (\opt -> opt { optTests = test : optTests opt })
+instance TO.IsOption LLVMDis where
+  defaultValue = LLVMDis "llvm-dis"
+  parseValue = Just . LLVMDis
+  optionName = pure "with-llvm-dis"
+  optionHelp = pure "path to llvm-dis"
+  showDefaultValue (LLVMDis dis) = Just dis
+  optionCLParser = TO.mkOptionCLParser $
+    OA.metavar "FILEPATH"
 
-getOptions :: IO Options
-getOptions  =
-  do args <- getArgs
-     case getOpt (ReturnInOrder addTest) options args of
+newtype Roundtrip = Roundtrip Bool
 
-       (fs,[],[]) -> do let opts = appEndo (mconcat fs) defaultOptions
+instance TO.IsOption Roundtrip where
+  defaultValue = Roundtrip True
+  parseValue = fmap Roundtrip . TO.safeReadBool
+  optionName = pure "roundtrip"
+  optionHelp = pure "disable roundtrip tests (AST/AST diff)"
+  showDefaultValue (Roundtrip r) = Just $ show r
+  optionCLParser = TO.mkOptionCLParser $
+    OA.short 'r'
 
-                        when (optHelp opts) $ do printUsage []
-                                                 exitSuccess
+newtype Keep = Keep Bool
 
-                        return opts
+instance TO.IsOption Keep where
+  defaultValue = Keep False
+  parseValue = fmap Keep . TO.safeReadBool
+  optionName = pure "keep"
+  optionHelp = pure "keep all generated files for manual inspection"
+  showDefaultValue (Keep k) = Just $ show k
+  optionCLParser = TO.mkOptionCLParser $
+    OA.short 'k'
 
-       (_,_,errs) -> do printUsage errs
-                        exitFailure
-
-printUsage :: [String] -> IO ()
-printUsage errs =
-  do prog <- getProgName
-     let banner = "Usage: " ++ prog ++ " [OPTIONS] test1.ll .. testn.ll"
-     putStrLn (usageInfo (unlines (errs ++ [banner])) options)
-
+disasmTestIngredients :: [TR.Ingredient]
+disasmTestIngredients =
+  includingOptions [ TO.Option (Proxy @LLVMAs)
+                   , TO.Option (Proxy @LLVMDis)
+                   , TO.Option (Proxy @Roundtrip)
+                   , TO.Option (Proxy @Keep)
+                   ] :
+  defaultIngredients
 
 -- Test Running ----------------------------------------------------------------
 
 -- | Run all provided tests.
 main :: IO ()
-main  = do
-  opts <- getOptions
-  -- When no tests are provided (i.e. during "cabal test"),
-  -- try reading them from the test directory
-  mapM_ (runTest opts) =<<
-    if null (optTests opts)
-    then let dir = "disasm-test/tests/"
-         in map (dir++) <$> listDirectory dir
-    else pure (optTests opts)
+main =  do
+  dirFiles <- listDirectory dir
+  defaultMainWithIngredients disasmTestIngredients $
+    testGroup "Disassembly tests" $
+    map (\file -> runTest (dir </> file)) dirFiles
+  where
+    dir = "disasm-test/tests/"
 
 -- | A test failure.
 data TestFailure
@@ -113,20 +105,30 @@ data TestFailure
 instance X.Exception TestFailure
 
 -- | Attempt to compare the assembly generated by llvm-pretty and llvm-dis.
-runTest :: Options -> FilePath -> IO ()
-runTest opts file =
-  let -- Assemble and disassemble some LLVM asm
-      processLL :: FilePath -> IO (FilePath, Maybe FilePath)
-      processLL f = do
-        putStrLn (showString f ": ")
-        X.handle logError                                $
-          withFile  (generateBitCode  opts pfx f)        $ \ bc   ->
-          withFile  (normalizeBitCode opts pfx bc)       $ \ norm -> do
-            (parsed, ast) <- processBitCode opts pfx bc
-            ignore (Proc.callProcess "diff" ["-u", norm, parsed])
-            putStrLn ("successfully parsed " ++ show f)
-            return (parsed, ast)
-  in do
+runTest :: FilePath -> TestTree
+runTest file =
+  askOption $ \llvmAs ->
+  askOption $ \llvmDis ->
+  askOption $ \roundtrip ->
+  askOption $ \k@(Keep keep) ->
+  testCase (takeFileName file) $ do
+
+    let -- Assemble and disassemble some LLVM asm
+        processLL :: FilePath -> IO (FilePath, Maybe FilePath)
+        processLL f = do
+          putStrLn (showString f ": ")
+          X.handle logError                               $
+            withFile  (generateBitCode    llvmAs  pfx f)  $ \ bc   ->
+            withFile  (normalizeBitCode k llvmDis pfx bc) $ \ norm -> do
+              (parsed, ast) <- processBitCode k roundtrip pfx bc
+              ignore (Proc.callProcess "diff" ["-u", norm, parsed])
+              putStrLn ("successfully parsed " ++ show f)
+              return (parsed, ast)
+
+        withFile :: IO FilePath -> (FilePath -> IO r) -> IO r
+        withFile iofile f =
+          X.bracket iofile (if keep then const (pure ()) else removeFile) f
+
     (parsed1, ast) <- processLL file
     case ast of               -- this Maybe also encodes the data of optRoundtrip
       Nothing   -> return ()
@@ -140,41 +142,38 @@ runTest opts file =
         -- assembly: we need llvm-as to be able to re-assemble it.
         -- diff parsed1 parsed2
   where pfx   = dropExtension (takeFileName file)
-        exitF l = mapM_ putStrLn l >> exitFailure
-        withFile iofile f =
-          X.bracket iofile (if optKeep opts then const (pure ()) else removeFile) f
-        logError (ParseError msg) = do
-          putStrLn "failure"
-          putStrLn (unlines (map ("; " ++) (lines (formatError msg))))
-          exitFailure
+        assertF ls = assertFailure $ unlines ls
+        logError (ParseError msg) =
+          assertFailure $ unlines $
+            "failure" : map ("; " ++) (lines (formatError msg))
         diff file1 file2 = do
           (code, stdout, stderr) <-
             Proc.readCreateProcessWithExitCode (Proc.proc "diff" ["-u", file1, file2]) ""
           case code of
-            ExitFailure _ -> exitF ["diff failed", stdout, stderr]
+            ExitFailure _ -> assertF ["diff failed", stdout, stderr]
             ExitSuccess   ->
               if stdout /= "" || stderr /= ""
-              then exitF ["non-empty diff", stdout, stderr]
+              then assertF ["non-empty diff", stdout, stderr]
               else mapM_ putStrLn ["success: empty diff: ", file1, file2]
 
 -- | Assemble some llvm assembly, producing a bitcode file in /tmp.
-generateBitCode :: Options -> FilePath -> FilePath -> IO FilePath
-generateBitCode Options { .. } pfx file = do
+generateBitCode :: LLVMAs -> FilePath -> FilePath -> IO FilePath
+generateBitCode (LLVMAs llvmAs) pfx file = do
   tmp    <- getTemporaryDirectory
   (bc,h) <- openBinaryTempFile tmp (pfx <.> "bc")
   hClose h
-  callProc optLlvmAs ["-o", bc, file]
+  callProc llvmAs ["-o", bc, file]
   return bc
 
 -- | Use llvm-dis to parse a bitcode file, to obtain a normalized version of the
 -- llvm assembly.
-normalizeBitCode :: Options -> FilePath -> FilePath -> IO FilePath
-normalizeBitCode Options { .. } pfx file = do
+normalizeBitCode :: Keep -> LLVMDis -> FilePath -> FilePath -> IO FilePath
+normalizeBitCode _keep (LLVMDis llvmDis) pfx file = do
   tmp      <- getTemporaryDirectory
   (norm,h) <- openTempFile tmp (pfx ++ "llvm-dis" <.> "ll")
   hClose h
-  callProc optLlvmDis ["-o", norm, file]
-  -- stripComments norm
+  callProc llvmDis ["-o", norm, file]
+  -- stripComments _keep norm
   return norm
 
 -- | Usually, the ASTs aren't "on the nose" identical.
@@ -197,8 +196,8 @@ normalizeModule = sorted . everywhere (mkT zeroValMdRef)
 
 -- | Parse a bitcode file using llvm-pretty, failing the test if the parser
 -- fails.
-processBitCode :: Options -> FilePath -> FilePath -> IO (FilePath, Maybe FilePath)
-processBitCode Options { .. } pfx file = do
+processBitCode :: Keep -> Roundtrip -> FilePath -> FilePath -> IO (FilePath, Maybe FilePath)
+processBitCode _keep (Roundtrip roundtrip) pfx file = do
   let handler :: X.SomeException -> IO (Either Error AST.Module)
       handler se = return (Left (Error [] (show se)))
       printToTempFile sufx stuff = do
@@ -212,8 +211,8 @@ processBitCode Options { .. } pfx file = do
     Left err -> X.throwIO (ParseError err)
     Right m  -> do
       parsed <- printToTempFile "ll" (show (ppLLVM (ppModule m)))
-      -- stripComments parsed
-      if optRoundtrip
+      -- stripComments _keep parsed
+      if roundtrip
       then do
         tmp2 <- printToTempFile "ast" (ppShow (normalizeModule m))
         return (parsed, Just tmp2)
@@ -221,10 +220,10 @@ processBitCode Options { .. } pfx file = do
 
 -- | Remove comments from a .ll file, stripping everything including the
 -- semi-colon.
-stripComments :: Options -> FilePath -> IO ()
-stripComments Options { .. } path = do
+stripComments :: Keep -> FilePath -> IO ()
+stripComments (Keep keep) path = do
   bytes <- L.readFile path
-  when (not optKeep) (removeFile path)
+  when (not keep) (removeFile path)
   mapM_ (writeLine . dropComments) (bsLines bytes)
   where
   writeLine bs | L.null bs = return ()
