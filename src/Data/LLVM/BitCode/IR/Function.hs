@@ -551,6 +551,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
         `mplus` fail "invalid INVOKE record"
 
     args        <- parseInvokeArgs t va r ix' as
+    -- Use `fty` instead of `typedType f` as the function type, as `typedType f`
+    -- will be a pointer type. See Note [Typing function applications].
     result ret (Invoke fty (typedValue f) args normal unwind) d
 
   14 -> label "FUNC_CODE_INST_UNWIND" (effect Unwind d)
@@ -728,7 +730,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     label (show fn) $ do
       (ret,as,va) <- elimFunTy fnty `mplus` fail "invalid CALL record"
       args <- parseCallArgs t va r ix2 as
-      result ret (Call False opTy fn args) d
+      -- Use `fnty` instead of `opTy` as the function type, as `opTy` will be
+      -- a pointer type. See Note [Typing function applications].
+      result ret (Call False fnty fn args) d
 
   -- [Line,Col,ScopeVal, IAVal]
   35 -> label "FUNC_CODE_DEBUG_LOC" $ do
@@ -1003,7 +1007,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     label (show fn) $ do
       (ret,as,va) <- elimFunTy fnty `mplus` fail "invalid CALLBR record"
       args <- parseCallArgs t va r ix2 as
-      result ret (CallBr opTy fn args normal indirectDests) d
+      -- Use `fnty` instead of `opTy` as the function type, as `opTy` will be
+      -- a pointer type. See Note [Typing function applications].
+      result ret (CallBr fnty fn args normal indirectDests) d
 
   -- [opty, opval]
   58 -> label "FUNC_CODE_INST_FREEZE" $ do
@@ -1453,3 +1459,35 @@ getDecodedAtomicRWOp 8  = pure AtomicMin
 getDecodedAtomicRWOp 9  = pure AtomicUMax
 getDecodedAtomicRWOp 10 = pure AtomicUMin
 getDecodedAtomicRWOp v  = Assert.unknownEntity "atomic RWOp" v
+
+{-
+Note [Typing function applications]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The LLVM Language Reference Manual says the following about the `call`
+instruction:
+
+    <result> = [tail | musttail | notail ] call [fast-math flags] [cconv] [ret attrs] [addrspace(<num>)]
+               <ty>|<fnty> <fnptrval>(<function args>) [fn attrs] [ operand bundles ]
+
+    ...
+
+    * ‘fnty’: shall be the signature of the function being called. [...]
+    * ‘fnptrval’: An LLVM value containing a pointer to a function to be called. [...]
+
+One slightly surprising aspect of this instruction (at least, this was not
+obvious to me when I first read it) is that `fnptrval` does _not_ have the type
+`fnty`. Rather, `fnptrval` has a pointer type, and the underlying memory being
+pointed to is treated as having type `fnty`.
+
+A consequence of this property is that `fnty` is /never/ a pointer type. It is
+easy to accidentally give the `fnty` of a `call` instruction a pointer type if
+you simply compute the type of `fnptrval`, but this is incorrect. This is
+especially incorrect in a world where pointers are opaque (see
+https://llvm.org/docs/OpaquePointers.html), as you cannot know know what a
+pointer's pointee type is by looking at the type alone. Instead, you must look
+at the surrounding instruction to know what the pointee type is. In the case of
+the `call` instruction, the pointee type for `fnptrval` is precisely `fnty`.
+
+Similar reasoning applies to the `callbr` and `invoke` instructions, which also
+invoke a pointer whose underlying memory has a function type.
+-}
