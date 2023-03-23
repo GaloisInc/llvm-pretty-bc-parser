@@ -425,10 +425,14 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
         _asmDialect    = mask `shiftR` 2
 
     asmStrSize <- field 1 numeric
+#ifndef QUICK
     Assert.recordSizeGreater r (1 + asmStrSize)
+#endif
 
     constStrSize <- field (2 + asmStrSize) numeric
+#ifndef QUICK
     Assert.recordSizeGreater r (2 + asmStrSize + constStrSize)
+#endif
 
     asmStr   <- fmap UTF8.decode $ parseSlice r  2               asmStrSize   char
     constStr <- fmap UTF8.decode $ parseSlice r (3 + asmStrSize) constStrSize char

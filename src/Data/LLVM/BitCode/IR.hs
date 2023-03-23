@@ -5,7 +5,6 @@
 module Data.LLVM.BitCode.IR where
 
 import Data.LLVM.BitCode.Bitstream
-import Data.LLVM.BitCode.BitString
 import Data.LLVM.BitCode.IR.Blocks
 import Data.LLVM.BitCode.IR.Module (parseModuleBlock)
 import Data.LLVM.BitCode.Match
@@ -21,9 +20,7 @@ import Data.Word (Word16)
 
 -- | The magic number that identifies a @Bitstream@ structure as LLVM IR.
 llvmIrMagic :: Word16
-llvmIrMagic  = fromBitString (toBitString (Bits' 8) 0xc0
-                              `joinBitString`
-                              toBitString (Bits' 8) 0xde)
+llvmIrMagic = 0xdec0
 
 -- | Parse an LLVM Module out of a Bitstream object.
 parseModule :: Bitstream -> Parse Module

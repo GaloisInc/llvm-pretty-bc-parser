@@ -1,9 +1,11 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ExplicitForAll #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -31,7 +33,10 @@ import           Text.LLVM.Labels
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import           Control.Applicative ((<|>))
 import           Control.Exception (throw)
-import           Control.Monad (foldM, guard, mplus, when)
+import           Control.Monad ( foldM, guard, mplus )
+#ifndef QUICK
+import           Control.Monad ( when )
+#endif
 import           Data.Bits (shiftR, testBit, shiftL, (.&.), (.|.), bit, complement)
 import           Data.Data (Data)
 import           Data.Typeable (Typeable)
@@ -402,6 +407,11 @@ parseMetadataBlock globals vt es = label "METADATA_BLOCK" $ do
 parseMetadataEntry :: ValueTable -> MetadataTable -> PartialMetadata -> Entry
                    -> Parse PartialMetadata
 parseMetadataEntry vt mt pm (fromEntry -> Just r) =
+#ifdef QUICK
+  let assertRecordSizeBetween (_ :: Integer) (_ :: Integer) = return ()
+      assertRecordSizeIn (_ :: [Integer]) = return ()
+      assertRecordSizeAtLeast (_ :: Integer) = return ()
+#else
   let msg = [ "Are you sure you're using a supported version of LLVM/Clang?"
             , "Check here: https://github.com/GaloisInc/llvm-pretty-bc-parser"
             ]
@@ -424,6 +434,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
              fail $ unlines $ [ "Invalid record size: " ++ show len
                               , "Expected size of " ++ show lb ++ " or greater"
                               ] ++ msg
+#endif
   in case recordCode r of
     -- [values]
     1 -> label "METADATA_STRING" $ do
@@ -434,9 +445,13 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     2 -> label "METADATA_VALUE" $ do
       assertRecordSizeIn [2]
       let field = parseField r
+#ifdef QUICK
+      (_ :: Int) <- field 0 numeric
+#else
       ty  <- getType =<< field 0 numeric
       when (ty == PrimType Metadata || ty == PrimType Void)
           (fail "invalid record")
+#endif
 
       cxt <- getContext
       ix  <- field 1 numeric
@@ -499,8 +514,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     -- [m x [value, [n x [id, mdnode]]]
     11 -> label "METADATA_ATTACHMENT" $ do
       let recordSize = length (recordFields r)
+#ifndef QUICK
       when (recordSize == 0)
         (fail "Invalid record")
+#endif
       if recordSize `mod` 2 == 0
       then label "function attachment" $ do
         att <- Map.fromList <$> parseAttachment r 0
@@ -774,12 +791,14 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
             | not hasSPFlags = recordSize >= 21
             | otherwise      = True
 
+#ifndef QUICK
       -- Some additional sanity checking
       when (not hasSPFlags && hasUnit)
            (assertRecordSizeBetween 19 21)
 
       when (hasSPFlags && not hasUnit)
            (fail "DISubprogram record has subprogram flags, but does not have unit.  Invalid record.")
+#endif
 
       ctx <- getContext
 
@@ -940,9 +959,11 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       _alignInBits <-
         if hasAlignment
           then do n <- parseField r (adj 8) numeric
+#ifndef QUICK
                   when ((n :: Word64) > fromIntegral (maxBound :: Word32))
                         (fail "Alignment value is too large")
-                  return (fromIntegral n :: Word32)
+#endif
+                  return (fromIntegral (n :: Word64) :: Word32)
 
           else return 0
 
@@ -1020,14 +1041,18 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       count  <- parseField r 0 numeric
       offset <- parseField r 1 numeric
       bs     <- parseField r 2 fieldBlob
+#ifndef QUICK
       when (count == 0)
         (fail "Invalid record: metadata strings with no strings")
       when (offset > S.length bs)
         (fail "Invalid record: metadata strings corrupt offset")
+#endif
       let (bsLengths, bsStrings) = S.splitAt offset bs
       lengths <- either fail return $ parseMetadataStringLengths count bsLengths
+#ifndef QUICK
       when (sum lengths > S.length bsStrings)
         (fail "Invalid record: metadata strings truncated")
+#endif
       let strings = snd (mapAccumL f bsStrings lengths)
             where f s i = case S.splitAt i s of
                             (str, rest) -> (rest, Char8.unpack str)
@@ -1036,9 +1061,11 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     -- [ valueid, n x [id, mdnode] ]
     36 -> label "METADATA_GLOBAL_DECL_ATTACHMENT" $ do
 
+#ifndef QUICK
       -- the record will always be of odd length
       when (mod (length (recordFields r)) 2 == 0)
           (fail "Invalid record")
+#endif
 
       valueId <- parseField r 0 numeric
       sym     <- case lookupValueTableAbs valueId vt of

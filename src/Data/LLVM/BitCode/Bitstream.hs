@@ -1,4 +1,7 @@
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PatternGuards #-}
 
 module Data.LLVM.BitCode.Bitstream (
@@ -16,27 +19,34 @@ module Data.LLVM.BitCode.Bitstream (
   , parseMetadataStringLengths
   ) where
 
-import           Data.LLVM.BitCode.BitString as BS
-import           Data.LLVM.BitCode.GetBits
-
 import           Control.Monad ( unless, replicateM, guard )
 import           Data.Bits ( Bits )
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
+import           Data.LLVM.BitCode.BitString as BS
+import           Data.LLVM.BitCode.GetBits
 import qualified Data.Map as Map
-import           Data.Word ( Word8, Word16, Word32 )
+#ifdef QUICK
+import           GHC.Exts
+#endif
+import           GHC.Word
 
 
 -- Primitive Reads -------------------------------------------------------------
 
 -- | Parse a @Bool@ out of a single bit.
 boolean :: GetBits Bool
-boolean  = ((1 :: Word8) ==) . fromBitString <$> fixed (Bits' 1)
+boolean = do i <- fixedWord (Bits' 1)
+             return $ 1 == i
 
 
 -- | Parse a Num type out of n-bits.
 numeric :: (Num a, Bits a) => NumBits -> GetBits a
+#ifdef QUICK
+numeric n = fromInteger . toInteger <$> fixedWord n
+#else
 numeric n = fromBitString <$> fixed n
+#endif
 
 
 -- | Get a @BitString@ formatted as vbr.
@@ -52,13 +62,52 @@ vbr n = loop emptyBitString
        then loop acc'
        else return acc'
 
+#ifdef QUICK
+vbrWord :: NumBits -> GetBits Word
+vbrWord n@(Bits' (I# n#)) =
+  let !contBitMask# = (int2Word# 1#) `uncheckedShiftL#` (n# -# 1#)
+      loop = do ic <- fixedWord n
+                let !(W# ic#) = ic
+                if isTrue# ((ic# `and#` contBitMask#) `eqWord#` (int2Word# 0#))
+                  then return ic
+                  else do nxt <- loop
+                          let !(W# nxt#) = nxt
+                          let nxtshft# = nxt# `uncheckedShiftL#` (n# -# 1#)
+                          return (W# ((ic# `xor#` contBitMask#)`or#` nxtshft#))
+  in loop
+#endif
+
+
 -- | Process a variable-bit encoded integer.
 vbrNum :: (Num a, Bits a) => NumBits -> GetBits a
+#ifdef QUICK
+vbrNum = fmap (fromInteger . toInteger) . vbrWord
+#else
 vbrNum n = fromBitString <$> vbr n
+#endif
 
 -- | Decode a 6-bit encoded character.
 char6 :: GetBits Word8
 char6  = do
+#ifdef QUICK
+  (W# w#) <- fixedWord (Bits' 6)
+  let !i# = word2Int# w#
+#if MIN_VERSION_base(4,16,0)
+  let wordToWord8 = wordToWord8#
+#else
+  let wordToWord8 :: Word# -> Word#
+      wordToWord8 !a# = a#
+#endif
+  if isTrue# (i# <=# 25#)
+  then return (W8# (wordToWord8 (w# `plusWord#` (int2Word# 97#))))
+  else if isTrue# (i# <=# 51#)
+       then return (W8# (wordToWord8 (w# `plusWord#` (int2Word# 39#))))
+       else if isTrue# (i# <=# 61#)
+            then return (W8# (wordToWord8 (w# `minusWord#` (int2Word# 4#))))
+            else if isTrue# (i# ==# 62#)
+                 then return (fromIntegral (fromEnum '.'))
+                 else return (fromIntegral (fromEnum '_'))
+#else
   word <- numeric $ Bits' 6
   case word of
     n | 0  <= n && n <= 25 -> return (n + 97)
@@ -67,6 +116,7 @@ char6  = do
     62                     -> return (fromIntegral (fromEnum '.'))
     63                     -> return (fromIntegral (fromEnum '_'))
     _                      -> fail "invalid char6"
+#endif
 
 
 -- Bitstream Parsing -----------------------------------------------------------
@@ -86,10 +136,9 @@ parseBitCodeBitstreamLazy :: L.ByteString -> Either String Bitstream
 parseBitCodeBitstreamLazy = runGetBits getBitCodeBitstream . L.toStrict
 
 -- | The magic constant at the beginning of all llvm-bitcode files.
-bcMagicConst :: BitString
-bcMagicConst  = toBitString (Bits' 8) 0x42
-                `joinBitString`
-                toBitString (Bits' 8) 0x43
+
+bcMagicConst :: Word
+bcMagicConst = 0x4342
 
 -- | Parse a @Bitstream@ from either a normal bitcode file, or a wrapped
 -- bitcode.
@@ -108,21 +157,18 @@ getBitCodeBitstream  = label "llvm-bitstream" $ do
       skip $ Bits' 32 -- CPUType
       isolate size getBitstream
 
-bcWrapperMagicConst :: BitString
-bcWrapperMagicConst  =
-  foldr1 joinBitString [ byte 0xDE, byte 0xC0, byte 0x17, byte 0x0B]
-  where
-  byte = toBitString (Bits' 8)
+bcWrapperMagicConst :: Word
+bcWrapperMagicConst = 0x0b16c0de
 
 guardWrapperMagic :: GetBits ()
 guardWrapperMagic  = do
-  magic <- fixed (Bits' 32)
+  magic <- fixedWord (Bits' 32)
   guard (magic == bcWrapperMagicConst)
 
 -- | Parse a @Bitstream@.
 getBitstream :: GetBits Bitstream
 getBitstream  = label "bitstream" $ do
-  bc       <- fixed $ Bits' 16
+  bc       <- fixedWord $ Bits' 16
   unless (bc == bcMagicConst) (fail "Invalid magic number")
   appMagic <- numeric $ Bits' 16
   entries  <- getTopLevelEntries

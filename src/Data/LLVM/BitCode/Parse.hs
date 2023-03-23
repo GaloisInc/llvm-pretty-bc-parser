@@ -540,8 +540,12 @@ getTypeSymtab  = Parse (symTypeSymtab . envSymtab <$> ask)
 
 -- | Label a sub-computation with its context.
 label :: String -> Parse a -> Parse a
+#ifdef QUICK
+label _ m = m
+#else
 label l m = Parse $ do
   local (addLabel l) (unParse m)
+#endif
 
 -- | Fail, taking into account the current context.
 failWithContext :: String -> Parse a
