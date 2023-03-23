@@ -126,12 +126,15 @@ Test-suite disasm-test
                        directory,
                        bytestring,
                        filepath,
+                       lens,
                        optparse-applicative,
                        pretty-show>= 1.6,
                        syb        >= 0.7,
                        tasty >= 1.3,
                        tasty-hunit,
                        tasty-sugar >= 2.1 && < 2.2,
+                       text,
+                       versions,
                        llvm-pretty,
                        llvm-pretty-bc-parser
 
