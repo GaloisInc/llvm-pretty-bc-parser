@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
 module Main where
@@ -9,17 +10,23 @@ import qualified Text.LLVM.AST as AST
 import           Text.LLVM.PP (ppLLVM,ppModule)
 
 import qualified Control.Exception as X
-import           Control.Monad (when)
+import           Control.Lens ((^.), (^?), _Right, to)
+import           Control.Monad (unless, when)
+import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as L
-import           Data.Char (ord,isSpace,chr)
+import           Data.Char (ord,isLetter,isSpace,chr)
 import           Data.Generics (everywhere, mkT) -- SYB
-import           Data.List (sort)
+import           Data.List (isInfixOf, sort, stripPrefix)
 import           Data.Proxy ( Proxy(..) )
+import qualified Data.Text as T
 import           Data.Typeable (Typeable)
+import           Data.Versions (Versioning, versioning, prettyV, major)
+import qualified GHC.IO.Exception as GE
 import qualified Options.Applicative as OA
 import           System.Directory (getTemporaryDirectory, removeFile)
-import           System.Exit (ExitCode(..))
+import           System.Exit (ExitCode(..), exitFailure, exitSuccess)
 import           System.FilePath ((<.>))
+import qualified System.IO as IO (stderr)
 import           System.IO
     (openBinaryTempFile,hClose,openTempFile,hPutStrLn)
 import qualified System.Process as Proc
@@ -86,13 +93,110 @@ disasmTestIngredients =
                    ] :
   defaultIngredients
 
+-- Querying Tool Versions ------------------------------------------------------
+
+-- lack of decipherable version is not fatal to running the tests
+data VersionCheck = VC String (Either T.Text Versioning)
+
+showVC :: VersionCheck -> String
+showVC (VC nm v) = nm <> " " <> (T.unpack $ either id prettyV v)
+
+vcTag :: VersionCheck -> String
+vcTag v@(VC nm _) = nm <> vcMajor v
+
+vcMajor :: VersionCheck -> String
+vcMajor (VC _ v) = either T.unpack (^. major . to show) v
+
+vcVersioning :: VersionCheck -> Either T.Text Versioning
+vcVersioning (VC _ v) = v
+
+mkVC :: String -> String -> VersionCheck
+mkVC nm raw = let r = T.pack raw in VC nm $ first (const r) $ versioning r
+
+getLLVMAsVersion :: LLVMAs -> IO VersionCheck
+getLLVMAsVersion (LLVMAs llvmAsPath) = getLLVMToolVersion "llvm-as" llvmAsPath
+
+getLLVMDisVersion :: LLVMDis -> IO VersionCheck
+getLLVMDisVersion (LLVMDis llvmDisPath) = getLLVMToolVersion "llvm-dis" llvmDisPath
+
+-- Determine which version of an LLVM tool will be used for these tests.
+-- An exception (e.g. in readProcess if the tool is not found) will
+-- result in termination (test failure). Uses partial 'head' but
+-- this is just tests, and failure is captured.
+getLLVMToolVersion :: String -> FilePath -> IO VersionCheck
+getLLVMToolVersion toolName toolPath = do
+  let isVerLine = isInfixOf "LLVM version"
+      dropLetter = dropWhile (all isLetter)
+      getVer (Right inp) =
+        -- example inp: "LLVM version 10.0.1"
+        head $ dropLetter $ words $ head $ filter isVerLine $ lines inp
+      getVer (Left full) = full
+  mkVC toolName . getVer <$> readProcessVersion toolPath
+
+readProcessVersion :: String -> IO (Either String String)
+readProcessVersion forTool =
+  X.catches (Right <$> Proc.readProcess forTool [ "--version" ] "")
+  [ X.Handler $ \(e :: X.IOException) ->
+      if GE.ioe_type e == GE.NoSuchThing
+      then return $ Left "[missing]" -- tool executable not found
+      else do putStrLn $ "Warning: IO error attempting to determine " <> forTool <> " version:"
+              putStrLn $ show e
+              return $ Left "unknown"
+  , X.Handler $ \(e :: X.SomeException) -> do
+      putStrLn $ "Warning: error attempting to determine " <> forTool <> " version:"
+      putStrLn $ show e
+      return $ Left "??"
+  ]
+
 -- Test Running ----------------------------------------------------------------
 
 -- | Run all provided tests.
 main :: IO ()
 main =  do
+  -- This is a bit more involved than a typical tasty `main` function. The
+  -- problem is that the number of tests that we generate (via
+  -- `withSugarGroups`) depends on the version of the --llvm-as argument,
+  -- which must be checked in IO. Unfortunately, a typical
+  -- `defaultMainWithIngredients` invocation doesn't allow you to
+  -- generate a dynamic number of tests in IO based on argument values. As a
+  -- result, we have to resort to using more of tasty's internals here.
+  TR.installSignalHandlers
+  let disasmOptDescrs = TO.uniqueOptionDescriptions $
+        TR.coreOptions ++
+        TR.ingredientsOptions disasmTestIngredients
+      (disasmOptWarns, disasmOptParser) = TR.optionParser disasmOptDescrs
+  mapM_ (hPutStrLn IO.stderr) disasmOptWarns
+  disasmOpts <- OA.execParser $
+    OA.info (OA.helper <*> disasmOptParser)
+    ( OA.fullDesc <>
+      OA.header "llvm-pretty-bc-parser disassembly test suite"
+    )
+
+  let llvmAs  = TO.lookupOption disasmOpts
+      llvmDis = TO.lookupOption disasmOpts
+
+  llvmAsVC <- getLLVMAsVersion llvmAs
+  llvmDisVC <- getLLVMDisVersion llvmDis
+  unless (vcVersioning llvmAsVC == vcVersioning llvmDisVC) $
+    error $ unlines
+      [ "Unexpected version mismatch between llvm-as and llvm-dis"
+      , "* llvm-as  version: " ++ showVC llvmAsVC
+      , "* llvm-dis version: " ++ showVC llvmDisVC
+      ]
+
   sweets <- TS.findSugar cube
-  tests <- TS.withSugarGroups sweets testGroup $ \s _ e -> runTest s e
+  tests <- TS.withSugarGroups sweets testGroup $ \s _ e -> runTest llvmAsVC s e
+  case TR.tryIngredients
+         disasmTestIngredients
+         disasmOpts
+         (testGroup "Disassembly tests" [testGroup (showVC llvmAsVC) tests]) of
+    Nothing ->
+      hPutStrLn IO.stderr
+        "No ingredients agreed to run. Something is wrong either with your ingredient set or the options."
+    Just act -> do
+      ok <- act
+      if ok then exitSuccess else exitFailure
+
   defaultMainWithIngredients disasmTestIngredients $
     testGroup "Disassembly tests" tests
 
@@ -101,6 +205,8 @@ cube = TS.mkCUBE
   { TS.inputDirs = ["disasm-test/tests"]
   , TS.rootName = "*.ll"
   , TS.separators = "."
+  , TS.validParams = [ ("llvm-range", Just ["pre-llvm11", "at-least-llvm12"])
+                     ]
     -- Somewhat unusually for tasty-sugar, we make the expectedSuffix the same
     -- as the rootName suffix. This is because we are comparing the contents of
     -- each .ll file against *itself* after parsing it with
@@ -117,43 +223,46 @@ data TestFailure
 instance X.Exception TestFailure
 
 -- | Attempt to compare the assembly generated by llvm-pretty and llvm-dis.
-runTest :: TS.Sweets -> TS.Expectation -> IO [TestTree]
-runTest sweet _expct =
-  pure $ (:[]) $
-  askOption $ \llvmAs ->
-  askOption $ \llvmDis ->
-  askOption $ \roundtrip ->
-  askOption $ \k@(Keep keep) ->
-  testCase pfx $ do
+runTest :: VersionCheck -> TS.Sweets -> TS.Expectation -> IO [TestTree]
+runTest llvmVer sweet expct
+  | not llvmMatch
+  = pure []
+  | otherwise
+  = pure $ (:[]) $
+    askOption $ \llvmAs ->
+    askOption $ \llvmDis ->
+    askOption $ \roundtrip ->
+    askOption $ \k@(Keep keep) ->
+    testCase pfx $ do
 
-    let -- Assemble and disassemble some LLVM asm
-        processLL :: FilePath -> IO (FilePath, Maybe FilePath)
-        processLL f = do
-          putStrLn (showString f ": ")
-          X.handle logError                               $
-            withFile  (generateBitCode    llvmAs  pfx f)  $ \ bc   ->
-            withFile  (normalizeBitCode k llvmDis pfx bc) $ \ norm -> do
-              (parsed, ast) <- processBitCode k roundtrip pfx bc
-              ignore (Proc.callProcess "diff" ["-u", norm, parsed])
-              putStrLn ("successfully parsed " ++ show f)
-              return (parsed, ast)
+      let -- Assemble and disassemble some LLVM asm
+          processLL :: FilePath -> IO (FilePath, Maybe FilePath)
+          processLL f = do
+            putStrLn (showString f ": ")
+            X.handle logError                               $
+              withFile  (generateBitCode    llvmAs  pfx f)  $ \ bc   ->
+              withFile  (normalizeBitCode k llvmDis pfx bc) $ \ norm -> do
+                (parsed, ast) <- processBitCode k roundtrip pfx bc
+                ignore (Proc.callProcess "diff" ["-u", norm, parsed])
+                putStrLn ("successfully parsed " ++ show f)
+                return (parsed, ast)
 
-        withFile :: IO FilePath -> (FilePath -> IO r) -> IO r
-        withFile iofile f =
-          X.bracket iofile (if keep then const (pure ()) else removeFile) f
+          withFile :: IO FilePath -> (FilePath -> IO r) -> IO r
+          withFile iofile f =
+            X.bracket iofile (if keep then const (pure ()) else removeFile) f
 
-    (parsed1, ast) <- processLL file
-    case ast of               -- this Maybe also encodes the data of optRoundtrip
-      Nothing   -> return ()
-      Just ast1 -> do
-        (_, Just ast2) <- processLL parsed1 -- Re-assemble and re-disassemble
-        diff ast1 ast2                      -- Ensure that the ASTs match
-        -- Ensure that the disassembled files match.
-        -- This is usually too strict (and doesn't really provide more info).
-        -- We normalize the AST (see below) to ensure that the ASTs match modulo
-        -- metadata numbering, but the equivalent isn't possible for the
-        -- assembly: we need llvm-as to be able to re-assemble it.
-        -- diff parsed1 parsed2
+      (parsed1, ast) <- processLL file
+      case ast of               -- this Maybe also encodes the data of optRoundtrip
+        Nothing   -> return ()
+        Just ast1 -> do
+          (_, Just ast2) <- processLL parsed1 -- Re-assemble and re-disassemble
+          diff ast1 ast2                      -- Ensure that the ASTs match
+          -- Ensure that the disassembled files match.
+          -- This is usually too strict (and doesn't really provide more info).
+          -- We normalize the AST (see below) to ensure that the ASTs match modulo
+          -- metadata numbering, but the equivalent isn't possible for the
+          -- assembly: we need llvm-as to be able to re-assemble it.
+          -- diff parsed1 parsed2
   where file  = TS.rootFile sweet
         pfx   = TS.rootBaseName sweet
         assertF ls = assertFailure $ unlines ls
@@ -169,6 +278,34 @@ runTest sweet _expct =
               if stdout /= "" || stderr /= ""
               then assertF ["non-empty diff", stdout, stderr]
               else mapM_ putStrLn ["success: empty diff: ", file1, file2]
+
+        -- Match any LLVM version range specification in the .ll
+        -- expected file against the current version of the LLVM tools. If the
+        -- current LLVM version doesn't match, no test should be
+        -- generated (i.e. only run tests for the version of LLVM tools
+        -- available).
+        llvmMatch =
+          let specMatchesInstalled v =
+                or [ v == vcTag llvmVer
+                   , and [ v == "pre-llvm11"
+                         , vcMajor llvmVer `elem` (show <$> [3..10 :: Int])
+                         ]
+                   , case stripPrefix "at-least-llvm" v of
+                       Nothing -> False
+                       Just verStr ->
+                         (vcVersioning llvmVer ^? (_Right . major)) >= Just (read verStr)
+                     -- as a fallback, if the testing code here is
+                     -- unable to determine the version, run all
+                     -- tests. This is likely to cause a failure, but
+                     -- is preferable to running no tests, which
+                     -- results in a success report without having
+                     -- done anything.
+                   , vcMajor llvmVer == "[missing]"
+                   ]
+          in case lookup "llvm-range" (TS.expParamsMatch expct) of
+               Just (TS.Explicit v) -> specMatchesInstalled v
+               Just (TS.Assumed  v) -> specMatchesInstalled v
+               _ -> error "llvm-range unknown"
 
 -- | Assemble some llvm assembly, producing a bitcode file in /tmp.
 generateBitCode :: LLVMAs -> FilePath -> FilePath -> IO FilePath
