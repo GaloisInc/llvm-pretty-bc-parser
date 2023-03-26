@@ -345,11 +345,12 @@ unnamedEntries pm = bimap Seq.fromList Seq.fromList (partitionEithers (mapMaybe 
           }
       _ -> error "Impossible: Only ValMds are stored in mtEntries"
 
-  -- DIExpressions are always printed inline and should never be printed in the
-  -- global list of unnamed metadata. See
+  -- DIExpressions and DIArgLists are always printed inline and should never be
+  -- printed in the global list of unnamed metadata. See
   -- https://github.com/llvm/llvm-project/blob/65600cb2a7e940babf6c493503b9d3fd19f8cb06/llvm/lib/IR/AsmWriter.cpp#L1242-L1245
   mustAppearInline :: PValMd -> Bool
   mustAppearInline (ValMdDebugInfo (DebugInfoExpression{})) = True
+  mustAppearInline (ValMdDebugInfo (DebugInfoArgList{})) = True
   mustAppearInline _ = False
 
 type InstrMdAttachments = Map.Map Int [(KindMd,PValMd)]
@@ -1098,6 +1099,35 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> parseField r 4 numeric
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoLabel dil)) pm
+
+    41 -> label "METADATA_STRING_TYPE" $ do
+      notImplemented
+
+    -- Codes 42 and 43 are reserved for Fortran array–specific debug info, see
+    -- https://github.com/llvm/llvm-project/blob/4681f6111e655057f5015564a9bf3705f87495bf/llvm/include/llvm/Bitcode/LLVMBitCodes.h#L348-L349
+
+    44 -> label "METADATA_COMMON_BLOCK" $ do
+      notImplemented
+
+    45 -> label "METADATA_GENERIC_SUBRANGE" $ do
+      notImplemented
+
+    46 -> label "METADATA_ARG_LIST" $ do
+      cxt <- getContext
+      dial <- DIArgList
+        <$> (map (mdForwardRef cxt mt) <$> parseFields r 0 numeric)
+      return $! updateMetadataTable
+        -- Unlike most other forms of metadata, METADATA_ARG_LIST never updates
+        -- the @IsDistinct@ value. At least, that's my reading of the source
+        -- code here:
+        -- https://github.com/llvm/llvm-project/blob/8bad4ae679df6fc7dbd016dccbd3da34206e836b/llvm/lib/Bitcode/Reader/MetadataLoader.cpp#L2142-L2158
+        --
+        -- As a result, we use False below, which is the default value of
+        -- IsDistinct set here. It doesn't actually matter that much whether it
+        -- is True or False, since we filter out DIArgLists from the list of
+        -- global unnamed metadata entries anyway (see `unnamedEntries`). As
+        -- such, the value of IsDistinct is never used for anything meaningful.
+        (addDebugInfo False (DebugInfoArgList dial)) pm
 
     code -> fail ("unknown record code: " ++ show code)
 

@@ -205,7 +205,10 @@ cube = TS.mkCUBE
   { TS.inputDirs = ["disasm-test/tests"]
   , TS.rootName = "*.ll"
   , TS.separators = "."
-  , TS.validParams = [ ("llvm-range", Just ["pre-llvm11", "at-least-llvm12"])
+  , TS.validParams = [ ("llvm-range", Just [ "pre-llvm11"
+                                           , "at-least-llvm12"
+                                           , "at-least-llvm13"
+                                           ])
                      ]
     -- Somewhat unusually for tasty-sugar, we make the expectedSuffix the same
     -- as the rootName suffix. This is because we are comparing the contents of
