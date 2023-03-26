@@ -327,18 +327,30 @@ unnamedEntries pm = bimap Seq.fromList Seq.fromList (partitionEithers (mapMaybe 
 
   -- TODO: is this silently eating errors with metadata that's not in the
   -- value table (when the lookupValueTableAbs fails)?
+  resolveNode :: (Int, (Bool, Bool, Int))
+              -> Maybe (Either PartialUnnamedMd PartialUnnamedMd)
   resolveNode (ref,(fnLocal,d,ix)) =
     ((if fnLocal then Right else Left) <$> lookupNode ref d ix)
 
-  lookupNode ref d ix = flip fmap (lookupValueTableAbs ref (mtEntries mt)) $
-    \case
-      Typed { typedValue = ValMd v } ->
-        PartialUnnamedMd
+  lookupNode :: Int -> Bool -> Int -> Maybe PartialUnnamedMd
+  lookupNode ref d ix = do
+    tv <- lookupValueTableAbs ref (mtEntries mt)
+    case tv of
+      Typed { typedValue = ValMd v } -> do
+        guard (not (mustAppearInline v))
+        pure $! PartialUnnamedMd
           { pumIndex    = ix
           , pumValues   = v
           , pumDistinct = d
           }
       _ -> error "Impossible: Only ValMds are stored in mtEntries"
+
+  -- DIExpressions are always printed inline and should never be printed in the
+  -- global list of unnamed metadata. See
+  -- https://github.com/llvm/llvm-project/blob/65600cb2a7e940babf6c493503b9d3fd19f8cb06/llvm/lib/IR/AsmWriter.cpp#L1242-L1245
+  mustAppearInline :: PValMd -> Bool
+  mustAppearInline (ValMdDebugInfo (DebugInfoExpression{})) = True
+  mustAppearInline _ = False
 
 type InstrMdAttachments = Map.Map Int [(KindMd,PValMd)]
 
