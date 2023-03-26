@@ -705,9 +705,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
       (diFlags0, spFlags0) <-
         if hasSPFlags then
-          (,) <$> parseField r (11 + 2) numeric <*> pure 0
-        else
           (,) <$> parseField r 11 numeric <*> parseField r 9 numeric
+        else
+          (,) <$> parseField r (11 + 2) numeric <*> pure 0
 
       let diFlagMainSubprogram = bit 21 :: Word32
           hasOldMainSubprogramFlag = (diFlags0 .&. diFlagMainSubprogram) /= 0
