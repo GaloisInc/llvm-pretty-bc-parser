@@ -307,7 +307,11 @@ runTest llvmVer sweet expct
                    ]
           in case lookup "llvm-range" (TS.expParamsMatch expct) of
                Just (TS.Explicit v) -> specMatchesInstalled v
-               Just (TS.Assumed  v) -> specMatchesInstalled v
+               Just (TS.Assumed v)
+                 |  v == "pre-llvm11" || v == "at-least-llvm12"
+                 -> specMatchesInstalled v
+                 |  otherwise
+                 -> False
                _ -> error "llvm-range unknown"
 
 -- | Assemble some llvm assembly, producing a bitcode file in /tmp.
