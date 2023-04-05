@@ -31,7 +31,9 @@ compilers.
 |           | v11.0   | ✓                             |              |                      |
 |           | v12.0   | ✓                             |              |                      |
 |           | v13.0   | ✓                             |              | See [issues][llvm13] |
-|           | v14.0   |                               |              | See [issues][llvm14] |
+|           | v14.0   | ✓                             |              | See [issues][llvm14] |
+|           | v15.0   |                               |              | See [issues][llvm15] |
+|           | v16.0   |                               |              | See [issues][llvm16] |
 | `clang++` | v3.4    |                               |              |                      |
 |           | v3.5    |                               |              |                      |
 |           | v3.6    |                               |              |                      |
@@ -64,3 +66,5 @@ the developers' documentation for more details and a rationale:
 [fuzz-workflow]: https://github.com/GaloisInc/llvm-pretty-bc-parser/blob/master/.github/workflows/llvm-quick-fuzz.yml
 [llvm13]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F13.0
 [llvm14]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F14.0
+[llvm15]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F15.0
+[llvm16]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F16.0
