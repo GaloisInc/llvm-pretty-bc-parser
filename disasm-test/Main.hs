@@ -208,6 +208,7 @@ cube = TS.mkCUBE
   , TS.validParams = [ ("llvm-range", Just [ "pre-llvm11"
                                            , "at-least-llvm12"
                                            , "at-least-llvm13"
+                                           , "at-least-llvm14"
                                            ])
                      ]
     -- Somewhat unusually for tasty-sugar, we make the expectedSuffix the same
