@@ -22,7 +22,7 @@ import           Data.Bits (shiftL,shiftR,testBit, Bits)
 import           Data.LLVM.BitCode.BitString ( pattern Bits' )
 import qualified Data.LLVM.BitCode.BitString as BitS
 import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe, isJust)
+import           Data.Maybe (fromMaybe)
 import           Data.Word (Word16, Word32,Word64)
 
 #if __GLASGOW_HASKELL__ >= 704
@@ -317,7 +317,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   -- [n x operands]
   12 -> label "CST_CODE_CE_GEP" $ do
     ty <- getTy
-    v <- parseCeGep False Nothing t r
+    v <- parseCeGep CeGepCode12 t r
     return (getTy,Typed ty v:cs)
 
   -- [opval,opval,opval]
@@ -369,7 +369,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   -- [n x operands]
   20 -> label "CST_CODE_CE_INBOUNDS_GEP" $ do
     ty <- getTy
-    v <- parseCeGep True Nothing t r
+    v <- parseCeGep CeGepCode20 t r
     return (getTy,Typed ty v:cs)
 
   -- [funty,fnval,bb#]
@@ -411,10 +411,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   -- [opty, flags, n x operands]
   24 -> label "CST_CODE_CE_GEP_WITH_INRANGE_INDEX" $ do
     ty <- getTy
-    (flags :: Word64) <- parseField r 1 numeric
-    let inBounds = testBit flags 0
-        inRangeIndex = flags `shiftR` 1
-    v <- parseCeGep inBounds (Just inRangeIndex) t r
+    v <- parseCeGep CeGepCode24 t r
     return (getTy,Typed ty v:cs)
 
   -- [opcode, opval]
@@ -454,23 +451,62 @@ parseConstantEntry _ st (abbrevDef -> Just _) =
 parseConstantEntry _ _ e =
   fail ("constant block: unexpected: " ++ show e)
 
-parseCeGep :: Bool -> Maybe Word64 -> ValueTable -> Record -> Parse PValue
-parseCeGep isInbounds mInrangeIdx t r = do
-  let isExplicit = odd (length (recordFields r)) -- TODO: is this right for INRANGE_INDEX?
-      firstIdx = if isJust mInrangeIdx then 2 else if isExplicit then 1 else 0
-      field = parseField r
-      loop n = do
+-- | The different codes for constant @getelementptr@ expressions. Each one has
+-- minor differences in how they are parsed.
+data CeGepCode
+  = CeGepCode12
+  -- ^ @CST_CODE_CE_GEP = 12@. The original.
+  | CeGepCode20
+  -- ^ @CST_CODE_CE_INBOUNDS_GEP = 20@. This adds an @inbounds@ field that
+  -- indicates that the result value should be poison if it performs an
+  -- out-of-bounds index.
+  | CeGepCode24
+  -- ^ @CST_CODE_CE_GEP_WITH_INRANGE_INDEX = 24@. This adds an @inrange@ field
+  -- that indicates that loading or storing to the result pointer will have
+  -- undefined behavior if the load or store would access memory outside of the
+  -- bounds of the indices marked as @inrange@.
+  deriving Eq
+
+-- | Parse a 'ConstGEP' value. There are several variations on this theme that
+-- are captured in the 'CeGepCode' argument.
+parseCeGep :: CeGepCode -> ValueTable -> Record -> Parse PValue
+parseCeGep code t r = do
+  let field = parseField r
+
+  (mbBaseTy, ix0) <-
+    if code == CeGepCode24 || odd (length (recordFields r))
+    then do baseTy <- getType =<< field 0 numeric
+            pure (Just baseTy, 1)
+    else pure (Nothing, 0)
+
+  (isInbounds, mInrangeIdx, ix1) <-
+    case code of
+      CeGepCode12 -> pure (False, Nothing, ix0)
+      CeGepCode20 -> pure (True, Nothing, ix0)
+      CeGepCode24 -> do
+        (flags :: Word64) <- parseField r ix0 numeric
+        let inbounds = testBit flags 0
+            inrangeIdx = flags `shiftR` 1
+        pure (inbounds, Just inrangeIdx, ix0 + 1)
+
+  let loop n = do
         ty   <- getType =<< field  n    numeric
         elt  <-             field (n+1) numeric
         rest <- loop (n+2) `mplus` return []
         cxt  <- getContext
         return (Typed ty (typedValue (forwardRef cxt elt t)) : rest)
-  mPointeeType <-
-    if isExplicit
-    then Just <$> (getType =<< field 0 numeric)
-    else pure Nothing
-  args <- loop firstIdx
-  return $! ValConstExpr (ConstGEP isInbounds mInrangeIdx mPointeeType args)
+  args <- loop ix1
+  (ptr, args') <-
+    case args of
+      [] -> fail "Invalid constant GEP with no operands"
+      (base:args') -> pure (base, args')
+
+  baseTy <-
+    case mbBaseTy of
+      Just baseTy -> pure baseTy
+      Nothing -> Assert.elimPtrTo "constant GEP not headed by pointer" (typedType ptr)
+
+  return $! ValConstExpr (ConstGEP isInbounds mInrangeIdx baseTy ptr args')
 
 parseWideInteger :: Record -> Int -> Parse Integer
 parseWideInteger r idx = do
