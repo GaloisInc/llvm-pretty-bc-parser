@@ -1117,14 +1117,15 @@ baseType ty = ty
 -- [n x operands]
 parseGEP :: ValueTable -> Maybe Bool -> Record -> PartialDefine -> Parse PartialDefine
 parseGEP t mbInBound r d = do
-  (ib, tv, r', ix) <-
+  (ib, ty, tv, r', ix) <-
       case mbInBound of
 
         -- FUNC_CODE_INST_GEP_OLD
         -- FUNC_CODE_INST_INBOUNDS_GEP_OLD
         Just ib -> do
           (tv,ix') <- getValueTypePair t r 0
-          return (ib, tv, r, ix')
+          ty <- Assert.elimPtrTo "GEP not headed by pointer" (typedType tv)
+          return (ib, ty, tv, r, ix')
 
         -- FUNC_CODE_INST_GEP
         Nothing -> do
@@ -1142,11 +1143,11 @@ parseGEP t mbInBound r d = do
                               , "Base type of operand: " ++ show (ppType (baseType (typedType tv)))
                               ])
            -}
-          return (ib, tv { typedType = PtrTo ty }, r', ix')
+          return (ib, ty, tv, r', ix')
 
   args    <- label "parseGepArgs" (parseGepArgs t r' ix)
-  rty     <- label "interpGep"    (interpGep (typedType tv) args)
-  result rty (GEP ib tv args) d
+  rty     <- label "interpGep"    (interpGep ty tv args)
+  result rty (GEP ib ty tv args) d
 
 -- Parse an @atomicrmw@ instruction, which can be represented by one of the
 -- following function codes:
@@ -1293,16 +1294,16 @@ parseGepArgs t r = loop
       rest     <- loop ix'
       return (tv:rest)
 
--- | Interpret the getelementptr arguments, to determine the final type of the
--- instruction.
-interpGep :: Type -> [Typed PValue] -> Parse Type
-interpGep ty vs = check (resolveGep ty vs)
+-- | Interpret a getelementptr instruction to determine its result type.
+interpGep :: Type -> Typed PValue -> [Typed PValue] -> Parse Type
+interpGep baseTy ptr vs = check (resolveGep baseTy ptr vs)
   where
   check res = case res of
     HasType rty -> return (PtrTo rty)
     Invalid -> fail $ unlines $
       [ "Unable to determine the type of getelementptr"
-      , "Input type: " ++ show ty
+      , "Base type: " ++ show baseTy
+      , "Pointer value: " ++ show ptr
       ]
     Resolve i k -> do
       ty' <- getType' =<< getTypeId i
