@@ -621,7 +621,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     aval    <- parseField r ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
-    result ret (Load (tv { typedType = PtrTo ret }) Nothing align) d
+    result ret (Load ret tv Nothing align) d
 
   -- 21 is unused
   -- 22 is unused
@@ -825,7 +825,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     when (ordval /= Nothing && align == Nothing)
          (fail "Invalid record")
 
-    result ret (Load (tv { typedType = PtrTo ret }) ordval align) d
+    result ret (Load ret tv ordval align) d
 
 
   -- [ptrty, ptr, val, align, vol, ordering, synchscope]
