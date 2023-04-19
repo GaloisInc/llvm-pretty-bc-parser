@@ -13,13 +13,15 @@ import           Text.LLVM.AST
 import           Text.LLVM.PP
 
 import           Control.Applicative (Alternative(..))
+import           Control.Monad (MonadPlus(..), unless)
 #if !MIN_VERSION_base(4,13,0)
 import           Control.Monad.Fail (MonadFail)
 import qualified Control.Monad.Fail -- makes fail visible for instance
 #endif
-import           Control.Monad.Except
-import           Control.Monad.Reader
-import           Control.Monad.State.Strict
+import           Control.Monad.Fix (MonadFix)
+import           Control.Monad.Except (MonadError(..), Except, runExcept)
+import           Control.Monad.Reader (MonadReader(..), ReaderT(..))
+import           Control.Monad.State.Strict (MonadState(..), StateT(..))
 import           Data.Maybe (fromMaybe)
 import           Data.Semigroup
 import           Data.Typeable (Typeable)
