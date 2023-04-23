@@ -32,8 +32,8 @@ compilers.
 |           | v12.0   | ✓                             |              |                      |
 |           | v13.0   | ✓                             |              | See [issues][llvm13] |
 |           | v14.0   | ✓                             |              | See [issues][llvm14] |
-|           | v15.0   |                               |              | See [issues][llvm15] |
-|           | v16.0   |                               |              | See [issues][llvm16] |
+|           | v15.0   | ✓                             |              | See [issues][llvm15] |
+|           | v16.0   | ✓                             |              | See [issues][llvm16] |
 | `clang++` | v3.4    |                               |              |                      |
 |           | v3.5    |                               |              |                      |
 |           | v3.6    |                               |              |                      |
