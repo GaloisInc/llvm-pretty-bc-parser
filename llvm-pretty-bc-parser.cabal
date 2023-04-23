@@ -122,6 +122,7 @@ Test-suite disasm-test
   hs-source-dirs:      disasm-test
   Ghc-options:         -Wall
   build-depends:       base,
+                       containers,
                        process,
                        directory,
                        bytestring,
