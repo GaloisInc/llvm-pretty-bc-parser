@@ -224,6 +224,7 @@ cube = TS.mkCUBE
                                            , "pre-llvm12"
                                            , "pre-llvm13"
                                            , "pre-llvm14"
+                                           , "pre-llvm15"
                                            ])
                      ]
     -- Somewhat unusually for tasty-sugar, we make the expectedSuffix the same
