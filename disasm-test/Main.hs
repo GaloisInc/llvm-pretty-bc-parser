@@ -232,41 +232,41 @@ runTest llvmVer sweet expct
   | not llvmMatch
   = pure []
   | otherwise
-  = pure $ (:[]) $
-    askOption $ \llvmAs ->
-    askOption $ \llvmDis ->
-    askOption $ \roundtrip ->
-    askOption $ \k@(Keep keep) ->
-    testCase pfx $ do
+  = do pure $ (:[]) $
+           askOption $ \llvmAs ->
+           askOption $ \llvmDis ->
+           askOption $ \roundtrip ->
+           askOption $ \k@(Keep keep) ->
+           testCase pfx $ do
 
-      let -- Assemble and disassemble some LLVM asm
-          processLL :: FilePath -> IO (FilePath, Maybe FilePath)
-          processLL f = do
-            putStrLn (showString f ": ")
-            X.handle logError                               $
-              withFile  (generateBitCode    llvmAs  pfx f)  $ \ bc   ->
-              withFile  (normalizeBitCode k llvmDis pfx bc) $ \ norm -> do
-                (parsed, ast) <- processBitCode k roundtrip pfx bc
-                ignore (Proc.callProcess "diff" ["-u", norm, parsed])
-                putStrLn ("successfully parsed " ++ show f)
-                return (parsed, ast)
+             let -- Assemble and disassemble some LLVM asm
+                 processLL :: FilePath -> IO (FilePath, Maybe FilePath)
+                 processLL f = do
+                   putStrLn (showString f ": ")
+                   X.handle logError                               $
+                     withFile  (generateBitCode    llvmAs  pfx f)  $ \ bc   ->
+                     withFile  (normalizeBitCode k llvmDis pfx bc) $ \ norm -> do
+                       (parsed, ast) <- processBitCode k roundtrip pfx bc
+                       ignore (Proc.callProcess "diff" ["-u", norm, parsed])
+                       putStrLn ("successfully parsed " ++ show f)
+                       return (parsed, ast)
 
-          withFile :: IO FilePath -> (FilePath -> IO r) -> IO r
-          withFile iofile f =
-            X.bracket iofile (if keep then const (pure ()) else removeFile) f
+                 withFile :: IO FilePath -> (FilePath -> IO r) -> IO r
+                 withFile iofile f =
+                   X.bracket iofile (if keep then const (pure ()) else removeFile) f
 
-      (parsed1, ast) <- processLL file
-      case ast of               -- this Maybe also encodes the data of optRoundtrip
-        Nothing   -> return ()
-        Just ast1 -> do
-          (_, Just ast2) <- processLL parsed1 -- Re-assemble and re-disassemble
-          diff ast1 ast2                      -- Ensure that the ASTs match
-          -- Ensure that the disassembled files match.
-          -- This is usually too strict (and doesn't really provide more info).
-          -- We normalize the AST (see below) to ensure that the ASTs match modulo
-          -- metadata numbering, but the equivalent isn't possible for the
-          -- assembly: we need llvm-as to be able to re-assemble it.
-          -- diff parsed1 parsed2
+             (parsed1, ast) <- processLL file
+             case ast of               -- this Maybe also encodes the data of optRoundtrip
+               Nothing   -> return ()
+               Just ast1 -> do
+                 (_, Just ast2) <- processLL parsed1 -- Re-assemble and re-disassemble
+                 diff ast1 ast2                      -- Ensure that the ASTs match
+                 -- Ensure that the disassembled files match.
+                 -- This is usually too strict (and doesn't really provide more info).
+                 -- We normalize the AST (see below) to ensure that the ASTs match modulo
+                 -- metadata numbering, but the equivalent isn't possible for the
+                 -- assembly: we need llvm-as to be able to re-assemble it.
+                 -- diff parsed1 parsed2
   where file  = TS.rootFile sweet
         pfx   = TS.rootBaseName sweet
         assertF ls = assertFailure $ unlines ls
