@@ -868,7 +868,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     -- TODO: record size assertion
     -- Assert.recordSizeGreater r (ix'' + 5)
 
-    when (typedType val /= typedType new) $ fail $ unlines $
+    when (typedType val `eqTypeModuloOpaquePtrs` typedType new) $ fail $ unlines $
       [ "Mismatched value types:"
       , "cmp value: " ++ show (typedValue val)
       , "new value: " ++ show (typedValue new)
