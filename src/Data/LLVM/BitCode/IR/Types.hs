@@ -117,6 +117,7 @@ parseTypeBlockEntry (fromEntry -> Just r) = case recordCode r of
     let field = parseField r
     ty <- field 0 typeRef
     when (length (recordFields r) == 2) $ do
+      -- We do not currently store address spaces in the @llvm-pretty@ AST.
       _space <- field 1 keep
       return ()
     addType (PtrTo ty)
@@ -188,6 +189,26 @@ parseTypeBlockEntry (fromEntry -> Just r) = case recordCode r of
     case tys of
       rty:ptys -> addType (FunTy rty ptys vararg)
       []       -> fail "function expects a return type"
+
+  22 -> label "TYPE_CODE_TOKEN" $ do
+    notImplemented
+
+  23 -> label "TYPE_CODE_BFLOAT" $ do
+    notImplemented
+
+  24 -> label "TYPE_CODE_X86_AMX" $ do
+    notImplemented
+
+  25 -> label "TYPE_CODE_OPAQUE_POINTER" $ do
+    let field = parseField r
+    when (length (recordFields r) /= 1) $
+      fail "Invalid opaque pointer record"
+    -- We do not currently store address spaces in the @llvm-pretty@ AST.
+    _space <- field 0 keep
+    addType PtrOpaque
+
+  26 -> label "TYPE_CODE_TARGET_TYPE" $ do
+    notImplemented
 
   code -> Assert.unknownEntity "type code " code
 
