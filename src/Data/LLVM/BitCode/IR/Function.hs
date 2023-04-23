@@ -812,8 +812,6 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
          else do ty <- Assert.elimPtrTo "" (typedType tv)
                  return (ty, ix)
 
-    Assert.ptrTo "load atomic : <ty>, <ty>*" tv (Typed ret ())
-
     ordval <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
     when (ordval `elem` Nothing:map Just [Release, AcqRel]) $
       fail $ "Invalid atomic ordering: " ++ show ordval
@@ -840,7 +838,6 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (val,ix') <- getValueTypePair t r ix
 
     Assert.recordSizeIn r [ix' + 2]
-    Assert.ptrTo "store : <ty> <value>, <ty>* <pointer>" ptr val
 
     aval      <- field ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
@@ -853,7 +850,6 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (val, ix') <- getValueTypePair t r ix
 
     Assert.recordSizeIn r [ix' + 4]
-    Assert.ptrTo "store atomic : <ty> <value>, <ty>* <pointer>" ptr val
 
     -- TODO: There's no spot in the AST for this ordering. Should there be?
     ordering <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
@@ -880,7 +876,6 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     -- TODO: record size assertion
     -- Assert.recordSizeGreater r (ix'' + 5)
 
-    Assert.ptrTo "cmpxchg : <ty>* <pointer>, <ty> <cmp>, <ty> <new> " ptr val
     when (typedType val /= typedType new) $ fail $ unlines $
       [ "Mismatched value types:"
       , "cmp value: " ++ show (typedValue val)
@@ -1108,12 +1103,6 @@ addInstrAttachments atts blocks = go 0 (Map.toList atts) (Seq.viewl blocks)
 
   go _ _ Seq.EmptyL = Seq.empty
 
-baseType :: Type -> Type
-baseType (PtrTo ty) = ty
-baseType (Array _ ty) = ty
-baseType (Vector _ ty) = ty
-baseType ty = ty
-
 -- [n x operands]
 parseGEP :: ValueTable -> Maybe Bool -> Record -> PartialDefine -> Parse PartialDefine
 parseGEP t mbInBound r d = do
@@ -1134,15 +1123,6 @@ parseGEP t mbInBound r d = do
           ib <- field 0 boolean
           ty <- getType =<< field 1 numeric
           (tv,ix') <- getValueTypePair t r' 2
-          -- TODO: the following sometimes fails, but it doesn't seem to matter.
-          {-
-          unless (baseType (typedType tv) == ty)
-              (fail $ unlines [ "Explicit gep type does not match base type of pointer operand"
-                              , "Declared type: " ++ show (ppType ty)
-                              , "Operand type: " ++ show (ppType (typedType tv))
-                              , "Base type of operand: " ++ show (ppType (baseType (typedType tv)))
-                              ])
-           -}
           return (ib, ty, tv, r', ix')
 
   args    <- label "parseGepArgs" (parseGepArgs t r' ix)
