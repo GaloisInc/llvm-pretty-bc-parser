@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -11,13 +12,16 @@ import           Text.LLVM.PP (ppLLVM,ppModule)
 
 import qualified Control.Exception as X
 import           Control.Lens ((^.), (^?), _Right, to)
-import           Control.Monad (unless, when)
+import           Control.Monad (guard, unless, when)
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as L
 import           Data.Char (ord,isLetter,isSpace,chr)
 import           Data.Generics (everywhere, mkT) -- SYB
-import           Data.List (isInfixOf, sort, stripPrefix)
+import           Data.List (isInfixOf, isPrefixOf, sort, stripPrefix)
+import           Data.Maybe (mapMaybe)
 import           Data.Proxy ( Proxy(..) )
+import qualified Data.Set as Set
+import           Data.Set (Set)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 import           Data.Versions (Versioning, versioning, prettyV, major)
@@ -25,7 +29,7 @@ import qualified GHC.IO.Exception as GE
 import qualified Options.Applicative as OA
 import           System.Directory (getTemporaryDirectory, removeFile)
 import           System.Exit (ExitCode(..), exitFailure, exitSuccess)
-import           System.FilePath ((<.>))
+import           System.FilePath ((<.>), takeFileName)
 import qualified System.IO as IO (stderr)
 import           System.IO
     (openBinaryTempFile,hClose,openTempFile,hPutStrLn)
@@ -35,6 +39,7 @@ import           Test.Tasty.HUnit ( assertFailure, testCase )
 import qualified Test.Tasty.Options as TO
 import qualified Test.Tasty.Runners as TR
 import qualified Test.Tasty.Sugar as TS
+import           Text.Read (readMaybe)
 import           Text.Show.Pretty (ppShow)
 
 
@@ -112,6 +117,16 @@ vcVersioning (VC _ v) = v
 
 mkVC :: String -> String -> VersionCheck
 mkVC nm raw = let r = T.pack raw in VC nm $ first (const r) $ versioning r
+
+-- Check if a VersionCheck version is less than the numeric value of another
+-- version (represented as a Word).
+vcLT :: VersionCheck -> Word -> Bool
+vcLT vc verNum = (vcVersioning vc ^? (_Right . major)) < Just verNum
+
+-- Check if a VersionCheck version is greater than or equal to the numeric
+-- value of another version (represented as a Word).
+vcGE :: VersionCheck -> Word -> Bool
+vcGE vc verNum = (vcVersioning vc ^? (_Right . major)) >= Just verNum
 
 getLLVMAsVersion :: LLVMAs -> IO VersionCheck
 getLLVMAsVersion (LLVMAs llvmAsPath) = getLLVMToolVersion "llvm-as" llvmAsPath
@@ -205,10 +220,10 @@ cube = TS.mkCUBE
   { TS.inputDirs = ["disasm-test/tests"]
   , TS.rootName = "*.ll"
   , TS.separators = "."
-  , TS.validParams = [ ("llvm-range", Just [ "pre-llvm11"
-                                           , "at-least-llvm12"
-                                           , "at-least-llvm13"
-                                           , "at-least-llvm14"
+  , TS.validParams = [ ("llvm-range", Just [ "recent-llvm"
+                                           , "pre-llvm12"
+                                           , "pre-llvm13"
+                                           , "pre-llvm14"
                                            ])
                      ]
     -- Somewhat unusually for tasty-sugar, we make the expectedSuffix the same
@@ -232,7 +247,14 @@ runTest llvmVer sweet expct
   | not llvmMatch
   = pure []
   | otherwise
-  = do pure $ (:[]) $
+  = do -- If an .ll file begins with SKIP_TEST, skip that test entirely. For
+       -- test cases that require a minimum LLVM version, this technique is
+       -- used to prevent running the test on older LLVM versions.
+       skipTest <- ("SKIP_TEST" `L.isPrefixOf`) <$> L.readFile (TS.expectedFile expct)
+
+       if skipTest
+         then pure []
+         else pure $ (:[]) $
            askOption $ \llvmAs ->
            askOption $ \llvmDis ->
            askOption $ \roundtrip ->
@@ -284,20 +306,53 @@ runTest llvmVer sweet expct
               else mapM_ putStrLn ["success: empty diff: ", file1, file2]
 
         -- Match any LLVM version range specification in the .ll
-        -- expected file against the current version of the LLVM tools. If the
-        -- current LLVM version doesn't match, no test should be
-        -- generated (i.e. only run tests for the version of LLVM tools
-        -- available).
+        -- expected file against the current version of the LLVM tools.
+        -- This implements a combination of Case 3 and Case 3a from this
+        -- tasty-sugar document:
+        -- https://github.com/kquick/tasty-sugar/blob/1fc06bee124e02f49f6478bc1e1df13704cc4916/Ranges.org#case-3---explicit-and-a-weaker-match
+        -- In particular, we use `recent-llvm` as an explicit super-supremum
+        -- (as in Case 3a), but we also consult the set of Expectations in the
+        -- full Sweets value to avoid generating duplicate tests for
+        -- `recent-llvm` (as described in Case 3).
         llvmMatch =
-          let specMatchesInstalled v =
-                or [ v == vcTag llvmVer
-                   , and [ v == "pre-llvm11"
-                         , vcMajor llvmVer `elem` (show <$> [3..10 :: Int])
-                         ]
-                   , case stripPrefix "at-least-llvm" v of
+          let allMatchingExpectations =
+                filter
+                  (\e -> (pfx ++ ".") `isPrefixOf` takeFileName (TS.expectedFile e))
+                  (TS.expected sweet)
+
+              supportedPreLLVMs :: Set Word
+              supportedPreLLVMs =
+                Set.fromList $
+                mapMaybe
+                  (\e -> do
+                    TS.Explicit v <- lookup "llvm-range" (TS.expParamsMatch e)
+                    verStr <- stripPrefix "pre-llvm" v
+                    ver <- readMaybe verStr
+                    guard $ vcLT llvmVer ver
+                    pure ver)
+                  allMatchingExpectations
+
+              -- Implement the "check" step described in Case 3/3a of the
+              -- tasty-sugar document linked above.
+              specMatchesInstalled v =
+                or [ case stripPrefix "pre-llvm" v of
                        Nothing -> False
-                       Just verStr ->
-                         (vcVersioning llvmVer ^? (_Right . major)) >= Just (read verStr)
+                       Just verStr
+                         |  Just ver <- readMaybe verStr
+                         -- Check that the current LLVM version is less than
+                         -- the <ver> in the `pre-llvm<ver>` file...
+                         ,  vcLT llvmVer ver
+                         -- ...moreover, also check that <ver> is the closest
+                         -- `pre-llvm` version (without going over). For
+                         -- instance, if the current LLVM version is 10 and
+                         -- there are both `pre-llvm11` and `pre-llvm12`
+                         -- `.ll` files, we only want to run with the
+                         -- `pre-llvm11` configuration to avoid duplicate
+                         -- tests.
+                         ,  Just closestPreLLVM <- Set.lookupMin supportedPreLLVMs
+                         -> ver == closestPreLLVM
+                         |  otherwise
+                         -> False
                      -- as a fallback, if the testing code here is
                      -- unable to determine the version, run all
                      -- tests. This is likely to cause a failure, but
@@ -306,11 +361,24 @@ runTest llvmVer sweet expct
                      -- done anything.
                    , vcMajor llvmVer == "[missing]"
                    ]
-          in case lookup "llvm-range" (TS.expParamsMatch expct) of
-               Just (TS.Explicit v) -> specMatchesInstalled v
-               Just (TS.Assumed v)
-                 |  v == "pre-llvm11" || v == "at-least-llvm12"
+          in -- Implement the "filter" step described in Case 3/3a of the
+             -- tasty-sugar document linked above.
+             case lookup "llvm-range" (TS.expParamsMatch expct) of
+               Just (TS.Explicit v)
+                 -- Explicit matches are always allowed.
                  -> specMatchesInstalled v
+               Just (TS.Assumed  v)
+                 -- The only allowable Assumed match is for `recent-llvm`, the
+                 -- super-supremum value...
+                 |  v == "recent-llvm"
+                 -> case Set.lookupMax supportedPreLLVMs of
+                      -- ...if there are no `pre-llvm` .ll files, then allow
+                      -- it...
+                      Nothing -> True
+                      -- ...otherwise, check that the current LLVM version is
+                      -- larger than anything specified by a `pre-llvm` .ll
+                      -- file.
+                      Just largestPreLLVM -> vcGE llvmVer largestPreLLVM
                  |  otherwise
                  -> False
                _ -> error "llvm-range unknown"
