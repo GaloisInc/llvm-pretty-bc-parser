@@ -22,7 +22,6 @@ module Data.LLVM.BitCode.Assert
   -- ** Types
   , elimPtrTo
   , elimPtrTo_
-  , ptrTo
   ) where
 
 import           Control.Monad (MonadPlus, mplus)
@@ -32,7 +31,7 @@ import           Control.Monad.Fail (MonadFail)
 #endif
 import           Data.LLVM.BitCode.Record (Record)
 import qualified Data.LLVM.BitCode.Record as Record
-import           Text.LLVM.AST (Type', Typed, Ident)
+import           Text.LLVM.AST (Type', Ident)
 import qualified Text.LLVM.AST as AST
 
 supportedCompilerMessage :: [String]
@@ -80,7 +79,11 @@ recordSizeIn record ns =
 ----------------------------------------------------------------
 -- ** Types
 
--- | Assert that this thing is a pointer, get the underlying type
+-- | Assert that this thing is a @'PtrTo' ty@ and return the underlying @ty@.
+--
+-- Think carefully before using this function, as it will not work as you would
+-- expect when the type is an opaque pointer.
+-- See @Note [Pointers and pointee types]@.
 elimPtrTo :: (MonadFail m, MonadPlus m) => String -> Type' Ident -> m (Type' Ident)
 elimPtrTo msg ptrTy = AST.elimPtrTo ptrTy `mplus`
                         (fail $ unlines [ msg
@@ -88,35 +91,25 @@ elimPtrTo msg ptrTy = AST.elimPtrTo ptrTy `mplus`
                                         , show ptrTy
                                         ])
 
--- | Assert that this thing is a pointer
+-- | Assert that this thing is a 'PtrTo' type.
+--
+-- Think carefully before using this function, as it will not work as you would
+-- expect when the type is an opaque pointer.
+-- See @Note [Pointers and pointee types]@.
 elimPtrTo_ :: (MonadFail m, MonadPlus m) => String -> Type' Ident -> m ()
 elimPtrTo_ msg ptrTy = elimPtrTo msg ptrTy >> pure ()
 
--- | Assert that the first thing is a pointer to something of the type of the
--- second thing, e.g. in a load/store instruction.
---
--- See: https://github.com/llvm-mirror/llvm/blob/release_60/lib/Bitcode/Reader/BitcodeReader.cpp#L3328
-ptrTo :: (MonadFail m, Show a, Show b)
-      => String
-      -> Typed a -- ^ The pointer
-      -> Typed b -- ^ The value
-      -> m ()
-ptrTo sig ptr val = do
-  case AST.typedType ptr of
-    AST.PtrTo ptrTo_ ->
-      when (AST.typedType val /= ptrTo_) $ fail $ unlines
-        [ unwords [ "Expected first value to be a pointer to some type <ty>, and"
-                  , "for the second value to be a value of type <ty>."
-                  ]
-        , "Instruction signature: " ++ sig
-        , "Pointer type:  " ++ show (AST.typedType ptr)
-        , "Value type:    " ++ show (AST.typedType val)
-        , "Pointer value: " ++ show (AST.typedValue ptr)
-        , "Value value:   " ++ show (AST.typedValue val)
-        ]
-    ty ->
-      fail $ unlines $
-        [ "Instruction expected a pointer argument."
-        , "Instruction signature: " ++ sig
-        , "Argument type: " ++ show ty
-        ]
+{-
+Note [Pointers and pointee types]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Unlike LLVM itself, llvm-pretty and llvm-prety-bc-parser allow mixing opaque
+and non-opaque pointers. A consequence of this is that we generally avoid
+pattern matching on PtrTo (non-opaque pointer) types and inspecting the
+underlying pointee types. This sort of code simply won't work for PtrOpaque
+types, which lack pointee types.
+
+The elimPtrTo and elimPtrTo_ functions go against this rule, as they retrieve
+the pointee type in a PtrTo. These functions are primarily used for supporting
+old versions of LLVM which do not store the necessary type information in the
+instruction itself.
+-}
