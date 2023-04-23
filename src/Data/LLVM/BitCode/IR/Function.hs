@@ -1137,29 +1137,27 @@ parseAtomicRMW old t r d = do
   -- TODO: parse sync scope (ssid)
   (ptr, ix0) <- getValueTypePair t r 0
 
-  (val, ix1) <- case typedType ptr of
-    PtrTo ty@(PrimType prim) -> do
+  (val, ix1) <-
+    if old
+      then -- FUNC_CODE_INST_ATOMICRMW_OLD
+           do ty <- Assert.elimPtrTo "atomicrmw instruction not headed by pointer" (typedType ptr)
+              typed <- getValue t ty =<< parseField r ix0 numeric
+              if ty /= (typedType typed)
+              then fail $ unlines $ [ "Wrong type of value retrieved from value table"
+                                    , "Expected: " ++ show (ty)
+                                    , "Got: " ++ show (typedType typed)
+                                    ]
+              else pure (typed, ix0 + 1)
+      else -- FUNC_CODE_INST_ATOMICRMW
+           getValueTypePair t r ix0
 
-      -- Catch pointers of the wrong type
-      when (case prim of
-              Integer   _ -> False
-              FloatType _ -> False
-              _           -> True) $
-        fail $ "Expected pointer to integer or float, found " ++ show ty
-
-      if old
-        then -- FUNC_CODE_INST_ATOMICRMW_OLD
-             do typed <- getValue t ty =<< parseField r ix0 numeric
-                if ty /= (typedType typed)
-                then fail $ unlines $ [ "Wrong type of value retrieved from value table"
-                                      , "Expected: " ++ show (ty)
-                                      , "Got: " ++ show (typedType typed)
-                                      ]
-                else pure (typed, ix0 + 1)
-        else -- FUNC_CODE_INST_ATOMICRMW
-             getValueTypePair t r ix0
-
-    ty -> fail $ "Expected pointer to integer or float, found " ++ show ty
+  -- Catch incorrect operand types
+  let valTy = typedType val
+  unless (case valTy of
+            PrimType (Integer   _) -> True
+            PrimType (FloatType _) -> True
+            _                      -> False) $
+    fail $ "Expected integer or float operand, found " ++ show valTy
 
   -- TODO: enable this assertion. Is getTypeValuePair returning the wrong value?
   -- when (length (recordFields r) /= ix1 + 4) $ do
