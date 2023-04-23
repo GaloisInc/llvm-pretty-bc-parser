@@ -539,13 +539,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
     (f,ix')      <- getValueTypePair t r ix
 
-    -- NOTE: mbFTy should be the same as the type of f
-    calleeTy <- Assert.elimPtrTo "Callee is not a pointer" (typedType f)
-
     fty <- case mbFTy of
-             Just ty | calleeTy == ty -> return ty
-                     | otherwise      -> fail "Explicit invoke type does not match callee"
-             Nothing                  -> return calleeTy
+             Just ty -> return ty
+             Nothing -> Assert.elimPtrTo "Callee is not a pointer" (typedType f)
 
     (ret,as,va) <- elimFunTy fty
         `mplus` fail "invalid INVOKE record"
@@ -714,14 +710,10 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (Typed opTy fn, ix2) <- getValueTypePair t r ix1
                                 `mplus` fail "Invalid record"
 
-    op <- Assert.elimPtrTo "Callee is not a pointer type" opTy
-
     fnty <- case mbFnTy of
-             Just ty | ty == op  -> return op
-                     | otherwise -> fail "Explicit call type does not match \
-                                         \pointee type of callee operand"
-
-             Nothing ->
+             Just ty -> return ty
+             Nothing -> do
+               op <- Assert.elimPtrTo "Callee is not a pointer type" opTy
                case op of
                  FunTy{} -> return op
                  _       -> fail "Callee is not of pointer to function type"
@@ -987,14 +979,10 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (Typed opTy fn, ix2) <- getValueTypePair t r ix1
                                 `mplus` fail "Invalid callbr record"
 
-    op <- Assert.elimPtrTo "callbr callee is not a pointer type" opTy
-
     fnty <- case mbFnTy of
-             Just ty | ty == op  -> return op
-                     | otherwise -> fail "Explicit call type does not match \
-                                         \pointee type of callee operand"
-
-             Nothing ->
+             Just ty -> return ty
+             Nothing -> do
+               op <- Assert.elimPtrTo "callbr callee is not a pointer type" opTy
                case op of
                  FunTy{} -> return op
                  _       -> fail "Callee is not of pointer to function type"
