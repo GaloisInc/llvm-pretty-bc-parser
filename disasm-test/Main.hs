@@ -366,11 +366,12 @@ processBitCode _keep (Roundtrip roundtrip) pfx file = do
   case e of
     Left err -> X.throwIO (ParseError err)
     Right m  -> do
-      parsed <- printToTempFile "ll" (show (ppLLVM (ppModule m)))
+      let m' = AST.fixupOpaquePtrs m
+      parsed <- printToTempFile "ll" (show (ppLLVM (ppModule m')))
       -- stripComments _keep parsed
       if roundtrip
       then do
-        tmp2 <- printToTempFile "ast" (ppShow (normalizeModule m))
+        tmp2 <- printToTempFile "ast" (ppShow (normalizeModule m'))
         return (parsed, Just tmp2)
       else return (parsed, Nothing)
 
