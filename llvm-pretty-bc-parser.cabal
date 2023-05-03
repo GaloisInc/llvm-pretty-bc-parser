@@ -135,7 +135,7 @@ Test-suite disasm-test
                        tasty-hunit,
                        tasty-sugar >= 2.2 && < 2.3,
                        text,
-                       versions,
+                       versions < 6,
                        llvm-pretty,
                        llvm-pretty-bc-parser
 
