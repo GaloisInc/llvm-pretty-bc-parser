@@ -96,7 +96,8 @@ disasmTestIngredients =
                    , TO.Option (Proxy @Roundtrip)
                    , TO.Option (Proxy @Keep)
                    ] :
-  defaultIngredients
+  TS.sugarIngredients [cube]
+  <> defaultIngredients
 
 parseCmdLine :: IO TO.OptionSet
 parseCmdLine = do
