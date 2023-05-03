@@ -100,7 +100,9 @@ disasmTestIngredients =
 
 -- Querying Tool Versions ------------------------------------------------------
 
--- lack of decipherable version is not fatal to running the tests
+-- | Captures the name of the tool and either the error when attempting to get
+-- the tool version or the actual parsed version self-reported by the tool.  Lack
+-- of a decipherable version is not fatal to running the tests.
 data VersionCheck = VC String (Either T.Text Versioning)
 
 showVC :: VersionCheck -> String
@@ -134,10 +136,9 @@ getLLVMAsVersion (LLVMAs llvmAsPath) = getLLVMToolVersion "llvm-as" llvmAsPath
 getLLVMDisVersion :: LLVMDis -> IO VersionCheck
 getLLVMDisVersion (LLVMDis llvmDisPath) = getLLVMToolVersion "llvm-dis" llvmDisPath
 
--- Determine which version of an LLVM tool will be used for these tests.
--- An exception (e.g. in readProcess if the tool is not found) will
--- result in termination (test failure). Uses partial 'head' but
--- this is just tests, and failure is captured.
+-- Determine which version of an LLVM tool will be used for these tests (if
+-- possible).  Uses partial 'head' but this is just tests, and failure is
+-- captured.
 getLLVMToolVersion :: String -> FilePath -> IO VersionCheck
 getLLVMToolVersion toolName toolPath = do
   let isVerLine = isInfixOf "LLVM version"
@@ -148,6 +149,9 @@ getLLVMToolVersion toolName toolPath = do
       getVer (Left full) = full
   mkVC toolName . getVer <$> readProcessVersion toolPath
 
+-- Runs the tool with a --version argument to have it self-report its version.
+-- The tool may not even be installed.  Returns either an error string or the
+-- output string from the tool.
 readProcessVersion :: String -> IO (Either String String)
 readProcessVersion forTool =
   X.catches (Right <$> Proc.readProcess forTool [ "--version" ] "")
