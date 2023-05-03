@@ -98,6 +98,22 @@ disasmTestIngredients =
                    ] :
   defaultIngredients
 
+parseCmdLine :: IO TO.OptionSet
+parseCmdLine = do
+  TR.installSignalHandlers
+  let disasmOptDescrs = TO.uniqueOptionDescriptions $
+        TR.coreOptions ++
+        TS.sugarOptions ++
+        TR.ingredientsOptions disasmTestIngredients
+      (disasmOptWarns, disasmOptParser) = TR.optionParser disasmOptDescrs
+  mapM_ (hPutStrLn IO.stderr) disasmOptWarns
+  OA.execParser $
+    OA.info (OA.helper <*> disasmOptParser)
+    ( OA.fullDesc <>
+      OA.header "llvm-pretty-bc-parser disassembly test suite"
+    )
+
+
 -- Querying Tool Versions ------------------------------------------------------
 
 -- | Captures the name of the tool and either the error when attempting to get
@@ -179,17 +195,7 @@ main =  do
   -- `defaultMainWithIngredients` invocation doesn't allow you to
   -- generate a dynamic number of tests in IO based on argument values. As a
   -- result, we have to resort to using more of tasty's internals here.
-  TR.installSignalHandlers
-  let disasmOptDescrs = TO.uniqueOptionDescriptions $
-        TR.coreOptions ++
-        TR.ingredientsOptions disasmTestIngredients
-      (disasmOptWarns, disasmOptParser) = TR.optionParser disasmOptDescrs
-  mapM_ (hPutStrLn IO.stderr) disasmOptWarns
-  disasmOpts <- OA.execParser $
-    OA.info (OA.helper <*> disasmOptParser)
-    ( OA.fullDesc <>
-      OA.header "llvm-pretty-bc-parser disassembly test suite"
-    )
+  disasmOpts <- parseCmdLine
 
   let llvmAs  = TO.lookupOption disasmOpts
       llvmDis = TO.lookupOption disasmOpts
