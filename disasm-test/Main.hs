@@ -1,6 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
@@ -11,19 +9,16 @@ import qualified Text.LLVM.AST as AST
 import           Text.LLVM.PP (ppLLVM,ppModule)
 
 import qualified Control.Exception as X
-import           Control.Lens ((^.), (^?), _Right, to)
-import           Control.Monad (guard, unless, when)
+import           Control.Lens ( (^?), _Right )
+import           Control.Monad ( unless, when )
 import           Control.Monad.IO.Class ( liftIO )
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as L
 import           Data.Char (ord,isLetter,isSpace,chr)
 import           Data.Functor ( (<&>) )
 import           Data.Generics (everywhere, mkT) -- SYB
-import           Data.List (isInfixOf, isPrefixOf, sort, stripPrefix)
-import           Data.Maybe (mapMaybe)
+import           Data.List ( isInfixOf, sort )
 import           Data.Proxy ( Proxy(..) )
-import qualified Data.Set as Set
-import           Data.Set (Set)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 import           Data.Versions (Versioning, versioning, prettyV, major)
@@ -31,10 +26,9 @@ import qualified GHC.IO.Exception as GE
 import qualified Options.Applicative as OA
 import           System.Directory (getTemporaryDirectory, removeFile)
 import           System.Exit (ExitCode(..), exitFailure, exitSuccess)
-import           System.FilePath ((<.>), takeFileName)
+import           System.FilePath ( (<.>) )
+import           System.IO (openBinaryTempFile,hClose,openTempFile,hPutStrLn)
 import qualified System.IO as IO (stderr)
-import           System.IO
-    (openBinaryTempFile,hClose,openTempFile,hPutStrLn)
 import qualified System.Process as Proc
 import           Test.Tasty
 import           Test.Tasty.HUnit ( assertFailure, testCase )
@@ -127,27 +121,11 @@ data VersionCheck = VC String (Either T.Text Versioning)
 showVC :: VersionCheck -> String
 showVC (VC nm v) = nm <> " " <> (T.unpack $ either id prettyV v)
 
-vcTag :: VersionCheck -> String
-vcTag v@(VC nm _) = nm <> vcMajor v
-
-vcMajor :: VersionCheck -> String
-vcMajor (VC _ v) = either T.unpack (^. major . to show) v
-
 vcVersioning :: VersionCheck -> Either T.Text Versioning
 vcVersioning (VC _ v) = v
 
 mkVC :: String -> String -> VersionCheck
 mkVC nm raw = let r = T.pack raw in VC nm $ first (const r) $ versioning r
-
--- Check if a VersionCheck version is less than the numeric value of another
--- version (represented as a Word).
-vcLT :: VersionCheck -> Word -> Bool
-vcLT vc verNum = (vcVersioning vc ^? (_Right . major)) < Just verNum
-
--- Check if a VersionCheck version is greater than or equal to the numeric
--- value of another version (represented as a Word).
-vcGE :: VersionCheck -> Word -> Bool
-vcGE vc verNum = (vcVersioning vc ^? (_Right . major)) >= Just verNum
 
 getLLVMAsVersion :: LLVMAs -> IO VersionCheck
 getLLVMAsVersion (LLVMAs llvmAsPath) = getLLVMToolVersion "llvm-as" llvmAsPath
