@@ -337,7 +337,11 @@ unnamedEntries pm = bimap Seq.fromList Seq.fromList (partitionEithers (mapMaybe 
     tv <- lookupValueTableAbs ref (mtEntries mt)
     case tv of
       Typed { typedValue = ValMd v } -> do
-        guard (not (mustAppearInline v))
+        -- See Issue #222
+        -- (https://github.com/galoisinc/llvm-pretty-bc-parser/issues/222) for
+        -- why this guard was removed:
+        --
+        -- guard (not (mustAppearInline v))
         pure $! PartialUnnamedMd
           { pumIndex    = ix
           , pumValues   = v
