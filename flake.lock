@@ -1,5 +1,34 @@
 {
   "nodes": {
+    "fgl-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1676021714,
+        "narHash": "sha256-812R4Hf/smMikINWgpvDYOLm6h+PkF6FAsSPcHSzKBE=",
+        "owner": "haskell",
+        "repo": "fgl",
+        "rev": "b8c417f470dd6ac25eebacd326c3b2db85e71f27",
+        "type": "github"
+      },
+      "original": {
+        "owner": "haskell",
+        "ref": "5.8.1.1",
+        "repo": "fgl",
+        "type": "github"
+      }
+    },
+    "fgl-visualize-src": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-2EC57Y+B5ryWjWeLqzHeSNkb4RjUtvj8+8vebz86dnQ=",
+        "type": "tarball",
+        "url": "https://hackage.haskell.org/package/fgl-visualize-0.1.0.1/fgl-visualize-0.1.0.1.tar.gz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://hackage.haskell.org/package/fgl-visualize-0.1.0.1/fgl-visualize-0.1.0.1.tar.gz"
+      }
+    },
     "levers": {
       "inputs": {
         "nixpkgs": [
@@ -54,6 +83,8 @@
     },
     "root": {
       "inputs": {
+        "fgl-src": "fgl-src",
+        "fgl-visualize-src": "fgl-visualize-src",
         "levers": "levers",
         "llvm-pretty-src": "llvm-pretty-src",
         "nixpkgs": "nixpkgs"

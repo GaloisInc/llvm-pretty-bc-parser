@@ -19,10 +19,20 @@
       url = "github:elliottt/llvm-pretty";
       flake = false;
     };
+    fgl-src = {
+      url = "github:haskell/fgl/5.8.1.1";
+      flake = false;
+    };
+    fgl-visualize-src = {
+      url = "https://hackage.haskell.org/package/fgl-visualize-0.1.0.1/fgl-visualize-0.1.0.1.tar.gz";
+      flake = false;
+    };
   };
 
   outputs = { self, levers, nixpkgs
             , llvm-pretty-src
+            , fgl-src
+            , fgl-visualize-src
             }:
     let
       shellWith = pkgs: adds: drv: drv.overrideAttrs(old:
@@ -101,11 +111,18 @@
             [ llvm-pretty-bc-parser-test-build ];
           DOC = wrap "llvm-pretty-bc-parser-DOC"
             [ llvm-pretty-bc-parser-doc ];
+          fgl = mkHaskell "fgl" fgl-src {
+            adjustDrv = args: haskellAdj;
+          };
+          fgl-visualize = mkHaskell "fgl-visualize" fgl-visualize-src {
+            inherit fgl;
+            adjustDrv = args: haskellAdj;
+          };
           llvm-pretty = mkHaskell "llvm-pretty" llvm-pretty-src {
             adjustDrv = args: haskellAdj;
           };
           llvm-pretty-bc-parser = mkHaskell "llvm-pretty-bc-parser" self {
-            inherit llvm-pretty;
+            inherit llvm-pretty fgl fgl-visualize;
             adjustDrv = args: haskellAdj;
           };
           llvm-pretty-bc-parser-test-build = mkHaskell "llvm-pretty-bc-parser-test-build" self {
