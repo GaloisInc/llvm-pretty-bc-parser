@@ -173,8 +173,6 @@ Executable fuzz-llvm-disasm
                        xml,
                        time,
                        deepseq,
-                       abstract-par,
-                       monad-par,
                        transformers,
                        llvm-pretty,
                        llvm-pretty-bc-parser
