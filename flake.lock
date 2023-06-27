@@ -1,0 +1,65 @@
+{
+  "nodes": {
+    "levers": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1687557470,
+        "narHash": "sha256-T0TAGZPiI5cwWR2OMLVYW7aj3Aco7v8qIVF7JoEgO9Y=",
+        "owner": "kquick",
+        "repo": "nix-levers",
+        "rev": "0e31d80978a9fb6a96df0722aa298d008a57c53e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "kquick",
+        "repo": "nix-levers",
+        "type": "github"
+      }
+    },
+    "llvm-pretty-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1687789214,
+        "narHash": "sha256-dqy1HMfrpz3t02xFRbGxPjc8uh5kC/edVI9aLPqlJ/o=",
+        "owner": "elliottt",
+        "repo": "llvm-pretty",
+        "rev": "94e384842b214ba72446d1694446fb5261ab6ce2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "elliottt",
+        "repo": "llvm-pretty",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1685566663,
+        "narHash": "sha256-btHN1czJ6rzteeCuE/PNrdssqYD2nIA4w48miQAFloM=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "4ecab3273592f27479a583fb6d975d4aba3486fe",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "23.05",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "levers": "levers",
+        "llvm-pretty-src": "llvm-pretty-src",
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
