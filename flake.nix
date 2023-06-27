@@ -97,6 +97,8 @@
                 pkgs.llvm_11
               ]
             );
+          TESTS_PREP = wrap "llvm-pretty-bc-parser-TESTS_PREP"
+            [ llvm-pretty-bc-parser-test-build ];
           DOC = wrap "llvm-pretty-bc-parser-DOC"
             [ llvm-pretty-bc-parser-doc ];
           llvm-pretty = mkHaskell "llvm-pretty" llvm-pretty-src {
