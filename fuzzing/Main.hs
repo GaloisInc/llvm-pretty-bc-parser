@@ -9,8 +9,6 @@ import Control.DeepSeq (($!!), NFData)
 import qualified Control.Exception as X
 import Control.Monad (forM, forM_, unless, void, when)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Par.Class (get, spawn)
-import Control.Monad.Par.IO (runParIO)
 import Data.List (isPrefixOf, partition, stripPrefix)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -223,29 +221,23 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   when (optSaveTests opts == Nothing &&
         or [optReduceDisasm opts, optReduceAs opts, optReduceExec opts]) $
     printUsage [ "--reduce options require --output to be set" ]
-  -- run the tests within each clang version in parallel. We could
-  -- parallelize the runs across clang versions as well, but it's
-  -- probably not worth the complexity at that level of granularity
   liftIO $ putStrLn $ "Temp directory: " ++ tmpDir
   resultMaps <-
     forM (optClangs opts) $ \clangExe ->
-    forM (optClangFlags opts) $ \flags -> runParIO $ do
+    forM (optClangFlags opts) $ \flags -> do
       let clang = (clangExe, includeDirs, flags)
       liftIO $ putStrLn $ "[" ++ clangExe ++ " " ++ flags ++ "]"
       forM_ includeDirs $ \dir ->
         liftIO $ putStrLn $ "Include directory: " ++ dir
-      results' <-
+      results <-
         case optSeeds opts of
           Nothing ->
-            forM [1..optNumTests opts] $ \_ ->
-              spawn $ liftIO $ do
+            forM [1..optNumTests opts] $ \_ -> do
               seed <- randomIO
               runTest tmpDir clang seed opts
           Just seeds ->
             forM seeds $ \seed ->
-              spawn $ liftIO $ do
               runTest tmpDir clang seed opts
-      results <- mapM get results'
       return (Map.singleton clang results)
   let allResults' = Map.unions (concat resultMaps)
       allResults | optCollapse opts = collapseResults allResults'
