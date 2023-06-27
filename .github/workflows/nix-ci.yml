@@ -24,7 +24,7 @@ jobs:
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
       - name: build ${{ matrix.ghc-version }}
         shell: bash
-        run: nix build github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }}
+        run: nix build -L github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }}
 
   tests:
     runs-on: ubuntu-latest
