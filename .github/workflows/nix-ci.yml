@@ -1,0 +1,60 @@
+name: llvm-pretty-bc-parser nix CI
+on:
+  push:
+    branches:
+      - 'master'
+      - 'release-**'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ghc-version: [ "ghc96", "ghc94", "ghc92", "ghc810", "ghc88" ]
+    steps:
+      - uses: cachix/install-nix-action@v20
+        with:
+          nix_path: nixpkgs=channel:nixos-23.05
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: cachix/cachix-action@v12
+        with:
+          name: galois
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      - name: build ${{ matrix.ghc-version }}
+        shell: bash
+        run: nix build github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }}
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: cachix/install-nix-action@v20
+        with:
+          nix_path: nixpkgs=channel:nixos-23.05
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: cachix/cachix-action@v12
+        with:
+          name: galois
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      - name: test build
+        shell: bash
+        run: nix build github:${{ github.repository }}/${{ github.sha }}#TESTS_PREP
+      - name: test
+        shell: bash
+        run: nix build -L github:${{ github.repository }}/${{ github.sha }}#TESTS
+
+  doc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: cachix/install-nix-action@v20
+        with:
+          nix_path: nixpkgs=channel:nixos-23.05
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: cachix/cachix-action@v12
+        with:
+          name: galois
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      - name: doc
+        shell: bash
+        run: nix build github:${{ github.repository }}/${{ github.sha }}#DOC
