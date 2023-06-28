@@ -7,7 +7,8 @@ import Test.Tasty.HUnit (testCase, (@?=))
 import Data.LLVM.Internal
 import Text.LLVM.AST
 
-import Tests.Instances()
+import Tests.Instances ()
+
 
 tests :: TestTree
 tests = testGroup "Metadata"

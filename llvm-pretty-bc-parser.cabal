@@ -97,6 +97,11 @@ test-suite unit-test
     type:                exitcode-stdio-1.0
     main-is:             Main.hs
     other-modules:       Tests.Instances,
+                         Tests.ExpressionInstances,
+                         Tests.FuncDataInstances,
+                         Tests.PrimInstances,
+                         Tests.StmtInstances,
+                         Tests.TripleInstances,
                          Tests.Metadata
     hs-source-dirs:      unit-test
     default-language:    Haskell2010
