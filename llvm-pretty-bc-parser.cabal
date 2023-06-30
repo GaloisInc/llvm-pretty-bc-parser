@@ -1,20 +1,24 @@
+cabal-version:       2.4
 Name:                llvm-pretty-bc-parser
-Version:             0.4.0.0
-License:             BSD3
+Version:             0.4.0.0.99
+License:             BSD-3-Clause
 License-file:        LICENSE
 Author:              Trevor Elliott <trevor@galois.com>
-Maintainer:          Trevor Elliott
+Maintainer:          Ryan Scott <rscott@galois.com>
+                   , Kevin Quick <kquick@galois.com>
+                   , Langston Barrett <langston@galois.com>
 Category:            Text
 Build-type:          Simple
-Cabal-version:       >=1.10
 Synopsis:            LLVM bitcode parsing library
-Tested-with:         GHC==8.10.7, GHC==9.0.2, GHC==9.2.4
+Tested-with:         GHC==8.8, GHC==8.10, GHC==9.2, GHC==9.4, GHC==9.6
 
 Description:
   A parser for the LLVM bitcode file format, yielding a Module from the
   llvm-pretty package.
 
 Extra-source-files:  disasm-test/tests/*.ll
+
+extra-doc-files: README.md
 
 Flag fuzz
   Description:         Enable fuzzing harness
@@ -26,7 +30,7 @@ Flag regressions
 
 Source-repository head
   type:                git
-  location:            http://github.com/galoisinc/llvm-pretty-bc-parser
+  location:            https://github.com/galoisinc/llvm-pretty-bc-parser
 
 Library
   Hs-source-dirs:      src
