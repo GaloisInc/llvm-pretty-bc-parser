@@ -28,6 +28,7 @@ import qualified GHC.IO.Exception as GE
 import qualified Options.Applicative as OA
 import qualified Prettyprinter as PP
 import qualified Prettyprinter.Util as PPU
+import qualified System.Console.Terminal.Size as Term
 import           System.Directory (getTemporaryDirectory, removeFile)
 import           System.Exit (ExitCode(..), exitFailure, exitSuccess)
 import           System.FilePath ( (<.>) )
@@ -175,7 +176,9 @@ parseCmdLine = do
         TR.ingredientsOptions disasmTestIngredients
       (disasmOptWarns, disasmOptParser) = TR.optionParser disasmOptDescrs
   mapM_ (hPutStrLn IO.stderr) disasmOptWarns
-  OA.execParser $
+  ts <- maybe 80 Term.width <$> Term.size
+  let pr = OA.prefs $ OA.columns ts
+  OA.customExecParser pr $
     OA.info (OA.helper <*> disasmOptParser)
     ( OA.fullDesc
       <> OA.header "llvm-pretty-bc-parser disassembly test suite"
