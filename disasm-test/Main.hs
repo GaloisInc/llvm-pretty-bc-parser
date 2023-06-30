@@ -141,8 +141,12 @@ getLLVMToolVersion toolName toolPath = do
   let isVerLine = isInfixOf "LLVM version"
       dropLetter = dropWhile (all isLetter)
       getVer (Right inp) =
-        -- example inp: "LLVM version 10.0.1"
-        head $ dropLetter $ words $ head $ filter isVerLine $ lines inp
+        -- example inp: "LLVM version 10.0.1" or "clang version 11.1.0"
+        case filter isVerLine $ lines inp of
+          [] -> "NO VERSION IDENTIFIED FOR " <> toolName
+          (l:_) -> case dropLetter $ words l of
+            [] -> toolName <> " VERSION NOT PARSED: " <> l
+            (v:_) -> v
       getVer (Left full) = full
   mkVC toolName . getVer <$> readProcessVersion toolPath
 
