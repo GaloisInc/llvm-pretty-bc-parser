@@ -27,12 +27,30 @@
       url = "https://hackage.haskell.org/package/fgl-visualize-0.1.0.1/fgl-visualize-0.1.0.1.tar.gz";
       flake = false;
     };
+    optparse-applicative-src = {
+      url = "github:pcapriotti/optparse-applicative/0.18.1";
+      flake = false;
+    };
+    tasty-src = {
+      url = "github:UnkindPartition/tasty/core-1.4.3";
+      flake = false;
+    };
+    tasty-sugar = {
+      url = "github:kquick/tasty-sugar";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.levers.follows = "levers";
+      inputs.optparse-applicative-src.follows = "optparse-applicative-src";
+      inputs.tasty-src.follows = "tasty-src";
+    };
   };
 
   outputs = { self, levers, nixpkgs
             , llvm-pretty-src
             , fgl-src
             , fgl-visualize-src
+            , optparse-applicative-src
+            , tasty-src
+            , tasty-sugar
             }:
     let
       shellWith = pkgs: adds: drv: drv.overrideAttrs(old:
@@ -129,7 +147,8 @@
             adjustDrv = args: haskellAdj;
           };
           llvm-pretty-bc-parser-test-build = mkHaskell "llvm-pretty-bc-parser-test-build" self {
-            inherit llvm-pretty;
+            inherit llvm-pretty optparse-applicative tasty-sugar
+              tasty tasty-quickcheck tasty-hunit;
             adjustDrv = args: drv:
               with pkgs.haskell.lib;
               (doCheck (haskellAdj drv)).overrideAttrs (a:
@@ -153,6 +172,21 @@
             inherit llvm-pretty;
             adjustDrv = args: drv:
               pkgs.haskell.lib.dontCheck (pkgs.haskell.lib.dontBenchmark drv);
+          };
+          optparse-applicative = mkHaskell "optparse-applicative" optparse-applicative-src {
+            adjustDrv = args: haskellAdj;
+          };
+          tasty = mkHaskell "tasty" "${tasty-src}/core" {
+            inherit optparse-applicative;
+            adjustDrv = args: haskellAdj;
+          };
+          tasty-hunit = mkHaskell "tasty-hunit" "${tasty-src}/hunit" {
+            inherit tasty;
+            adjustDrv = args: haskellAdj;
+          };
+          tasty-quickcheck = mkHaskell "tasty-quickcheck" "${tasty-src}/quickcheck" {
+            inherit optparse-applicative tasty;
+            adjustDrv = args: haskellAdj;
           };
         });
     };

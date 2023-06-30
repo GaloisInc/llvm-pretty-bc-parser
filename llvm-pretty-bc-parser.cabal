@@ -137,7 +137,7 @@ Test-suite disasm-test
                        bytestring,
                        filepath,
                        lens,
-                       optparse-applicative,
+                       optparse-applicative >= 0.18.1.0,
                        pretty-show>= 1.6,
                        syb        >= 0.7,
                        tasty >= 1.3,

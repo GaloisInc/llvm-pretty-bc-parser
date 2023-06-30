@@ -29,6 +29,64 @@
         "url": "https://hackage.haskell.org/package/fgl-visualize-0.1.0.1/fgl-visualize-0.1.0.1.tar.gz"
       }
     },
+    "hedgehog-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1687611978,
+        "narHash": "sha256-anNGVIrZ+xqgXS2oHqu32V2l6UKUkvXf/xjUcg/2zto=",
+        "owner": "hedgehogqa",
+        "repo": "haskell-hedgehog",
+        "rev": "114c1e52b479dc2795c42b655f73a15fd26d747d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hedgehogqa",
+        "repo": "haskell-hedgehog",
+        "type": "github"
+      }
+    },
+    "html-parse-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1661791516,
+        "narHash": "sha256-XJ1Y2Dx52cnu2jPiIjo/hZvH9wGvR/bLHkWVdErtAgs=",
+        "owner": "bgamari",
+        "repo": "html-parse",
+        "rev": "d340bc6bee6c9be8b564493fd72b14dbd446a36a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "bgamari",
+        "repo": "html-parse",
+        "type": "github"
+      }
+    },
+    "kvitable": {
+      "inputs": {
+        "html-parse-src": "html-parse-src",
+        "levers": [
+          "tasty-sugar",
+          "levers"
+        ],
+        "nixpkgs": [
+          "tasty-sugar",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1688014254,
+        "narHash": "sha256-H1kxX3JagFR58xSIvlO/C3jJXwL1CPWkTg5gJ8qc05w=",
+        "owner": "kquick",
+        "repo": "kvitable",
+        "rev": "5635b827fc705dc58b771a3112892e88889aaa0b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "kquick",
+        "repo": "kvitable",
+        "type": "github"
+      }
+    },
     "levers": {
       "inputs": {
         "nixpkgs": [
@@ -81,13 +139,98 @@
         "type": "github"
       }
     },
+    "optparse-applicative-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1685356808,
+        "narHash": "sha256-64KLKHpIyEg+jLfpj2PI0iFIS/e67IRZKAwHSZSwVYI=",
+        "owner": "pcapriotti",
+        "repo": "optparse-applicative",
+        "rev": "270a626f7a7225cdce9b025b427eb0c4378c39c7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pcapriotti",
+        "ref": "0.18.1",
+        "repo": "optparse-applicative",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "fgl-src": "fgl-src",
         "fgl-visualize-src": "fgl-visualize-src",
         "levers": "levers",
         "llvm-pretty-src": "llvm-pretty-src",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "optparse-applicative-src": "optparse-applicative-src",
+        "tasty-src": "tasty-src",
+        "tasty-sugar": "tasty-sugar"
+      }
+    },
+    "tasty-hedgehog-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1687663907,
+        "narHash": "sha256-VSvnstMmykapHIN+fY12sxolCe4G6jpPtmEB1fGax+8=",
+        "owner": "qfpl",
+        "repo": "tasty-hedgehog",
+        "rev": "b210409d0aa68c2c4f6a61f0007c3f129c43977e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "qfpl",
+        "repo": "tasty-hedgehog",
+        "type": "github"
+      }
+    },
+    "tasty-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1671396688,
+        "narHash": "sha256-W+cPhWeDf92TxD31c7WOioZOEOtcKYhVHjkwjUF8Oi0=",
+        "owner": "UnkindPartition",
+        "repo": "tasty",
+        "rev": "97f314c3bc66059f912543b7cc0094abb8f35502",
+        "type": "github"
+      },
+      "original": {
+        "owner": "UnkindPartition",
+        "ref": "core-1.4.3",
+        "repo": "tasty",
+        "type": "github"
+      }
+    },
+    "tasty-sugar": {
+      "inputs": {
+        "hedgehog-src": "hedgehog-src",
+        "kvitable": "kvitable",
+        "levers": [
+          "levers"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "optparse-applicative-src": [
+          "optparse-applicative-src"
+        ],
+        "tasty-hedgehog-src": "tasty-hedgehog-src",
+        "tasty-src": [
+          "tasty-src"
+        ]
+      },
+      "locked": {
+        "lastModified": 1688015673,
+        "narHash": "sha256-Ljk2ZrcyMA5BOBdHyVRaODFgbSw/DLQTQeyjw0ZpA74=",
+        "owner": "kquick",
+        "repo": "tasty-sugar",
+        "rev": "69c424e8638b6479c352af028e06ce81ec3171ce",
+        "type": "github"
+      },
+      "original": {
+        "owner": "kquick",
+        "repo": "tasty-sugar",
+        "type": "github"
       }
     }
   },
