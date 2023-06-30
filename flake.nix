@@ -116,7 +116,7 @@
               buildInputs = [ llvm pkgs.diffutils pkgs.coreutils ];
             };
         in rec {
-          default = llvm-pretty-bc-parser;
+          default = llvm-pretty-bc-parser-test-build;
           TESTS = wrap "llvm-pretty-bc-parser-TESTS"
             (builtins.map
               (llvm-pretty-bc-parser-test llvm-pretty-bc-parser-test-build)
@@ -161,12 +161,6 @@
                     cp -r dist $out/test-build/
                     '';
                 });
-          };
-          llvm-pretty-bc-parser-tests = mkHaskell "llvm-pretty-bc-parser-tests" self {
-            inherit llvm-pretty;
-            adjustDrv = args: drv:
-              with pkgs.haskell.lib;
-              addExtraLibrary (dontHaddock drv) pkgs.llvm;
           };
           llvm-pretty-bc-parser-doc = mkHaskell "llvm-pretty-bc-parser-doc" self {
             inherit llvm-pretty;
