@@ -30,7 +30,10 @@ jobs:
         run: nix build -L github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }}
 
   tests:
-    # This job builds the tests, and then runs the tests (in two different steps)
+    # This job builds the tests, and then runs the tests (in two different
+    # steps).  Note that for llvm-pretty-bc-parser, multiple LLVM versions will
+    # be tested; the actual list of versions is specified in the `flake.nix` file
+    # used (see the NOTE comment in that file).
     runs-on: ubuntu-latest
     steps:
       - uses: cachix/install-nix-action@v20
