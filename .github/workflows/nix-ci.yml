@@ -9,6 +9,9 @@ on:
 
 jobs:
   build:
+    # This job builds the main package, via a number of GHC versions.  This is
+    # the build that would be used by downstream packages using this as a
+    # dependency; this does not build documentation or tests.
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -27,6 +30,7 @@ jobs:
         run: nix build -L github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }}
 
   tests:
+    # This job builds the tests, and then runs the tests (in two different steps)
     runs-on: ubuntu-latest
     steps:
       - uses: cachix/install-nix-action@v20
@@ -45,6 +49,7 @@ jobs:
         run: nix build -L github:${{ github.repository }}/${{ github.sha }}#TESTS
 
   doc:
+    # This job builds the documentation (e.g. Hackage, etc.)
     runs-on: ubuntu-latest
     steps:
       - uses: cachix/install-nix-action@v20
