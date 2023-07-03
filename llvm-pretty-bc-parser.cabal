@@ -135,6 +135,7 @@ Test-suite disasm-test
                        process,
                        directory,
                        bytestring,
+                       exceptions >= 0.10 && < 0.11,
                        filepath,
                        lens,
                        optparse-applicative >= 0.18.1.0,

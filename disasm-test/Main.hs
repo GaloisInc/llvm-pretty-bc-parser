@@ -9,10 +9,11 @@ import           Data.LLVM.BitCode (parseBitCodeLazyFromFile,Error(..),formatErr
 import qualified Text.LLVM.AST as AST
 import           Text.LLVM.PP (ppLLVM,ppModule)
 
-import qualified Control.Exception as X
+import qualified Control.Monad.Catch as X
+import qualified Control.Exception as EX
 import           Control.Lens ( (^?), _Right )
 import           Control.Monad ( unless, when )
-import           Control.Monad.IO.Class ( liftIO )
+import           Control.Monad.IO.Class ( MonadIO, liftIO )
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as L
 import           Data.Char (ord,isLetter,isSpace,chr)
@@ -231,7 +232,7 @@ getLLVMToolVersion toolName toolPath = do
 readProcessVersion :: String -> IO (Either String String)
 readProcessVersion forTool =
   X.catches (Right <$> Proc.readProcess forTool [ "--version" ] "")
-  [ X.Handler $ \(e :: X.IOException) ->
+  [ X.Handler $ \(e :: EX.IOException) ->
       if GE.ioe_type e == GE.NoSuchThing
       then return $ Left "[missing]" -- tool executable not found
       else do putStrLn $ "Warning: IO error attempting to determine " <> forTool <> " version:"
@@ -363,7 +364,7 @@ runTest sweet expct
   where file  = TS.rootFile sweet
         pfx   = TS.rootBaseName sweet
         assertF ls = assertFailure $ unlines ls
-        diff file1 file2 = do
+        diff file1 file2 = liftIO $ do
           (code, stdout, stderr) <-
             Proc.readCreateProcessWithExitCode (Proc.proc "diff" ["-u", file1, file2]) ""
           case code of
@@ -374,20 +375,21 @@ runTest sweet expct
               else mapM_ putStrLn ["success: empty diff: ", file1, file2]
 
 
-processLL :: Roundtrip -> Keep -> LLVMAs -> LLVMDis -> FilePath -> FilePath
-          -> IO (FilePath, Maybe FilePath)
+processLL :: (MonadIO m, X.MonadCatch m, X.MonadMask m)
+          => Roundtrip -> Keep -> LLVMAs -> LLVMDis -> FilePath -> FilePath
+          -> m (FilePath, Maybe FilePath)
 processLL roundtrip keep llvmAs llvmDis pfx f = do
-  putStrLn (showString f ": ")
-  X.handle logError                               $
+  liftIO $ putStrLn (showString f ": ")
+  X.handle logError $
     withFile keep (generateBitCode    llvmAs  pfx f)  $ \ bc   ->
-    withFile keep (normalizeBitCode keep llvmDis pfx bc) $ \ norm -> do
+    withFile keep (normalizeBitCode keep llvmDis pfx bc) $ \ norm -> liftIO $ do
       (parsed, ast) <- processBitCode keep roundtrip pfx bc
       ignore (Proc.callProcess "diff" ["-u", norm, parsed])
       putStrLn ("successfully parsed " ++ show f)
       return (parsed, ast)
   where
     logError (ParseError msg) =
-      assertFailure $ unlines
+      liftIO $ assertFailure $ unlines
       $ "failure" : map ("; " ++) (lines (formatError msg))
 
 
@@ -395,8 +397,8 @@ processLL roundtrip keep llvmAs llvmDis pfx f = do
 -- Helpers
 
 -- | Assemble some llvm assembly, producing a bitcode file in /tmp.
-generateBitCode :: LLVMAs -> FilePath -> FilePath -> IO FilePath
-generateBitCode (LLVMAs llvmAs) pfx file = do
+generateBitCode :: MonadIO m => LLVMAs -> FilePath -> FilePath -> m FilePath
+generateBitCode (LLVMAs llvmAs) pfx file = liftIO $ do
   tmp    <- getTemporaryDirectory
   (bc,h) <- openBinaryTempFile tmp (pfx <.> "bc")
   hClose h
@@ -405,8 +407,8 @@ generateBitCode (LLVMAs llvmAs) pfx file = do
 
 -- | Use llvm-dis to parse a bitcode file, to obtain a normalized version of the
 -- llvm assembly.
-normalizeBitCode :: Keep -> LLVMDis -> FilePath -> FilePath -> IO FilePath
-normalizeBitCode _keep (LLVMDis llvmDis) pfx file = do
+normalizeBitCode :: MonadIO m => Keep -> LLVMDis -> FilePath -> FilePath -> m FilePath
+normalizeBitCode _keep (LLVMDis llvmDis) pfx file = liftIO $ do
   tmp      <- getTemporaryDirectory
   (norm,h) <- openTempFile tmp (pfx ++ "llvm-dis" <.> "ll")
   hClose h
@@ -446,7 +448,7 @@ processBitCode _keep (Roundtrip roundtrip) pfx file = do
         return parsed
   e <- parseBitCodeLazyFromFile file `X.catch` handler
   case e of
-    Left err -> X.throwIO (ParseError err)
+    Left err -> X.throwM (ParseError err)
     Right m  -> do
       let m' = AST.fixupOpaquePtrs m
       parsed <- printToTempFile "ll" (show (ppLLVM (ppModule m')))
@@ -495,13 +497,14 @@ dropTrailingSpace bs
 -- | Ignore a command that fails.
 ignore :: IO () -> IO ()
 ignore  = X.handle f
-  where f   :: X.IOException -> IO ()
+  where f   :: EX.IOException -> IO ()
         f _ = return ()
 
 callProc :: String -> [String] -> IO ()
 callProc p args = -- putStrLn ("Calling process: " ++ p ++ " " ++ unwords args) >>
   Proc.callProcess p args
 
-withFile :: Keep -> IO FilePath -> (FilePath -> IO r) -> IO r
+withFile :: (MonadIO m, X.MonadMask m)
+         => Keep -> m FilePath -> (FilePath -> m r) -> m r
 withFile (Keep keep) iofile f =
-  X.bracket iofile (if keep then const (pure ()) else removeFile) f
+  X.bracket iofile (if keep then const (pure ()) else liftIO . removeFile) f
