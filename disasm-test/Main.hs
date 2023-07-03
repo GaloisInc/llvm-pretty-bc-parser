@@ -90,8 +90,8 @@ descr = PP.vcat $
     [iii|* If opaque pointers are present, *all* pointers are
            converted to opaque pointers.  This is because the LLVM
            tools are stricter about opaque pointers, whereas this
-           package is more permissive. Opaque pointers will become
-           the standard in LLVM 16.
+           package is more permissive. Opaque pointers are
+           the standard in LLVM 15.
       |]
   , ""
   , PP.indent 2 $ PP.hang 2 $ block
