@@ -1,5 +1,0 @@
-##> rootMatchName: global-var.c
-##> llvmver: 10
-##> summary: unnamed metadata indices problem
-
-This is another manifestation of Issue #222.
