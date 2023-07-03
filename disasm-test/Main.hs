@@ -61,19 +61,19 @@ descr = PP.vcat $
  an AST representation.
        |]
   , ""
-      , "          +-------------[2nd cycle]------------+"
-      , "          |                                    |"
-      , "          v                                    |"
-      , " .ll --[llvm-as]--> .bc ---[llvm-dis]--> .ll   |"
-      , "                         `-[llvm-disasm]---> .ll"
-      , "                                         `-> .AST"
-      , "                                               |"
-      , "                                             [show]"
-      , "                                               |"
-      , "                                               v"
-      , "      [compare first and second of these:]   .txt"
+  , "          +-------------[2nd cycle]------------+"
+  , "          |                                    |"
+  , "          v                                    |"
+  , " .ll --[llvm-as]--> .bc ---[llvm-dis]--> .ll   |"
+  , "                         `-[llvm-disasm]---> .ll"
+  , "                                         `-> .AST"
+  , "                                               |"
+  , "                                             [show]"
+  , "                                               |"
+  , "                                               v"
+  , "      [compare first and second of these:]   .txt"
   , ""
-      , block [iii|
+  , block [iii|
  The differences between the two .ll text formats
  are displayed for user information, but differences do not constitute a
  test failure.  The .ll text file obtained from llvm-disasm is then
