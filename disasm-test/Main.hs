@@ -159,12 +159,24 @@ instance TO.IsOption Keep where
   optionCLParser = TO.mkOptionCLParser $
     OA.short 'k'
 
+newtype Details = Details Bool
+
+instance TO.IsOption Details where
+  defaultValue = Details False
+  parseValue = fmap Details . TO.safeReadBool
+  optionName = pure "details"
+  optionHelp = pure "show details of each individual test execution (for debug)"
+  showDefaultValue (Details d) = Just $ show d
+  optionCLParser = TO.mkOptionCLParser $
+    OA.short 'd'
+
 disasmTestIngredients :: [TR.Ingredient]
 disasmTestIngredients =
   includingOptions [ TO.Option (Proxy @LLVMAs)
                    , TO.Option (Proxy @LLVMDis)
                    , TO.Option (Proxy @Roundtrip)
                    , TO.Option (Proxy @Keep)
+                   , TO.Option (Proxy @Details)
                    ] :
   TS.sugarIngredients [cube]
   <> defaultIngredients
@@ -347,9 +359,11 @@ runTest sweet expct
            askOption $ \llvmDis' ->
            askOption $ \roundtrip ->
            askOption $ \keep ->
+           askOption $ \details ->
            testCase pfx
            $ flip evalStateT (TestState { keepTemp = keep
                                         , rndTrip = roundtrip
+                                        , showDetails = details
                                         , llvmAs = llvmAs'
                                         , llvmDis = llvmDis'
                                         })
@@ -369,27 +383,31 @@ runTest sweet expct
                  -- diff parsed1 parsed2
   where file  = TS.rootFile sweet
         pfx   = TS.rootBaseName sweet
-        assertF ls = assertFailure $ unlines ls
-        diff file1 file2 = liftIO $ do
-          (code, stdout, stderr) <-
+        assertF ls = liftIO $ assertFailure $ unlines ls
+        diff file1 file2 = do
+          (code, stdout, stderr) <- liftIO $
             Proc.readCreateProcessWithExitCode (Proc.proc "diff" ["-u", file1, file2]) ""
           case code of
             ExitFailure _ -> assertF ["diff failed", stdout, stderr]
             ExitSuccess   ->
               if stdout /= "" || stderr /= ""
               then assertF ["non-empty diff", stdout, stderr]
-              else mapM_ putStrLn ["success: empty diff: ", file1, file2]
+              else do Details dets <- gets showDetails
+                      when dets $ liftIO
+                        $ mapM_ putStrLn ["success: empty diff: ", file1, file2]
 
 
 processLL :: FilePath -> FilePath -> TestMonad (FilePath, Maybe FilePath)
 processLL pfx f = do
-  liftIO $ putStrLn (showString f ": ")
+  Details dets <- gets showDetails
+  when dets $ liftIO $ putStrLn (showString f ": ")
   X.handle logError $
     withFile (generateBitCode  pfx f)  $ \ bc   ->
     withFile (normalizeBitCode pfx bc) $ \ norm -> do
       (parsed, ast) <- processBitCode pfx bc
-      liftIO $ ignore (Proc.callProcess "diff" ["-u", norm, parsed])
-      liftIO $ putStrLn ("successfully parsed " ++ show f)
+      when dets $ liftIO $ do
+        ignore (Proc.callProcess "diff" ["-u", norm, parsed])
+        putStrLn ("successfully parsed " ++ show f)
       return (parsed, ast)
   where
     logError (ParseError msg) =
@@ -404,6 +422,7 @@ processLL pfx f = do
 -- they will be accessible in a TestTree (via: StateT TestState IO a).
 data TestState = TestState { keepTemp :: Keep
                            , rndTrip :: Roundtrip
+                           , showDetails :: Details
                            , llvmAs :: LLVMAs
                            , llvmDis :: LLVMDis
                            }
