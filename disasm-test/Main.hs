@@ -367,20 +367,21 @@ runTest sweet expct
                                         , llvmAs = llvmAs'
                                         , llvmDis = llvmDis'
                                         })
-           $ do
-             let procLL = processLL pfx
-             (parsed1, ast) <- procLL file
-             case ast of               -- this Maybe also encodes the data of optRoundtrip
+           $ with2Files (processLL pfx file) $ \(parsed1, ast) ->
+             case ast of
                Nothing   -> return ()
-               Just ast1 -> do
-                 (_, Just ast2) <- procLL parsed1 -- Re-assemble and re-disassemble
-                 diff ast1 ast2                   -- Ensure that the ASTs match
+               Just ast1 ->
+                 -- Re-assemble and re-disassemble
+                 with2Files (processLL pfx parsed1) $ \(_, Just ast2) -> do
+                 diff ast1 ast2 -- Ensure that the ASTs match
+
                  -- Ensure that the disassembled files match.
                  -- This is usually too strict (and doesn't really provide more info).
                  -- We normalize the AST (see below) to ensure that the ASTs match modulo
                  -- metadata numbering, but the equivalent isn't possible for the
                  -- assembly: we need llvm-as to be able to re-assemble it.
                  -- diff parsed1 parsed2
+
   where file  = TS.rootFile sweet
         pfx   = TS.rootBaseName sweet
         assertF ls = liftIO $ assertFailure $ unlines ls
@@ -542,10 +543,20 @@ callProc p args = -- putStrLn ("Calling process: " ++ p ++ " " ++ unwords args) 
   Proc.callProcess p args
 
 withFile :: TestMonad FilePath -> (FilePath -> TestMonad r) -> TestMonad r
-withFile iofile f =
-  let cleanup tmp = do Keep keep <- gets keepTemp
-                       unless keep
-                         $ do Details dets <- gets showDetails
-                              when dets $ liftIO $ putStrLn $ "## Removing " <> tmp
-                              liftIO $ removeFile tmp
-  in X.bracket iofile cleanup f
+withFile iofile f = X.bracket iofile rmFile f
+
+with2Files :: TestMonad (FilePath, Maybe FilePath)
+           -> ((FilePath, Maybe FilePath) -> TestMonad r)
+           -> TestMonad r
+with2Files iofiles f =
+  let cleanup (tmp1, mbTmp2) = case mbTmp2 of
+                                 Nothing -> rmFile tmp1
+                                 Just t2 -> rmFile tmp1 >> rmFile t2
+  in X.bracket iofiles cleanup f
+
+rmFile :: FilePath -> TestMonad ()
+rmFile tmp = do Keep keep <- gets keepTemp
+                unless keep
+                  $ do Details dets <- gets showDetails
+                       when dets $ liftIO $ putStrLn $ "## Removing " <> tmp
+                       liftIO $ removeFile tmp
