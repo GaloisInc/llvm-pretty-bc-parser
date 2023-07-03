@@ -14,6 +14,7 @@ import qualified Control.Exception as EX
 import           Control.Lens ( (^?), _Right )
 import           Control.Monad ( unless, when )
 import           Control.Monad.IO.Class ( MonadIO, liftIO )
+import           Control.Monad.Trans.State
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as L
 import           Data.Char (ord,isLetter,isSpace,chr)
@@ -347,8 +348,9 @@ runTest sweet expct
            askOption $ \roundtrip ->
            askOption $ \keep ->
            testCase pfx
+           $ flip evalStateT (TestState { keepTemp = keep })
            $ do
-             let procLL = processLL roundtrip keep llvmAs llvmDis pfx
+             let procLL = processLL roundtrip llvmAs llvmDis pfx
              (parsed1, ast) <- procLL file
              case ast of               -- this Maybe also encodes the data of optRoundtrip
                Nothing   -> return ()
@@ -375,17 +377,16 @@ runTest sweet expct
               else mapM_ putStrLn ["success: empty diff: ", file1, file2]
 
 
-processLL :: (MonadIO m, X.MonadCatch m, X.MonadMask m)
-          => Roundtrip -> Keep -> LLVMAs -> LLVMDis -> FilePath -> FilePath
-          -> m (FilePath, Maybe FilePath)
-processLL roundtrip keep llvmAs llvmDis pfx f = do
+processLL :: Roundtrip -> LLVMAs -> LLVMDis -> FilePath -> FilePath
+          -> TestMonad (FilePath, Maybe FilePath)
+processLL roundtrip llvmAs llvmDis pfx f = do
   liftIO $ putStrLn (showString f ": ")
   X.handle logError $
-    withFile keep (generateBitCode    llvmAs  pfx f)  $ \ bc   ->
-    withFile keep (normalizeBitCode keep llvmDis pfx bc) $ \ norm -> liftIO $ do
-      (parsed, ast) <- processBitCode keep roundtrip pfx bc
-      ignore (Proc.callProcess "diff" ["-u", norm, parsed])
-      putStrLn ("successfully parsed " ++ show f)
+    withFile (generateBitCode    llvmAs  pfx f)  $ \ bc   ->
+    withFile (normalizeBitCode llvmDis pfx bc) $ \ norm -> do
+      (parsed, ast) <- processBitCode roundtrip pfx bc
+      liftIO $ ignore (Proc.callProcess "diff" ["-u", norm, parsed])
+      liftIO $ putStrLn ("successfully parsed " ++ show f)
       return (parsed, ast)
   where
     logError (ParseError msg) =
@@ -395,6 +396,11 @@ processLL roundtrip keep llvmAs llvmDis pfx f = do
 
 ----------------------------------------------------------------------
 -- Helpers
+
+data TestState = TestState { keepTemp :: Keep }
+
+type TestMonad a = StateT TestState IO a
+
 
 -- | Assemble some llvm assembly, producing a bitcode file in /tmp.
 generateBitCode :: MonadIO m => LLVMAs -> FilePath -> FilePath -> m FilePath
@@ -407,8 +413,8 @@ generateBitCode (LLVMAs llvmAs) pfx file = liftIO $ do
 
 -- | Use llvm-dis to parse a bitcode file, to obtain a normalized version of the
 -- llvm assembly.
-normalizeBitCode :: MonadIO m => Keep -> LLVMDis -> FilePath -> FilePath -> m FilePath
-normalizeBitCode _keep (LLVMDis llvmDis) pfx file = liftIO $ do
+normalizeBitCode :: LLVMDis -> FilePath -> FilePath -> TestMonad FilePath
+normalizeBitCode (LLVMDis llvmDis) pfx file = liftIO $ do
   tmp      <- getTemporaryDirectory
   (norm,h) <- openTempFile tmp (pfx ++ "llvm-dis" <.> "ll")
   hClose h
@@ -436,8 +442,8 @@ normalizeModule = sorted . everywhere (mkT zeroValMdRef)
 
 -- | Parse a bitcode file using llvm-pretty, failing the test if the parser
 -- fails.
-processBitCode :: Keep -> Roundtrip -> FilePath -> FilePath -> IO (FilePath, Maybe FilePath)
-processBitCode _keep (Roundtrip roundtrip) pfx file = do
+processBitCode :: Roundtrip -> FilePath -> FilePath -> TestMonad (FilePath, Maybe FilePath)
+processBitCode (Roundtrip roundtrip) pfx file = do
   let handler :: X.SomeException -> IO (Either Error AST.Module)
       handler se = return (Left (Error [] (show se)))
       printToTempFile sufx stuff = do
@@ -446,10 +452,10 @@ processBitCode _keep (Roundtrip roundtrip) pfx file = do
         hPutStrLn h stuff
         hClose h
         return parsed
-  e <- parseBitCodeLazyFromFile file `X.catch` handler
+  e <- liftIO $ parseBitCodeLazyFromFile file `X.catch` handler
   case e of
     Left err -> X.throwM (ParseError err)
-    Right m  -> do
+    Right m  -> liftIO $ do
       let m' = AST.fixupOpaquePtrs m
       parsed <- printToTempFile "ll" (show (ppLLVM (ppModule m')))
       -- stripComments _keep parsed
@@ -504,7 +510,8 @@ callProc :: String -> [String] -> IO ()
 callProc p args = -- putStrLn ("Calling process: " ++ p ++ " " ++ unwords args) >>
   Proc.callProcess p args
 
-withFile :: (MonadIO m, X.MonadMask m)
-         => Keep -> m FilePath -> (FilePath -> m r) -> m r
-withFile (Keep keep) iofile f =
-  X.bracket iofile (if keep then const (pure ()) else liftIO . removeFile) f
+withFile :: TestMonad FilePath -> (FilePath -> TestMonad r) -> TestMonad r
+withFile iofile f =
+  let cleanup tmp = do Keep keep <- gets keepTemp
+                       when keep $ liftIO $ removeFile tmp
+  in X.bracket iofile cleanup f
