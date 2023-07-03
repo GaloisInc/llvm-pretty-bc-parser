@@ -348,9 +348,9 @@ runTest sweet expct
            askOption $ \roundtrip ->
            askOption $ \keep ->
            testCase pfx
-           $ flip evalStateT (TestState { keepTemp = keep })
+           $ flip evalStateT (TestState { keepTemp = keep, rndTrip = roundtrip })
            $ do
-             let procLL = processLL roundtrip llvmAs llvmDis pfx
+             let procLL = processLL llvmAs llvmDis pfx
              (parsed1, ast) <- procLL file
              case ast of               -- this Maybe also encodes the data of optRoundtrip
                Nothing   -> return ()
@@ -377,14 +377,14 @@ runTest sweet expct
               else mapM_ putStrLn ["success: empty diff: ", file1, file2]
 
 
-processLL :: Roundtrip -> LLVMAs -> LLVMDis -> FilePath -> FilePath
+processLL :: LLVMAs -> LLVMDis -> FilePath -> FilePath
           -> TestMonad (FilePath, Maybe FilePath)
-processLL roundtrip llvmAs llvmDis pfx f = do
+processLL llvmAs llvmDis pfx f = do
   liftIO $ putStrLn (showString f ": ")
   X.handle logError $
     withFile (generateBitCode    llvmAs  pfx f)  $ \ bc   ->
     withFile (normalizeBitCode llvmDis pfx bc) $ \ norm -> do
-      (parsed, ast) <- processBitCode roundtrip pfx bc
+      (parsed, ast) <- processBitCode pfx bc
       liftIO $ ignore (Proc.callProcess "diff" ["-u", norm, parsed])
       liftIO $ putStrLn ("successfully parsed " ++ show f)
       return (parsed, ast)
@@ -397,7 +397,9 @@ processLL roundtrip llvmAs llvmDis pfx f = do
 ----------------------------------------------------------------------
 -- Helpers
 
-data TestState = TestState { keepTemp :: Keep }
+data TestState = TestState { keepTemp :: Keep
+                           , rndTrip :: Roundtrip
+                           }
 
 type TestMonad a = StateT TestState IO a
 
@@ -442,8 +444,8 @@ normalizeModule = sorted . everywhere (mkT zeroValMdRef)
 
 -- | Parse a bitcode file using llvm-pretty, failing the test if the parser
 -- fails.
-processBitCode :: Roundtrip -> FilePath -> FilePath -> TestMonad (FilePath, Maybe FilePath)
-processBitCode (Roundtrip roundtrip) pfx file = do
+processBitCode :: FilePath -> FilePath -> TestMonad (FilePath, Maybe FilePath)
+processBitCode pfx file = do
   let handler :: X.SomeException -> IO (Either Error AST.Module)
       handler se = return (Left (Error [] (show se)))
       printToTempFile sufx stuff = do
@@ -455,13 +457,14 @@ processBitCode (Roundtrip roundtrip) pfx file = do
   e <- liftIO $ parseBitCodeLazyFromFile file `X.catch` handler
   case e of
     Left err -> X.throwM (ParseError err)
-    Right m  -> liftIO $ do
+    Right m  -> do
       let m' = AST.fixupOpaquePtrs m
-      parsed <- printToTempFile "ll" (show (ppLLVM (ppModule m')))
+      parsed <- liftIO $ printToTempFile "ll" (show (ppLLVM (ppModule m')))
+      Roundtrip roundtrip <- gets rndTrip
       -- stripComments _keep parsed
       if roundtrip
       then do
-        tmp2 <- printToTempFile "ast" (ppShow (normalizeModule m'))
+        tmp2 <- liftIO $ printToTempFile "ast" (ppShow (normalizeModule m'))
         return (parsed, Just tmp2)
       else return (parsed, Nothing)
 
