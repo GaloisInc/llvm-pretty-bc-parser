@@ -571,7 +571,9 @@ compileToBitCode pfx file = do
   Clang comp <- gets clang
   X.bracketOnError
     (liftIO $ openBinaryTempFile tmp (pfx <.> "bc"))
-    (\(bc,_) -> rmFile bc)
+    (\(bc,_) -> do exists <- liftIO $ doesFileExist bc
+                   when exists $ rmFile bc
+    )
     $ \(bc,h) ->
         do liftIO $ hClose h
            callProc comp ["-c", "-emit-llvm", "-O0", "-g", "-o", bc, file]
