@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
@@ -19,11 +20,15 @@ import           Data.Functor ( (<&>) )
 import           Data.Generics (everywhere, mkT) -- SYB
 import           Data.List ( isInfixOf, sort )
 import           Data.Proxy ( Proxy(..) )
+import           Data.String.Interpolate
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
 import           Data.Versions (Versioning, versioning, prettyV, major)
 import qualified GHC.IO.Exception as GE
 import qualified Options.Applicative as OA
+import qualified Prettyprinter as PP
+import qualified Prettyprinter.Util as PPU
+import qualified System.Console.Terminal.Size as Term
 import           System.Directory (getTemporaryDirectory, removeFile)
 import           System.Exit (ExitCode(..), exitFailure, exitSuccess)
 import           System.FilePath ( (<.>) )
@@ -38,6 +43,73 @@ import qualified Test.Tasty.Sugar as TS
 import           Text.Read (readMaybe)
 import           Text.Show.Pretty (ppShow)
 
+
+descr :: PP.Doc ann
+descr = PP.vcat $
+  let block = PPU.reflow in
+  [ block [iii|
+ This test verifies that the llvm-pretty-bc-parser is capable of
+ parsing bitcode properly."
+      |]
+  , ""
+  , block [iii|
+ The method it uses is to start with a known .ll file (LLVM text assembly
+ format) and assemble it to LLVM bitcode (via llvm-as from the LLVM tool
+ suite). Then the test will use both llvm-dis (from the LLVM tool suite)
+ and llvm-disasm (from this package, via direct library calls) to convert
+ that bitcode back into the .ll text format, and also (for the latter) into
+ an AST representation.
+       |]
+  , ""
+  , "          +-------------[2nd cycle]------------+"
+  , "          |                                    |"
+  , "          v                                    |"
+  , " .ll --[llvm-as]--> .bc ---[llvm-dis]--> .ll   |"
+  , "                         `-[llvm-disasm]---> .ll"
+  , "                                         `-> .AST"
+  , "                                               |"
+  , "                                             [show]"
+  , "                                               |"
+  , "                                               v"
+  , "      [compare first and second of these:]   .txt"
+  , ""
+  , block [iii|
+ The differences between the two .ll text formats
+ are displayed for user information, but differences do not constitute a
+ test failure.  The .ll text file obtained from llvm-disasm is then
+ *re-assembled* into another bitcode file, which is again converted back to
+ both .ll and AST formats (repeating the above actions, thus any
+ differences in the .ll files may be displayed twice.  Finally, the two
+ AST's are serialized to text and the resulting text is compared for
+ differences.  The tests will fail if any of the conversion steps fail, or
+ if there are differences between the first round-trip .ll file and the
+ second round-trip .ll file produced by llvm-pretty-bc-parser.
+       |]
+  , ""
+  , PP.indent 2 $ PP.hang 2 $ block
+    [iii|* If opaque pointers are present, *all* pointers are
+           converted to opaque pointers.  This is because the LLVM
+           tools are stricter about opaque pointers, whereas this
+           package is more permissive. Opaque pointers are
+           the standard in LLVM 15.
+      |]
+  , ""
+  , PP.indent 2 $ PP.hang 2 $ block
+    [iii|* Metadata information between the two AST text formats is *not*
+           compared (and is actually discarded before serialization, resetting
+           all indices to zero).  This is because metadata indexes are
+           dynamically generated and therefore unstable.
+        |]
+  , ""
+  , PP.indent 2 $ PP.hang 2 $ block
+    [iii|* If the --roundtrip-disabled option is specified on the command line,
+           then only one assembly-disassembly will be performed and
+           the results will not be compared to anything (although any
+           llvm-dis/llvm-disasm differences will still be shown).
+           This mode ensures that the llvm-disasm will not fail, but
+           it does not validate the results.
+        |]
+  ]
 
 -- Option Parsing --------------------------------------------------------------
 
@@ -68,7 +140,7 @@ newtype Roundtrip = Roundtrip Bool
 instance TO.IsOption Roundtrip where
   defaultValue = Roundtrip True
   parseValue = fmap Roundtrip . TO.safeReadBool
-  optionName = pure "roundtrip"
+  optionName = pure "roundtrip-disabled"
   optionHelp = pure "disable roundtrip tests (AST/AST diff)"
   showDefaultValue (Roundtrip r) = Just $ show r
   optionCLParser = TO.mkOptionCLParser $
@@ -104,10 +176,13 @@ parseCmdLine = do
         TR.ingredientsOptions disasmTestIngredients
       (disasmOptWarns, disasmOptParser) = TR.optionParser disasmOptDescrs
   mapM_ (hPutStrLn IO.stderr) disasmOptWarns
-  OA.execParser $
+  ts <- maybe 80 Term.width <$> Term.size
+  let pr = OA.prefs $ OA.columns ts
+  OA.customExecParser pr $
     OA.info (OA.helper <*> disasmOptParser)
-    ( OA.fullDesc <>
-      OA.header "llvm-pretty-bc-parser disassembly test suite"
+    ( OA.fullDesc
+      <> OA.header "llvm-pretty-bc-parser disassembly test suite"
+      <> OA.footerDoc (Just $ PP.align descr)
     )
 
 
