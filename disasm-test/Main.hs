@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -13,14 +14,13 @@ import qualified Control.Monad.Catch as X
 import qualified Control.Exception as EX
 import           Control.Lens ( (^?), _Right )
 import           Control.Monad ( unless, when )
-import           Control.Monad.IO.Class ( liftIO )
+import           Control.Monad.IO.Class ( MonadIO, liftIO )
 import           Control.Monad.Trans.State
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as L
 import           Data.Char (ord,isLetter,isSpace,chr)
-import           Data.Functor ( (<&>) )
 import           Data.Generics (everywhere, mkT) -- SYB
-import           Data.List ( isInfixOf, sort )
+import           Data.List ( isInfixOf, nub, sort )
 import           Data.Proxy ( Proxy(..) )
 import           Data.String.Interpolate
 import qualified Data.Text as T
@@ -52,25 +52,37 @@ descr = PP.vcat $
   let block = PPU.reflow in
   [ block [iii|
  This test verifies that the llvm-pretty-bc-parser is capable of
- parsing bitcode properly."
+ parsing bitcode properly.  This is done by two sets of operations:
+ one which uses the llvm-as assembler to generate bitcode from .ll files
+ (text assembly in LLVM format), and one which uses the clang compiler to
+ generate bitcode from C files; this library should be able to parse both
+ types of generated bitcode files.
       |]
   , ""
   , block [iii|
- The method it uses is to start with a known .ll file (LLVM text assembly
- format) and assemble it to LLVM bitcode (via llvm-as from the LLVM tool
+ The assembler test method starts with a known .ll file (LLVM text assembly
+ format) and assembles it to LLVM bitcode (via llvm-as from the LLVM tool
  suite). Then the test will use both llvm-dis (from the LLVM tool suite)
  and llvm-disasm (from this package, via direct library calls) to convert
  that bitcode back into the .ll text format, and also (for the latter) into
  an AST representation.
        |]
   , ""
+  , block [iii|
+ The compiler test method starts with a known .c file and uses clang to directly
+ generate a bitcode file.  The test then proceeds just as with the assembler
+ test.  The only difference therefore is the starting file and first command
+ used on that file, but the compiler method will usually generate more variance
+ in the bitcode files as the compiler version changes.
+       |]
+  , ""
   , "          +-------------[2nd cycle]------------+"
   , "          |                                    |"
   , "          v                                    |"
   , " .ll --[llvm-as]--> .bc ---[llvm-dis]--> .ll   |"
-  , "                         `-[llvm-disasm]---> .ll"
-  , "                                         `-> .AST"
-  , "                                               |"
+  , "                     ^   `-[llvm-disasm]---> .ll"
+  , "                     |                   `-> .AST"
+  , " .c --[clang]--------+                         |"
   , "                                             [show]"
   , "                                               |"
   , "                                               v"
@@ -138,6 +150,17 @@ instance TO.IsOption LLVMDis where
   optionCLParser = TO.mkOptionCLParser $
     OA.metavar "FILEPATH"
 
+newtype Clang = Clang FilePath
+
+instance TO.IsOption Clang where
+  defaultValue = Clang "clang"
+  parseValue = Just . Clang
+  optionName = pure "with-clang"
+  optionHelp = pure "path to clang"
+  showDefaultValue (Clang dis) = Just dis
+  optionCLParser = TO.mkOptionCLParser $
+    OA.metavar "FILEPATH"
+
 newtype Roundtrip = Roundtrip Bool
 
 instance TO.IsOption Roundtrip where
@@ -175,11 +198,12 @@ disasmTestIngredients :: [TR.Ingredient]
 disasmTestIngredients =
   includingOptions [ TO.Option (Proxy @LLVMAs)
                    , TO.Option (Proxy @LLVMDis)
+                   , TO.Option (Proxy @Clang)
                    , TO.Option (Proxy @Roundtrip)
                    , TO.Option (Proxy @Keep)
                    , TO.Option (Proxy @Details)
                    ] :
-  TS.sugarIngredients [cube]
+  TS.sugarIngredients [ assemblyCube, compilerCube ]
   <> defaultIngredients
 
 parseCmdLine :: IO TO.OptionSet
@@ -223,12 +247,15 @@ getLLVMAsVersion (LLVMAs llvmAsPath) = getLLVMToolVersion "llvm-as" llvmAsPath
 getLLVMDisVersion :: LLVMDis -> IO VersionCheck
 getLLVMDisVersion (LLVMDis llvmDisPath) = getLLVMToolVersion "llvm-dis" llvmDisPath
 
+getClangVersion :: Clang -> IO VersionCheck
+getClangVersion (Clang clangPath) = getLLVMToolVersion "clang" clangPath
+
 -- Determine which version of an LLVM tool will be used for these tests (if
 -- possible).  Uses partial 'head' but this is just tests, and failure is
 -- captured.
 getLLVMToolVersion :: String -> FilePath -> IO VersionCheck
 getLLVMToolVersion toolName toolPath = do
-  let isVerLine = isInfixOf "LLVM version"
+  let isVerLine l = isInfixOf "LLVM version" l || isInfixOf "clang version" l
       dropLetter = dropWhile (all isLetter)
       getVer (Right inp) =
         -- example inp: "LLVM version 10.0.1" or "clang version 11.1.0"
@@ -274,22 +301,33 @@ main =  do
 
   let llvmAs'  = TO.lookupOption disasmOpts
       llvmDis' = TO.lookupOption disasmOpts
+      clang'   = TO.lookupOption disasmOpts
 
   llvmAsVC <- getLLVMAsVersion llvmAs'
   llvmDisVC <- getLLVMDisVersion llvmDis'
-  unless (vcVersioning llvmAsVC == vcVersioning llvmDisVC) $
+  clangVC <- getClangVersion clang'
+  unless (and [ vcVersioning llvmAsVC == vcVersioning llvmDisVC
+              , vcVersioning llvmAsVC == vcVersioning clangVC
+              ]) $
     error $ unlines
-      [ "Unexpected version mismatch between llvm-as and llvm-dis"
+      [ "Unexpected version mismatch between clang, llvm-as and llvm-dis"
       , "* llvm-as  version: " ++ showVC llvmAsVC
       , "* llvm-dis version: " ++ showVC llvmDisVC
+      , "* clang    version: " ++ showVC clangVC
       ]
 
-  sweets <- TS.findSugar cube
-  tests <- TS.withSugarGroups sweets testGroup $ \s _ e -> runTest s e
+  sweets1 <- TS.findSugar assemblyCube
+  sweets2 <- TS.findSugar compilerCube
+  atests <- TS.withSugarGroups sweets1 testGroup $ \s _ e -> runAssemblyTest s e
+  ctests <- TS.withSugarGroups sweets2 testGroup $ \s _ e -> runCompileTest s e
+  let tests = atests <> ctests
   case TR.tryIngredients
          disasmTestIngredients
          disasmOpts
-         (testGroup "Disassembly tests" [testGroup (showVC llvmAsVC) tests]) of
+         (testGroup "Disassembly tests"
+          [ testGroup (showVC llvmAsVC) atests
+          , testGroup (showVC clangVC) ctests
+          ]) of
     Nothing ->
       hPutStrLn IO.stderr
         "No ingredients agreed to run. Something is wrong either with your ingredient set or the options."
@@ -300,8 +338,11 @@ main =  do
   defaultMainWithIngredients disasmTestIngredients $
     testGroup "Disassembly tests" tests
 
-cube :: TS.CUBE
-cube = TS.mkCUBE
+----------------------------------------------------------------------
+-- Assembly/disassembly tests
+
+assemblyCube :: TS.CUBE
+assemblyCube = TS.mkCUBE
   { TS.inputDirs = ["disasm-test/tests"]
   , TS.rootName = "*.ll"
   , TS.separators = "."
@@ -318,36 +359,34 @@ cube = TS.mkCUBE
     -- llvm-pretty-bc-parser, pretty-printing it with llvm-pretty, and
     -- then normalizing it. As such, each .ll file acts as its own golden file.
   , TS.expectedSuffix = "ll"
-  , TS.sweetAdjuster = \cb swts -> do
-      -- Performed ranged-matching of the llvm-range parameter against the
-      -- version of llvm (reported by llvm-as) to filter the tasty-sugar
-      -- expectations.
-      disasmOpts <- liftIO parseCmdLine
-      llvmver <- liftIO $ getLLVMAsVersion $ TO.lookupOption disasmOpts
-      ss <- TS.rangedParamAdjuster "llvm-range"
-            (readMaybe . drop (length ("pre-llvm" :: String)))
-            (<)
-            (vcVersioning llvmver ^? (_Right . major))
-            cb swts
-      -- In addition, this is a round-trip test (assemble + disassemble) where
-      -- the rootname is the same as the expected name.  Filter out any
-      -- expectations that don't match the root name.
+  , TS.sweetAdjuster = \cb ->
+      -- In addition to range matching, this is a round-trip test (assemble +
+      -- disassemble) where the rootname is the same as the expected name.
+      -- Filter out any expectations that don't match the root name.
       -- (e.g. remove: root=poison.ll with exp=poison.pre-llvm12.ll).
       let rootExpSame s e = TS.rootFile s == TS.expectedFile e
-      return $ ss
-        <&> \s -> s { TS.expected = filter (rootExpSame s) $ TS.expected s }
+          addExpFilter s = s { TS.expected = filter (rootExpSame s) $ TS.expected s }
+      in fmap (fmap addExpFilter) . rangeMatch cb
   }
 
--- | A test failure.
-data TestFailure
-  = ParseError Error -- ^ A parser failure.
-    deriving (Typeable,Show)
 
-instance X.Exception TestFailure
+rangeMatch :: MonadIO m => TS.CUBE -> [TS.Sweets] -> m [TS.Sweets]
+rangeMatch cb swts = do
+  -- Perform ranged-matching of the llvm-range parameter against the
+  -- version of llvm (reported by llvm-as) to filter the tasty-sugar
+  -- expectations.
+  disasmOpts <- liftIO $ parseCmdLine
+  llvmver <- liftIO $ getLLVMAsVersion $ TO.lookupOption disasmOpts
+  TS.rangedParamAdjuster "llvm-range"
+    (readMaybe . drop (length ("pre-llvm" :: String)))
+    (<)
+    (vcVersioning llvmver ^? (_Right . major))
+    cb swts
+
 
 -- | Attempt to compare the assembly generated by llvm-pretty and llvm-dis.
-runTest :: TS.Sweets -> TS.Expectation -> IO [TestTree]
-runTest sweet expct
+runAssemblyTest :: TS.Sweets -> TS.Expectation -> IO [TestTree]
+runAssemblyTest sweet expct
   = do -- If an .ll file begins with SKIP_TEST, skip that test entirely. For
        -- test cases that require a minimum LLVM version, this technique is
        -- used to prevent running the test on older LLVM versions.
@@ -356,69 +395,130 @@ runTest sweet expct
        if skipTest
          then pure []
          else pure $ (:[]) $
-           askOption $ \llvmAs' ->
-           askOption $ \llvmDis' ->
-           askOption $ \roundtrip ->
-           askOption $ \keep ->
-           askOption $ \details ->
-           testCase pfx
-           $ flip evalStateT (TestState { keepTemp = keep
-                                        , rndTrip = roundtrip
-                                        , showDetails = details
-                                        , llvmAs = llvmAs'
-                                        , llvmDis = llvmDis'
-                                        })
-           $ with2Files (processLL pfx file) $ \(parsed1, ast) ->
+           testCaseM pfx
+           $ with2Files (processLL pfx $ TS.rootFile sweet) $ \(parsed1, ast) ->
              case ast of
                Nothing   -> return ()
                Just ast1 ->
                  -- Re-assemble and re-disassemble
                  with2Files (processLL pfx parsed1) $ \(_, Just ast2) -> do
-                 diff ast1 ast2 -- Ensure that the ASTs match
+                 diffCmp ast1 ast2 -- Ensure that the ASTs match
 
-                 -- Ensure that the disassembled files match.
-                 -- This is usually too strict (and doesn't really provide more info).
-                 -- We normalize the AST (see below) to ensure that the ASTs match modulo
-                 -- metadata numbering, but the equivalent isn't possible for the
-                 -- assembly: we need llvm-as to be able to re-assemble it.
-                 -- diff parsed1 parsed2
+                 -- Ensure that the disassembled files match.  This is usually
+                 -- too strict (and doesn't really provide more info).  We
+                 -- normalize the AST (see below) to ensure that the ASTs match
+                 -- modulo metadata numbering, but the equivalent isn't possible
+                 -- for the assembly: we need llvm-as to be able to re-assemble
+                 -- it.
+                 --
+                 -- diffCmp parsed1 parsed2
+  where pfx = TS.rootBaseName sweet
 
-  where file  = TS.rootFile sweet
-        pfx   = TS.rootBaseName sweet
-        assertF ls = liftIO $ assertFailure $ unlines ls
-        diff file1 file2 = do
-          (code, stdout, stderr) <- liftIO $
-            Proc.readCreateProcessWithExitCode (Proc.proc "diff" ["-u", file1, file2]) ""
-          case code of
-            ExitFailure _ -> assertF ["diff failed", stdout, stderr]
-            ExitSuccess   ->
-              if stdout /= "" || stderr /= ""
-              then assertF ["non-empty diff", stdout, stderr]
-              else do Details dets <- gets showDetails
-                      when dets $ liftIO
-                        $ mapM_ putStrLn ["success: empty diff: ", file1, file2]
 
+diffCmp :: FilePath -> FilePath -> TestM ()
+diffCmp file1 file2 = do
+  let assertF = liftIO . assertFailure . unlines
+  (code, stdout, stderr) <- liftIO $
+    Proc.readCreateProcessWithExitCode (Proc.proc "diff" ["-u", file1, file2]) ""
+  case code of
+    ExitFailure _ -> assertF ["diff failed", stdout, stderr]
+    ExitSuccess   ->
+      if stdout /= "" || stderr /= ""
+      then assertF ["non-empty diff", stdout, stderr]
+      else do Details det <- gets showDetails
+              when det $ liftIO
+                $ mapM_ putStrLn ["success: empty diff: ", file1, file2]
+
+
+-- Assembles the specified .ll file to bitcode, then disassembles it with
+-- llvm-dis.  Also parses the bitcode with this library (effectively llvm-disasm)
+-- and prints the difference between the parsed version and the .ll file.
+-- Returns the library parsed version and the serialized AST from the library.
 
 processLL :: FilePath -> FilePath -> TestM (FilePath, Maybe FilePath)
 processLL pfx f = do
-  Details dets <- gets showDetails
-  when dets $ liftIO $ putStrLn (showString f ": ")
-  X.handle logError $
-    withFile (assembleToBitCode pfx f)  $ \ bc   ->
-    withFile (disasmBitCode pfx bc) $ \ norm -> do
-      (parsed, ast) <- processBitCode pfx bc
-      when dets $ liftIO $ do
-        ignore (Proc.callProcess "diff" ["-u", norm, parsed])
-        putStrLn ("successfully parsed " ++ show f)
-      return (parsed, ast)
+  Details det <- gets showDetails
+  when det $ liftIO $ putStrLn (showString f ": ")
+  X.handle logError
+    $ withFile (assembleToBitCode pfx f)
+    $ parseBC pfx
   where
     logError (ParseError msg) =
       liftIO $ assertFailure $ unlines
       $ "failure" : map ("; " ++) (lines (formatError msg))
 
+parseBC :: FilePath -> FilePath -> TestM (FilePath, Maybe FilePath)
+parseBC pfx bc = do
+  withFile (disasmBitCode pfx bc) $ \ norm -> do
+    (parsed, ast) <- processBitCode pfx bc
+    Details dets <- gets showDetails
+    when dets $ liftIO $ do
+      -- Informationally display if there are differences between the llvm-dis
+      -- and llvm-disasm outputs, but no error if they differ.
+      ignore (Proc.callProcess "diff" ["-u", norm, parsed])
+      putStrLn ("successfully parsed " ++ show pfx ++ " bitcode")
+    return (parsed, ast)
+
+----------------------------------------------------------------------
+-- Compiler->Assembly->Disassembly tests
+
+-- The compilation tests ensure that the clang version-specific generated .bc
+-- file can be reasonably parsed by this library.  This is a parallel to the
+-- assemblyCube-driven tests, but starts with a C source file.  One distinction
+-- is that the .ll used for the assemblyCube is typically representative of a
+-- specific LLVM version, and while it is assembled and disassembled by newer
+-- versions of LLVM tools, it will never introduce any newer element, whereas the
+-- clang-generated bitcode will contain version-current output which might have
+-- newer elements and ordering.
+--
+-- The compilerCube uses .c files as the input, and .ll files for the expected
+-- output.  The assemblyCube uses the .ll file as both input and output.  The
+-- actual testing done is very similar, and the assemblyCube always generates a
+-- superset of the compilerCube tests (i.e. when no .c file is present).
+
+compilerCube :: TS.CUBE
+compilerCube = assemblyCube
+               { TS.rootName = "*.c"
+               , TS.sweetAdjuster = rangeMatch
+               }
+
+
+runCompileTest :: TS.Sweets -> TS.Expectation -> IO [TestTree]
+runCompileTest sweet expct = do
+  skipTest <- ("SKIP_TEST" `L.isPrefixOf`) <$> L.readFile (TS.expectedFile expct)
+  if skipTest
+    then return []
+    else return $ (:[])
+         $ let pfx = TS.rootBaseName sweet
+           in testCaseM pfx
+              $ withFile (compileToBitCode pfx $ TS.rootFile sweet)
+              $ \bc ->
+                  with2Files (parseBC pfx bc)
+                  $ \(parsed1, ast) ->
+                      case ast of
+                        Nothing ->
+                          -- No round trip, so this just verifies that the
+                          -- bitcode could be parsed without generating an error.
+                          return ()
+                        Just ast1 ->
+                          -- Assemble and re-parse the bitcode to make sure it
+                          -- can be round-tripped successfully.
+                          with2Files (processLL pfx parsed1)
+                          $ \(_, Just ast2) -> diffCmp ast1 ast2
+                            -- .ll files are not compared; see runAssemblyTest
+                            -- for details.
+
 
 ----------------------------------------------------------------------
 -- Helpers
+
+-- | A test failure.
+data TestFailure
+  = ParseError Error -- ^ A parser failure
+    deriving (Typeable,Show)
+
+instance X.Exception TestFailure
+
 
 -- This structure essentially recapitulates the TestOptions, but in a way that
 -- they will be accessible in a TestTree (via: StateT TestState IO a).
@@ -427,9 +527,26 @@ data TestState = TestState { keepTemp :: Keep
                            , showDetails :: Details
                            , llvmAs :: LLVMAs
                            , llvmDis :: LLVMDis
+                           , clang :: Clang
                            }
 
 type TestM a = StateT TestState IO a
+
+testCaseM :: FilePath -> TestM () -> TestTree
+testCaseM pfx ops =
+  askOption $ \llvmAs' ->
+  askOption $ \llvmDis' ->
+  askOption $ \roundtrip ->
+  askOption $ \keep ->
+  askOption $ \details ->
+  askOption $ \clang' ->
+  testCase pfx $ evalStateT ops (TestState { keepTemp = keep
+                                           , rndTrip = roundtrip
+                                           , showDetails = details
+                                           , llvmAs = llvmAs'
+                                           , llvmDis = llvmDis'
+                                           , clang = clang'
+                                           })
 
 
 -- | Assemble some llvm assembly, producing a bitcode file in /tmp.
@@ -445,6 +562,19 @@ assembleToBitCode pfx file = do
     $ \(bc,h) ->
         do liftIO $ hClose h
            callProc asm ["-o", bc, file]
+           return bc
+
+-- | Compile a C or C++ source, producing a bitcode file in /tmp.
+compileToBitCode :: FilePath -> FilePath -> TestM FilePath
+compileToBitCode pfx file = do
+  tmp <- liftIO getTemporaryDirectory
+  Clang comp <- gets clang
+  X.bracketOnError
+    (liftIO $ openBinaryTempFile tmp (pfx <.> "bc"))
+    (\(bc,_) -> rmFile bc)
+    $ \(bc,h) ->
+        do liftIO $ hClose h
+           callProc comp ["-c", "-emit-llvm", "-O0", "-o", bc, file]
            return bc
 
 -- | Use llvm-dis to parse a bitcode file, to obtain a normalized version of the
@@ -499,6 +629,7 @@ processBitCode pfx file = do
     Left err -> X.throwM (ParseError err)
     Right m  -> do
       let m' = AST.fixupOpaquePtrs m
+      postParseTests m'
       parsed <- liftIO $ printToTempFile "ll" (show (ppLLVM (ppModule m')))
       Roundtrip roundtrip <- gets rndTrip
       -- stripComments parsed
@@ -511,6 +642,23 @@ processBitCode pfx file = do
       else do
         when det $ liftIO $ putStrLn $ "## parsed Bitcode to " <> parsed
         return (parsed, Nothing)
+
+
+postParseTests :: AST.Module -> TestM ()
+postParseTests m = ensureValidMetadataIndices m
+  where
+    ensureValidMetadataIndices md = do
+      let idxs = AST.umIndex <$> AST.modUnnamedMd md
+      let uniqIdxs = nub idxs
+      let numDups = length idxs - length uniqIdxs
+      unless (numDups == 0)
+        $ do Details det <- gets showDetails
+             when det $ liftIO
+               $ putStrLn $ "Unnamed MetaData indices: " <> show idxs
+             liftIO $ assertFailure
+               $ show numDups <> " duplicated Unnamed MetaData indices"
+
+
 
 -- | Remove comments from a .ll file, stripping everything including the
 -- semi-colon.
