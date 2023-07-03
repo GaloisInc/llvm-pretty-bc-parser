@@ -31,7 +31,8 @@ import qualified Options.Applicative as OA
 import qualified Prettyprinter as PP
 import qualified Prettyprinter.Util as PPU
 import qualified System.Console.Terminal.Size as Term
-import           System.Directory (getTemporaryDirectory, removeFile)
+import           System.Directory ( doesFileExist, getTemporaryDirectory
+                                  , removeFile )
 import           System.Exit (ExitCode(..), exitFailure, exitSuccess)
 import           System.FilePath ( (<.>) )
 import           System.IO (openBinaryTempFile,hClose,openTempFile,hPutStrLn)
@@ -438,7 +439,9 @@ assembleToBitCode pfx file = do
   LLVMAs asm <- gets llvmAs
   X.bracketOnError
     (liftIO $ openBinaryTempFile tmp (pfx <.> "bc"))
-    (\(bc,_) -> rmFile bc)
+    (\(bc,_) -> do exists <- liftIO $ doesFileExist bc
+                   when exists $ rmFile bc
+    )
     $ \(bc,h) ->
         do liftIO $ hClose h
            callProc asm ["-o", bc, file]
@@ -452,7 +455,9 @@ disasmBitCode pfx file = do
   LLVMDis dis <- gets llvmDis
   X.bracketOnError
     (liftIO $ openTempFile tmp (pfx ++ "llvm-dis" <.> "ll"))
-    (\(norm,_) -> rmFile norm)
+    (\(norm,_) -> do exists <- liftIO $ doesFileExist norm
+                     when exists $ rmFile norm
+    )
     $ \(norm,h) ->
         do liftIO $ hClose h
            callProc dis ["-o", norm, file]
