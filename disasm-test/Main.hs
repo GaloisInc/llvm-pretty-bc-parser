@@ -265,7 +265,7 @@ getLLVMToolVersion toolName toolPath = do
           [] -> "NO VERSION IDENTIFIED FOR " <> toolName
           (l:_) -> case dropLetter $ words l of
             [] -> toolName <> " VERSION NOT PARSED: " <> l
-            (v:_) -> v
+            (v:_) -> fst $ break (== '-') v -- remove vendor suffix (e.g. 12.0.1-19ubuntu3)
       getVer (Left full) = full
   mkVC toolName . getVer <$> readProcessVersion toolPath
 
