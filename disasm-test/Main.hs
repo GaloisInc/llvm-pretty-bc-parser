@@ -403,8 +403,8 @@ processLL pfx f = do
   Details dets <- gets showDetails
   when dets $ liftIO $ putStrLn (showString f ": ")
   X.handle logError $
-    withFile (generateBitCode  pfx f)  $ \ bc   ->
-    withFile (normalizeBitCode pfx bc) $ \ norm -> do
+    withFile (assembleToBitCode pfx f)  $ \ bc   ->
+    withFile (disasmBitCode pfx bc) $ \ norm -> do
       (parsed, ast) <- processBitCode pfx bc
       when dets $ liftIO $ do
         ignore (Proc.callProcess "diff" ["-u", norm, parsed])
@@ -432,8 +432,8 @@ type TestMonad a = StateT TestState IO a
 
 
 -- | Assemble some llvm assembly, producing a bitcode file in /tmp.
-generateBitCode :: FilePath -> FilePath -> TestMonad FilePath
-generateBitCode pfx file = do
+assembleToBitCode :: FilePath -> FilePath -> TestMonad FilePath
+assembleToBitCode pfx file = do
   tmp <- liftIO getTemporaryDirectory
   LLVMAs asm <- gets llvmAs
   X.bracketOnError
@@ -446,8 +446,8 @@ generateBitCode pfx file = do
 
 -- | Use llvm-dis to parse a bitcode file, to obtain a normalized version of the
 -- llvm assembly.
-normalizeBitCode :: FilePath -> FilePath -> TestMonad FilePath
-normalizeBitCode pfx file = do
+disasmBitCode :: FilePath -> FilePath -> TestMonad FilePath
+disasmBitCode pfx file = do
   tmp <- liftIO $ getTemporaryDirectory
   LLVMDis dis <- gets llvmDis
   X.bracketOnError
