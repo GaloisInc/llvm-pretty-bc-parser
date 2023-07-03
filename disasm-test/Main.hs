@@ -461,7 +461,7 @@ disasmBitCode pfx file = do
     $ \(norm,h) ->
         do liftIO $ hClose h
            callProc dis ["-o", norm, file]
-           -- stripComments _keep norm
+           -- stripComments norm
            return norm
 
 -- | Usually, the ASTs aren't "on the nose" identical.
@@ -501,7 +501,7 @@ processBitCode pfx file = do
       let m' = AST.fixupOpaquePtrs m
       parsed <- liftIO $ printToTempFile "ll" (show (ppLLVM (ppModule m')))
       Roundtrip roundtrip <- gets rndTrip
-      -- stripComments _keep parsed
+      -- stripComments parsed
       Details det <- gets showDetails
       if roundtrip
       then do
@@ -514,14 +514,15 @@ processBitCode pfx file = do
 
 -- | Remove comments from a .ll file, stripping everything including the
 -- semi-colon.
-stripComments :: Keep -> FilePath -> IO ()
-stripComments (Keep keep) path = do
-  bytes <- L.readFile path
-  when (not keep) (removeFile path)
+stripComments :: FilePath -> TestM ()
+stripComments path = do
+  Keep keep <- gets keepTemp
+  bytes <- liftIO $ L.readFile path
+  when (not keep) $ rmFile path
   mapM_ (writeLine . dropComments) (bsLines bytes)
   where
   writeLine bs | L.null bs = return ()
-               | otherwise = do
+               | otherwise = liftIO $ do
                  L.appendFile path bs
                  L.appendFile path (L.singleton 0x0a)
 
