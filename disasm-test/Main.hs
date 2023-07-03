@@ -497,11 +497,15 @@ processBitCode pfx file = do
       parsed <- liftIO $ printToTempFile "ll" (show (ppLLVM (ppModule m')))
       Roundtrip roundtrip <- gets rndTrip
       -- stripComments _keep parsed
+      Details det <- gets showDetails
       if roundtrip
       then do
         tmp2 <- liftIO $ printToTempFile "ast" (ppShow (normalizeModule m'))
+        when det $ liftIO $ putStrLn $ "## parsed Bitcode to " <> parsed <> " and " <> tmp2
         return (parsed, Just tmp2)
-      else return (parsed, Nothing)
+      else do
+        when det $ liftIO $ putStrLn $ "## parsed Bitcode to " <> parsed
+        return (parsed, Nothing)
 
 -- | Remove comments from a .ll file, stripping everything including the
 -- semi-colon.
