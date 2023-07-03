@@ -13,7 +13,7 @@ import qualified Control.Monad.Catch as X
 import qualified Control.Exception as EX
 import           Control.Lens ( (^?), _Right )
 import           Control.Monad ( unless, when )
-import           Control.Monad.IO.Class ( MonadIO, liftIO )
+import           Control.Monad.IO.Class ( liftIO )
 import           Control.Monad.Trans.State
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as L
@@ -259,11 +259,11 @@ main =  do
   -- result, we have to resort to using more of tasty's internals here.
   disasmOpts <- parseCmdLine
 
-  let llvmAs  = TO.lookupOption disasmOpts
-      llvmDis = TO.lookupOption disasmOpts
+  let llvmAs'  = TO.lookupOption disasmOpts
+      llvmDis' = TO.lookupOption disasmOpts
 
-  llvmAsVC <- getLLVMAsVersion llvmAs
-  llvmDisVC <- getLLVMDisVersion llvmDis
+  llvmAsVC <- getLLVMAsVersion llvmAs'
+  llvmDisVC <- getLLVMDisVersion llvmDis'
   unless (vcVersioning llvmAsVC == vcVersioning llvmDisVC) $
     error $ unlines
       [ "Unexpected version mismatch between llvm-as and llvm-dis"
@@ -343,14 +343,18 @@ runTest sweet expct
        if skipTest
          then pure []
          else pure $ (:[]) $
-           askOption $ \llvmAs ->
-           askOption $ \llvmDis ->
+           askOption $ \llvmAs' ->
+           askOption $ \llvmDis' ->
            askOption $ \roundtrip ->
            askOption $ \keep ->
            testCase pfx
-           $ flip evalStateT (TestState { keepTemp = keep, rndTrip = roundtrip })
+           $ flip evalStateT (TestState { keepTemp = keep
+                                        , rndTrip = roundtrip
+                                        , llvmAs = llvmAs'
+                                        , llvmDis = llvmDis'
+                                        })
            $ do
-             let procLL = processLL llvmAs llvmDis pfx
+             let procLL = processLL pfx
              (parsed1, ast) <- procLL file
              case ast of               -- this Maybe also encodes the data of optRoundtrip
                Nothing   -> return ()
@@ -377,13 +381,12 @@ runTest sweet expct
               else mapM_ putStrLn ["success: empty diff: ", file1, file2]
 
 
-processLL :: LLVMAs -> LLVMDis -> FilePath -> FilePath
-          -> TestMonad (FilePath, Maybe FilePath)
-processLL llvmAs llvmDis pfx f = do
+processLL :: FilePath -> FilePath -> TestMonad (FilePath, Maybe FilePath)
+processLL pfx f = do
   liftIO $ putStrLn (showString f ": ")
   X.handle logError $
-    withFile (generateBitCode    llvmAs  pfx f)  $ \ bc   ->
-    withFile (normalizeBitCode llvmDis pfx bc) $ \ norm -> do
+    withFile (generateBitCode  pfx f)  $ \ bc   ->
+    withFile (normalizeBitCode pfx bc) $ \ norm -> do
       (parsed, ast) <- processBitCode pfx bc
       liftIO $ ignore (Proc.callProcess "diff" ["-u", norm, parsed])
       liftIO $ putStrLn ("successfully parsed " ++ show f)
@@ -397,30 +400,36 @@ processLL llvmAs llvmDis pfx f = do
 ----------------------------------------------------------------------
 -- Helpers
 
+-- This structure essentially recapitulates the TestOptions, but in a way that
+-- they will be accessible in a TestTree (via: StateT TestState IO a).
 data TestState = TestState { keepTemp :: Keep
                            , rndTrip :: Roundtrip
+                           , llvmAs :: LLVMAs
+                           , llvmDis :: LLVMDis
                            }
 
 type TestMonad a = StateT TestState IO a
 
 
 -- | Assemble some llvm assembly, producing a bitcode file in /tmp.
-generateBitCode :: MonadIO m => LLVMAs -> FilePath -> FilePath -> m FilePath
-generateBitCode (LLVMAs llvmAs) pfx file = liftIO $ do
-  tmp    <- getTemporaryDirectory
-  (bc,h) <- openBinaryTempFile tmp (pfx <.> "bc")
-  hClose h
-  callProc llvmAs ["-o", bc, file]
+generateBitCode :: FilePath -> FilePath -> TestMonad FilePath
+generateBitCode pfx file = do
+  tmp    <- liftIO getTemporaryDirectory
+  LLVMAs asm <- gets llvmAs
+  (bc,h) <- liftIO $ openBinaryTempFile tmp (pfx <.> "bc")
+  liftIO $ hClose h
+  liftIO $ callProc asm ["-o", bc, file]
   return bc
 
 -- | Use llvm-dis to parse a bitcode file, to obtain a normalized version of the
 -- llvm assembly.
-normalizeBitCode :: LLVMDis -> FilePath -> FilePath -> TestMonad FilePath
-normalizeBitCode (LLVMDis llvmDis) pfx file = liftIO $ do
-  tmp      <- getTemporaryDirectory
-  (norm,h) <- openTempFile tmp (pfx ++ "llvm-dis" <.> "ll")
-  hClose h
-  callProc llvmDis ["-o", norm, file]
+normalizeBitCode :: FilePath -> FilePath -> TestMonad FilePath
+normalizeBitCode pfx file = do
+  tmp      <- liftIO $ getTemporaryDirectory
+  LLVMDis dis <- gets llvmDis
+  (norm,h) <- liftIO $ openTempFile tmp (pfx ++ "llvm-dis" <.> "ll")
+  liftIO $ hClose h
+  liftIO $ callProc dis ["-o", norm, file]
   -- stripComments _keep norm
   return norm
 
