@@ -399,7 +399,7 @@ runTest sweet expct
                         $ mapM_ putStrLn ["success: empty diff: ", file1, file2]
 
 
-processLL :: FilePath -> FilePath -> TestMonad (FilePath, Maybe FilePath)
+processLL :: FilePath -> FilePath -> TestM (FilePath, Maybe FilePath)
 processLL pfx f = do
   Details dets <- gets showDetails
   when dets $ liftIO $ putStrLn (showString f ": ")
@@ -429,11 +429,11 @@ data TestState = TestState { keepTemp :: Keep
                            , llvmDis :: LLVMDis
                            }
 
-type TestMonad a = StateT TestState IO a
+type TestM a = StateT TestState IO a
 
 
 -- | Assemble some llvm assembly, producing a bitcode file in /tmp.
-assembleToBitCode :: FilePath -> FilePath -> TestMonad FilePath
+assembleToBitCode :: FilePath -> FilePath -> TestM FilePath
 assembleToBitCode pfx file = do
   tmp <- liftIO getTemporaryDirectory
   LLVMAs asm <- gets llvmAs
@@ -449,7 +449,7 @@ assembleToBitCode pfx file = do
 
 -- | Use llvm-dis to parse a bitcode file, to obtain a normalized version of the
 -- llvm assembly.
-disasmBitCode :: FilePath -> FilePath -> TestMonad FilePath
+disasmBitCode :: FilePath -> FilePath -> TestM FilePath
 disasmBitCode pfx file = do
   tmp <- liftIO $ getTemporaryDirectory
   LLVMDis dis <- gets llvmDis
@@ -484,7 +484,7 @@ normalizeModule = sorted . everywhere (mkT zeroValMdRef)
 
 -- | Parse a bitcode file using llvm-pretty, failing the test if the parser
 -- fails.
-processBitCode :: FilePath -> FilePath -> TestMonad (FilePath, Maybe FilePath)
+processBitCode :: FilePath -> FilePath -> TestM (FilePath, Maybe FilePath)
 processBitCode pfx file = do
   let handler :: X.SomeException -> IO (Either Error AST.Module)
       handler se = return (Left (Error [] (show se)))
@@ -553,25 +553,25 @@ ignore  = X.handle f
   where f   :: EX.IOException -> IO ()
         f _ = return ()
 
-callProc :: String -> [String] -> TestMonad ()
+callProc :: String -> [String] -> TestM ()
 callProc p args = do
   Details dets <- gets showDetails
   when dets $ liftIO $ putStrLn ("## Running: " ++ p ++ " " ++ unwords args)
   liftIO $ Proc.callProcess p args
 
-withFile :: TestMonad FilePath -> (FilePath -> TestMonad r) -> TestMonad r
+withFile :: TestM FilePath -> (FilePath -> TestM r) -> TestM r
 withFile iofile f = X.bracket iofile rmFile f
 
-with2Files :: TestMonad (FilePath, Maybe FilePath)
-           -> ((FilePath, Maybe FilePath) -> TestMonad r)
-           -> TestMonad r
+with2Files :: TestM (FilePath, Maybe FilePath)
+           -> ((FilePath, Maybe FilePath) -> TestM r)
+           -> TestM r
 with2Files iofiles f =
   let cleanup (tmp1, mbTmp2) = case mbTmp2 of
                                  Nothing -> rmFile tmp1
                                  Just t2 -> rmFile tmp1 >> rmFile t2
   in X.bracket iofiles cleanup f
 
-rmFile :: FilePath -> TestMonad ()
+rmFile :: FilePath -> TestM ()
 rmFile tmp = do Keep keep <- gets keepTemp
                 unless keep
                   $ do Details dets <- gets showDetails
