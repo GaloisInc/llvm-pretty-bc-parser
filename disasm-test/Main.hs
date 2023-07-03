@@ -39,7 +39,8 @@ import           System.IO (openBinaryTempFile,hClose,openTempFile,hPutStrLn)
 import qualified System.IO as IO (stderr)
 import qualified System.Process as Proc
 import           Test.Tasty
-import           Test.Tasty.ExpectedFailure ( ignoreTestBecause )
+import           Test.Tasty.ExpectedFailure ( ignoreTestBecause
+                                            , expectFailBecause )
 import           Test.Tasty.HUnit ( assertFailure, testCase )
 import qualified Test.Tasty.Options as TO
 import qualified Test.Tasty.Runners as TR
@@ -394,7 +395,9 @@ runAssemblyTest sweet expct
        skipTest <- ("SKIP_TEST" `L.isPrefixOf`) <$> L.readFile (TS.expectedFile expct)
        let tmod = if skipTest
                   then ignoreTestBecause "not valid for this LLVM version"
-                  else id
+                  else case lookup (TS.rootMatchName sweet) knownBugs of
+                         Just why -> expectFailBecause why
+                         Nothing -> id
        let pfx = TS.rootBaseName sweet
        return $ (:[]) $ tmod
          $ testCaseM pfx
@@ -490,7 +493,9 @@ runCompileTest sweet expct = do
   skipTest <- ("SKIP_TEST" `L.isPrefixOf`) <$> L.readFile (TS.expectedFile expct)
   let tmod = if skipTest
              then ignoreTestBecause "not valid for this LLVM version"
-             else id
+             else case lookup (TS.rootMatchName sweet) knownBugs of
+                    Just why -> expectFailBecause why
+                    Nothing -> id
   let pfx = TS.rootBaseName sweet
   return $ (:[]) $ tmod
     $ testCaseM pfx
@@ -730,3 +735,14 @@ rmFile tmp = do Keep keep <- gets keepTemp
                   $ do Details dets <- gets showDetails
                        when dets $ liftIO $ putStrLn $ "## Removing " <> tmp
                        liftIO $ removeFile tmp
+
+knownBugs :: [ (FilePath, String) ]  -- FilePath is TS.rootMatchName
+knownBugs =
+  let pr223pr228 = "unnamed metadata indices are currently duplicated (see https://github.com/GaloisInc/llvm-pretty-bc-parser/pull/223 and https://github.com/GaloisInc/llvm-pretty-bc-parser/pull/228)"
+  in
+    [
+      ( "p0.ll",  pr223pr228 )
+    , ( "p0.c",   pr223pr228 )
+    , ( "T189.c", pr223pr228 )
+    , ( "callbr.c", "label targets not pretty-printed correctly, causing llvm-as failure" )
+    ]
