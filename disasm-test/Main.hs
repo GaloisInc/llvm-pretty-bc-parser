@@ -567,9 +567,9 @@ with2Files :: TestM (FilePath, Maybe FilePath)
            -> ((FilePath, Maybe FilePath) -> TestM r)
            -> TestM r
 with2Files iofiles f =
-  let cleanup (tmp1, mbTmp2) = case mbTmp2 of
-                                 Nothing -> rmFile tmp1
-                                 Just t2 -> rmFile tmp1 >> rmFile t2
+  let cleanup (tmp1, mbTmp2) = do
+        rmFile tmp1
+        traverse rmFile mbTmp2
   in X.bracket iofiles cleanup f
 
 rmFile :: FilePath -> TestM ()
