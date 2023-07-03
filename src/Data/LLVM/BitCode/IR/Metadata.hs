@@ -120,6 +120,18 @@ addDebugInfo isDistinct di mt = nameNode False isDistinct ix mt'
   where
   (ix,mt') = addMetadata (ValMdDebugInfo di) mt
 
+-- | A variant of 'addDebugInfo' that only inserts the 'DebugInfo' into the
+-- 'mtEntries', not the 'mtNodes'. This has the effect of causing the
+-- 'DebugInfo' /not/ to be added to any top-level metadata lists and instead
+-- causing it to be printed inline wherever it occurs.
+-- See @Note [Printing metadata inline]@.
+addInlineDebugInfo :: DebugInfo' Int -> MetadataTable -> MetadataTable
+addInlineDebugInfo di mt = mt { mtEntries = addValue tv (mtEntries mt) }
+  where
+  tv = Typed { typedType  = PrimType Metadata
+             , typedValue = ValMd (ValMdDebugInfo di)
+             }
+
 -- | Add a new node, that might be distinct.
 addNode :: Bool -> [Maybe PValMd] -> MetadataTable -> MetadataTable
 addNode isDistinct vals mt = nameNode False isDistinct ix mt'
@@ -336,22 +348,13 @@ unnamedEntries pm = bimap Seq.fromList Seq.fromList (partitionEithers (mapMaybe 
   lookupNode ref d ix = do
     tv <- lookupValueTableAbs ref (mtEntries mt)
     case tv of
-      Typed { typedValue = ValMd v } -> do
-        guard (not (mustAppearInline v))
+      Typed { typedValue = ValMd v } ->
         pure $! PartialUnnamedMd
           { pumIndex    = ix
           , pumValues   = v
           , pumDistinct = d
           }
       _ -> error "Impossible: Only ValMds are stored in mtEntries"
-
-  -- DIExpressions and DIArgLists are always printed inline and should never be
-  -- printed in the global list of unnamed metadata. See
-  -- https://github.com/llvm/llvm-project/blob/65600cb2a7e940babf6c493503b9d3fd19f8cb06/llvm/lib/IR/AsmWriter.cpp#L1242-L1245
-  mustAppearInline :: PValMd -> Bool
-  mustAppearInline (ValMdDebugInfo (DebugInfoExpression{})) = True
-  mustAppearInline (ValMdDebugInfo (DebugInfoArgList{})) = True
-  mustAppearInline _ = False
 
 type InstrMdAttachments = Map.Map Int [(KindMd,PValMd)]
 
@@ -1023,9 +1026,16 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoLocalVariable dilv)) pm
 
     29 -> label "METADATA_EXPRESSION" $ do
-      isDistinct <- parseField r 0 nonzero
+      {-
+      Although DIExpressions store an `isDistinct` field in LLVM bitcode, it is
+      never used in practice. This is because DIExpressions are always printed
+      inline in definitions, and since the `distinct` keyword is only printed in
+      top-level metadata lists, there is no way for `distinct` to be printed
+      before a DIExpression. See also Note [Printing metadata inline].
+      -}
+      -- isDistinct <- parseField r 0 nonzero
       diExpr     <- DebugInfoExpression . DIExpression <$> parseFields r 1 numeric
-      return $! updateMetadataTable (addDebugInfo isDistinct diExpr) pm
+      return $! updateMetadataTable (addInlineDebugInfo diExpr) pm
 
     30 -> label "METADATA_OBJC_PROPERTY" $ do
       -- TODO
@@ -1165,17 +1175,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       dial <- DIArgList
         <$> (map (mdForwardRef cxt mt) <$> parseFields r 0 numeric)
       return $! updateMetadataTable
-        -- Unlike most other forms of metadata, METADATA_ARG_LIST never updates
-        -- the @IsDistinct@ value. At least, that's my reading of the source
-        -- code here:
-        -- https://github.com/llvm/llvm-project/blob/8bad4ae679df6fc7dbd016dccbd3da34206e836b/llvm/lib/Bitcode/Reader/MetadataLoader.cpp#L2142-L2158
-        --
-        -- As a result, we use False below, which is the default value of
-        -- IsDistinct set here. It doesn't actually matter that much whether it
-        -- is True or False, since we filter out DIArgLists from the list of
-        -- global unnamed metadata entries anyway (see `unnamedEntries`). As
-        -- such, the value of IsDistinct is never used for anything meaningful.
-        (addDebugInfo False (DebugInfoArgList dial)) pm
+        (addInlineDebugInfo (DebugInfoArgList dial)) pm
+
 
     code -> fail ("unknown record code: " ++ show code)
 
@@ -1281,4 +1282,21 @@ metadata in the same part of METADATA_DERIVED_TYPE in future releases. If this
 assumption does not hold true in the future, we will likely need a more
 sophisticated solution that involves parsing the bitcode differently depending
 on what Apple LLVM version was used to produce a bitcode file.
+
+Note [Printing metadata inline]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+There are some forms of metadata that we should always print inline and never
+create entries for in top-level metadata lists (named or otherwise). Currently,
+these forms of metadata are:
+
+* DIExpression
+* DIArgList
+
+This list is taken from the LLVM source code here:
+https://github.com/llvm/llvm-project/blob/65600cb2a7e940babf6c493503b9d3fd19f8cb06/llvm/lib/IR/AsmWriter.cpp#L1242-L1245
+
+Implementation-wise, this is accomplished by using `addInlineDebugInfo`. Unlike
+`addDebugInfo`, this inserts the metadata field into a separate `mtEntries` map
+that is not used to populate top-level metadata lists when pretty-printing an
+LLVM module.
 -}
