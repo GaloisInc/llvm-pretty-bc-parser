@@ -438,7 +438,7 @@ generateBitCode pfx file = do
   LLVMAs asm <- gets llvmAs
   (bc,h) <- liftIO $ openBinaryTempFile tmp (pfx <.> "bc")
   liftIO $ hClose h
-  liftIO $ callProc asm ["-o", bc, file]
+  callProc asm ["-o", bc, file]
   return bc
 
 -- | Use llvm-dis to parse a bitcode file, to obtain a normalized version of the
@@ -449,7 +449,7 @@ normalizeBitCode pfx file = do
   LLVMDis dis <- gets llvmDis
   (norm,h) <- liftIO $ openTempFile tmp (pfx ++ "llvm-dis" <.> "ll")
   liftIO $ hClose h
-  liftIO $ callProc dis ["-o", norm, file]
+  callProc dis ["-o", norm, file]
   -- stripComments _keep norm
   return norm
 
@@ -538,9 +538,11 @@ ignore  = X.handle f
   where f   :: EX.IOException -> IO ()
         f _ = return ()
 
-callProc :: String -> [String] -> IO ()
-callProc p args = -- putStrLn ("Calling process: " ++ p ++ " " ++ unwords args) >>
-  Proc.callProcess p args
+callProc :: String -> [String] -> TestMonad ()
+callProc p args = do
+  Details dets <- gets showDetails
+  when dets $ liftIO $ putStrLn ("## Running: " ++ p ++ " " ++ unwords args)
+  liftIO $ Proc.callProcess p args
 
 withFile :: TestMonad FilePath -> (FilePath -> TestMonad r) -> TestMonad r
 withFile iofile f = X.bracket iofile rmFile f
