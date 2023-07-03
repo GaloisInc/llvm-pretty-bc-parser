@@ -38,7 +38,7 @@ jobs:
             --install /usr/bin/llvm-config       llvm-config      /usr/bin/llvm-config-${{ env.LLVM_VERSION }} 100 \
             --slave   /usr/bin/llvm-as           llvm-as          /usr/bin/llvm-as-${{ env.LLVM_VERSION }} \
             --slave   /usr/bin/llvm-dis          llvm-dis         /usr/bin/llvm-dis-${{ env.LLVM_VERSION }} \
-            --slave   /usr/bin/llvm-link         llvm-link        /usr/bin/llvm-link-${{ env.LLVM_VERSION }}
+            --slave   /usr/bin/llvm-link         llvm-link        /usr/bin/llvm-link-${{ env.LLVM_VERSION }} \
             --slave   /usr/bin/clang             clang            /usr/bin/clang-${{ env.LLVM_VERSION }}
           # Also run --set, just in case
           sudo update-alternatives --set llvm-config /usr/bin/llvm-config-${{ env.LLVM_VERSION }}
