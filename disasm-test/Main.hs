@@ -9,10 +9,12 @@ import           Data.LLVM.BitCode (parseBitCodeLazyFromFile,Error(..),formatErr
 import qualified Text.LLVM.AST as AST
 import           Text.LLVM.PP (ppLLVM,ppModule)
 
-import qualified Control.Exception as X
+import qualified Control.Monad.Catch as X
+import qualified Control.Exception as EX
 import           Control.Lens ( (^?), _Right )
 import           Control.Monad ( unless, when )
 import           Control.Monad.IO.Class ( liftIO )
+import           Control.Monad.Trans.State
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as L
 import           Data.Char (ord,isLetter,isSpace,chr)
@@ -29,7 +31,8 @@ import qualified Options.Applicative as OA
 import qualified Prettyprinter as PP
 import qualified Prettyprinter.Util as PPU
 import qualified System.Console.Terminal.Size as Term
-import           System.Directory (getTemporaryDirectory, removeFile)
+import           System.Directory ( doesFileExist, getTemporaryDirectory
+                                  , removeFile )
 import           System.Exit (ExitCode(..), exitFailure, exitSuccess)
 import           System.FilePath ( (<.>) )
 import           System.IO (openBinaryTempFile,hClose,openTempFile,hPutStrLn)
@@ -157,12 +160,24 @@ instance TO.IsOption Keep where
   optionCLParser = TO.mkOptionCLParser $
     OA.short 'k'
 
+newtype Details = Details Bool
+
+instance TO.IsOption Details where
+  defaultValue = Details False
+  parseValue = fmap Details . TO.safeReadBool
+  optionName = pure "details"
+  optionHelp = pure "show details of each individual test execution (for debug)"
+  showDefaultValue (Details d) = Just $ show d
+  optionCLParser = TO.mkOptionCLParser $
+    OA.short 'd'
+
 disasmTestIngredients :: [TR.Ingredient]
 disasmTestIngredients =
   includingOptions [ TO.Option (Proxy @LLVMAs)
                    , TO.Option (Proxy @LLVMDis)
                    , TO.Option (Proxy @Roundtrip)
                    , TO.Option (Proxy @Keep)
+                   , TO.Option (Proxy @Details)
                    ] :
   TS.sugarIngredients [cube]
   <> defaultIngredients
@@ -231,7 +246,7 @@ getLLVMToolVersion toolName toolPath = do
 readProcessVersion :: String -> IO (Either String String)
 readProcessVersion forTool =
   X.catches (Right <$> Proc.readProcess forTool [ "--version" ] "")
-  [ X.Handler $ \(e :: X.IOException) ->
+  [ X.Handler $ \(e :: EX.IOException) ->
       if GE.ioe_type e == GE.NoSuchThing
       then return $ Left "[missing]" -- tool executable not found
       else do putStrLn $ "Warning: IO error attempting to determine " <> forTool <> " version:"
@@ -257,11 +272,11 @@ main =  do
   -- result, we have to resort to using more of tasty's internals here.
   disasmOpts <- parseCmdLine
 
-  let llvmAs  = TO.lookupOption disasmOpts
-      llvmDis = TO.lookupOption disasmOpts
+  let llvmAs'  = TO.lookupOption disasmOpts
+      llvmDis' = TO.lookupOption disasmOpts
 
-  llvmAsVC <- getLLVMAsVersion llvmAs
-  llvmDisVC <- getLLVMDisVersion llvmDis
+  llvmAsVC <- getLLVMAsVersion llvmAs'
+  llvmDisVC <- getLLVMDisVersion llvmDis'
   unless (vcVersioning llvmAsVC == vcVersioning llvmDisVC) $
     error $ unlines
       [ "Unexpected version mismatch between llvm-as and llvm-dis"
@@ -341,76 +356,113 @@ runTest sweet expct
        if skipTest
          then pure []
          else pure $ (:[]) $
-           askOption $ \llvmAs ->
-           askOption $ \llvmDis ->
+           askOption $ \llvmAs' ->
+           askOption $ \llvmDis' ->
            askOption $ \roundtrip ->
-           askOption $ \k@(Keep keep) ->
-           testCase pfx $ do
-
-             let -- Assemble and disassemble some LLVM asm
-                 processLL :: FilePath -> IO (FilePath, Maybe FilePath)
-                 processLL f = do
-                   putStrLn (showString f ": ")
-                   X.handle logError                               $
-                     withFile  (generateBitCode    llvmAs  pfx f)  $ \ bc   ->
-                     withFile  (normalizeBitCode k llvmDis pfx bc) $ \ norm -> do
-                       (parsed, ast) <- processBitCode k roundtrip pfx bc
-                       ignore (Proc.callProcess "diff" ["-u", norm, parsed])
-                       putStrLn ("successfully parsed " ++ show f)
-                       return (parsed, ast)
-
-                 withFile :: IO FilePath -> (FilePath -> IO r) -> IO r
-                 withFile iofile f =
-                   X.bracket iofile (if keep then const (pure ()) else removeFile) f
-
-             (parsed1, ast) <- processLL file
-             case ast of               -- this Maybe also encodes the data of optRoundtrip
+           askOption $ \keep ->
+           askOption $ \details ->
+           testCase pfx
+           $ flip evalStateT (TestState { keepTemp = keep
+                                        , rndTrip = roundtrip
+                                        , showDetails = details
+                                        , llvmAs = llvmAs'
+                                        , llvmDis = llvmDis'
+                                        })
+           $ with2Files (processLL pfx file) $ \(parsed1, ast) ->
+             case ast of
                Nothing   -> return ()
-               Just ast1 -> do
-                 (_, Just ast2) <- processLL parsed1 -- Re-assemble and re-disassemble
-                 diff ast1 ast2                      -- Ensure that the ASTs match
+               Just ast1 ->
+                 -- Re-assemble and re-disassemble
+                 with2Files (processLL pfx parsed1) $ \(_, Just ast2) -> do
+                 diff ast1 ast2 -- Ensure that the ASTs match
+
                  -- Ensure that the disassembled files match.
                  -- This is usually too strict (and doesn't really provide more info).
                  -- We normalize the AST (see below) to ensure that the ASTs match modulo
                  -- metadata numbering, but the equivalent isn't possible for the
                  -- assembly: we need llvm-as to be able to re-assemble it.
                  -- diff parsed1 parsed2
+
   where file  = TS.rootFile sweet
         pfx   = TS.rootBaseName sweet
-        assertF ls = assertFailure $ unlines ls
-        logError (ParseError msg) =
-          assertFailure $ unlines $
-            "failure" : map ("; " ++) (lines (formatError msg))
+        assertF ls = liftIO $ assertFailure $ unlines ls
         diff file1 file2 = do
-          (code, stdout, stderr) <-
+          (code, stdout, stderr) <- liftIO $
             Proc.readCreateProcessWithExitCode (Proc.proc "diff" ["-u", file1, file2]) ""
           case code of
             ExitFailure _ -> assertF ["diff failed", stdout, stderr]
             ExitSuccess   ->
               if stdout /= "" || stderr /= ""
               then assertF ["non-empty diff", stdout, stderr]
-              else mapM_ putStrLn ["success: empty diff: ", file1, file2]
+              else do Details dets <- gets showDetails
+                      when dets $ liftIO
+                        $ mapM_ putStrLn ["success: empty diff: ", file1, file2]
+
+
+processLL :: FilePath -> FilePath -> TestM (FilePath, Maybe FilePath)
+processLL pfx f = do
+  Details dets <- gets showDetails
+  when dets $ liftIO $ putStrLn (showString f ": ")
+  X.handle logError $
+    withFile (assembleToBitCode pfx f)  $ \ bc   ->
+    withFile (disasmBitCode pfx bc) $ \ norm -> do
+      (parsed, ast) <- processBitCode pfx bc
+      when dets $ liftIO $ do
+        ignore (Proc.callProcess "diff" ["-u", norm, parsed])
+        putStrLn ("successfully parsed " ++ show f)
+      return (parsed, ast)
+  where
+    logError (ParseError msg) =
+      liftIO $ assertFailure $ unlines
+      $ "failure" : map ("; " ++) (lines (formatError msg))
+
+
+----------------------------------------------------------------------
+-- Helpers
+
+-- This structure essentially recapitulates the TestOptions, but in a way that
+-- they will be accessible in a TestTree (via: StateT TestState IO a).
+data TestState = TestState { keepTemp :: Keep
+                           , rndTrip :: Roundtrip
+                           , showDetails :: Details
+                           , llvmAs :: LLVMAs
+                           , llvmDis :: LLVMDis
+                           }
+
+type TestM a = StateT TestState IO a
 
 
 -- | Assemble some llvm assembly, producing a bitcode file in /tmp.
-generateBitCode :: LLVMAs -> FilePath -> FilePath -> IO FilePath
-generateBitCode (LLVMAs llvmAs) pfx file = do
-  tmp    <- getTemporaryDirectory
-  (bc,h) <- openBinaryTempFile tmp (pfx <.> "bc")
-  hClose h
-  callProc llvmAs ["-o", bc, file]
-  return bc
+assembleToBitCode :: FilePath -> FilePath -> TestM FilePath
+assembleToBitCode pfx file = do
+  tmp <- liftIO getTemporaryDirectory
+  LLVMAs asm <- gets llvmAs
+  X.bracketOnError
+    (liftIO $ openBinaryTempFile tmp (pfx <.> "bc"))
+    (\(bc,_) -> do exists <- liftIO $ doesFileExist bc
+                   when exists $ rmFile bc
+    )
+    $ \(bc,h) ->
+        do liftIO $ hClose h
+           callProc asm ["-o", bc, file]
+           return bc
 
 -- | Use llvm-dis to parse a bitcode file, to obtain a normalized version of the
 -- llvm assembly.
-normalizeBitCode :: Keep -> LLVMDis -> FilePath -> FilePath -> IO FilePath
-normalizeBitCode _keep (LLVMDis llvmDis) pfx file = do
-  tmp      <- getTemporaryDirectory
-  (norm,h) <- openTempFile tmp (pfx ++ "llvm-dis" <.> "ll")
-  hClose h
-  callProc llvmDis ["-o", norm, file]
-  -- stripComments _keep norm
-  return norm
+disasmBitCode :: FilePath -> FilePath -> TestM FilePath
+disasmBitCode pfx file = do
+  tmp <- liftIO $ getTemporaryDirectory
+  LLVMDis dis <- gets llvmDis
+  X.bracketOnError
+    (liftIO $ openTempFile tmp (pfx ++ "llvm-dis" <.> "ll"))
+    (\(norm,_) -> do exists <- liftIO $ doesFileExist norm
+                     when exists $ rmFile norm
+    )
+    $ \(norm,h) ->
+        do liftIO $ hClose h
+           callProc dis ["-o", norm, file]
+           -- stripComments norm
+           return norm
 
 -- | Usually, the ASTs aren't "on the nose" identical.
 -- The big thing is that the metadata numbering differs, so we zero out all
@@ -432,8 +484,8 @@ normalizeModule = sorted . everywhere (mkT zeroValMdRef)
 
 -- | Parse a bitcode file using llvm-pretty, failing the test if the parser
 -- fails.
-processBitCode :: Keep -> Roundtrip -> FilePath -> FilePath -> IO (FilePath, Maybe FilePath)
-processBitCode _keep (Roundtrip roundtrip) pfx file = do
+processBitCode :: FilePath -> FilePath -> TestM (FilePath, Maybe FilePath)
+processBitCode pfx file = do
   let handler :: X.SomeException -> IO (Either Error AST.Module)
       handler se = return (Left (Error [] (show se)))
       printToTempFile sufx stuff = do
@@ -442,29 +494,35 @@ processBitCode _keep (Roundtrip roundtrip) pfx file = do
         hPutStrLn h stuff
         hClose h
         return parsed
-  e <- parseBitCodeLazyFromFile file `X.catch` handler
+  e <- liftIO $ parseBitCodeLazyFromFile file `X.catch` handler
   case e of
-    Left err -> X.throwIO (ParseError err)
+    Left err -> X.throwM (ParseError err)
     Right m  -> do
       let m' = AST.fixupOpaquePtrs m
-      parsed <- printToTempFile "ll" (show (ppLLVM (ppModule m')))
-      -- stripComments _keep parsed
+      parsed <- liftIO $ printToTempFile "ll" (show (ppLLVM (ppModule m')))
+      Roundtrip roundtrip <- gets rndTrip
+      -- stripComments parsed
+      Details det <- gets showDetails
       if roundtrip
       then do
-        tmp2 <- printToTempFile "ast" (ppShow (normalizeModule m'))
+        tmp2 <- liftIO $ printToTempFile "ast" (ppShow (normalizeModule m'))
+        when det $ liftIO $ putStrLn $ "## parsed Bitcode to " <> parsed <> " and " <> tmp2
         return (parsed, Just tmp2)
-      else return (parsed, Nothing)
+      else do
+        when det $ liftIO $ putStrLn $ "## parsed Bitcode to " <> parsed
+        return (parsed, Nothing)
 
 -- | Remove comments from a .ll file, stripping everything including the
 -- semi-colon.
-stripComments :: Keep -> FilePath -> IO ()
-stripComments (Keep keep) path = do
-  bytes <- L.readFile path
-  when (not keep) (removeFile path)
+stripComments :: FilePath -> TestM ()
+stripComments path = do
+  Keep keep <- gets keepTemp
+  bytes <- liftIO $ L.readFile path
+  when (not keep) $ rmFile path
   mapM_ (writeLine . dropComments) (bsLines bytes)
   where
   writeLine bs | L.null bs = return ()
-               | otherwise = do
+               | otherwise = liftIO $ do
                  L.appendFile path bs
                  L.appendFile path (L.singleton 0x0a)
 
@@ -493,9 +551,30 @@ dropTrailingSpace bs
 -- | Ignore a command that fails.
 ignore :: IO () -> IO ()
 ignore  = X.handle f
-  where f   :: X.IOException -> IO ()
+  where f   :: EX.IOException -> IO ()
         f _ = return ()
 
-callProc :: String -> [String] -> IO ()
-callProc p args = -- putStrLn ("Calling process: " ++ p ++ " " ++ unwords args) >>
-  Proc.callProcess p args
+callProc :: String -> [String] -> TestM ()
+callProc p args = do
+  Details dets <- gets showDetails
+  when dets $ liftIO $ putStrLn ("## Running: " ++ p ++ " " ++ unwords args)
+  liftIO $ Proc.callProcess p args
+
+withFile :: TestM FilePath -> (FilePath -> TestM r) -> TestM r
+withFile iofile f = X.bracket iofile rmFile f
+
+with2Files :: TestM (FilePath, Maybe FilePath)
+           -> ((FilePath, Maybe FilePath) -> TestM r)
+           -> TestM r
+with2Files iofiles f =
+  let cleanup (tmp1, mbTmp2) = do
+        rmFile tmp1
+        traverse rmFile mbTmp2
+  in X.bracket iofiles cleanup f
+
+rmFile :: FilePath -> TestM ()
+rmFile tmp = do Keep keep <- gets keepTemp
+                unless keep
+                  $ do Details dets <- gets showDetails
+                       when dets $ liftIO $ putStrLn $ "## Removing " <> tmp
+                       liftIO $ removeFile tmp
