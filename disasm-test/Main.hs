@@ -434,24 +434,30 @@ type TestMonad a = StateT TestState IO a
 -- | Assemble some llvm assembly, producing a bitcode file in /tmp.
 generateBitCode :: FilePath -> FilePath -> TestMonad FilePath
 generateBitCode pfx file = do
-  tmp    <- liftIO getTemporaryDirectory
+  tmp <- liftIO getTemporaryDirectory
   LLVMAs asm <- gets llvmAs
-  (bc,h) <- liftIO $ openBinaryTempFile tmp (pfx <.> "bc")
-  liftIO $ hClose h
-  callProc asm ["-o", bc, file]
-  return bc
+  X.bracketOnError
+    (liftIO $ openBinaryTempFile tmp (pfx <.> "bc"))
+    (\(bc,_) -> rmFile bc)
+    $ \(bc,h) ->
+        do liftIO $ hClose h
+           callProc asm ["-o", bc, file]
+           return bc
 
 -- | Use llvm-dis to parse a bitcode file, to obtain a normalized version of the
 -- llvm assembly.
 normalizeBitCode :: FilePath -> FilePath -> TestMonad FilePath
 normalizeBitCode pfx file = do
-  tmp      <- liftIO $ getTemporaryDirectory
+  tmp <- liftIO $ getTemporaryDirectory
   LLVMDis dis <- gets llvmDis
-  (norm,h) <- liftIO $ openTempFile tmp (pfx ++ "llvm-dis" <.> "ll")
-  liftIO $ hClose h
-  callProc dis ["-o", norm, file]
-  -- stripComments _keep norm
-  return norm
+  X.bracketOnError
+    (liftIO $ openTempFile tmp (pfx ++ "llvm-dis" <.> "ll"))
+    (\(norm,_) -> rmFile norm)
+    $ \(norm,h) ->
+        do liftIO $ hClose h
+           callProc dis ["-o", norm, file]
+           -- stripComments _keep norm
+           return norm
 
 -- | Usually, the ASTs aren't "on the nose" identical.
 -- The big thing is that the metadata numbering differs, so we zero out all
