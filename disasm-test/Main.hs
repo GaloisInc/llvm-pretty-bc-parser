@@ -544,5 +544,8 @@ callProc p args = -- putStrLn ("Calling process: " ++ p ++ " " ++ unwords args) 
 withFile :: TestMonad FilePath -> (FilePath -> TestMonad r) -> TestMonad r
 withFile iofile f =
   let cleanup tmp = do Keep keep <- gets keepTemp
-                       when keep $ liftIO $ removeFile tmp
+                       unless keep
+                         $ do Details dets <- gets showDetails
+                              when dets $ liftIO $ putStrLn $ "## Removing " <> tmp
+                              liftIO $ removeFile tmp
   in X.bracket iofile cleanup f
