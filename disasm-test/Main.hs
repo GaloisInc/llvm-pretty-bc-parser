@@ -344,31 +344,16 @@ runTest sweet expct
            askOption $ \llvmAs ->
            askOption $ \llvmDis ->
            askOption $ \roundtrip ->
-           askOption $ \k@(Keep keep) ->
-           testCase pfx $ do
-
-             let -- Assemble and disassemble some LLVM asm
-                 processLL :: FilePath -> IO (FilePath, Maybe FilePath)
-                 processLL f = do
-                   putStrLn (showString f ": ")
-                   X.handle logError                               $
-                     withFile  (generateBitCode    llvmAs  pfx f)  $ \ bc   ->
-                     withFile  (normalizeBitCode k llvmDis pfx bc) $ \ norm -> do
-                       (parsed, ast) <- processBitCode k roundtrip pfx bc
-                       ignore (Proc.callProcess "diff" ["-u", norm, parsed])
-                       putStrLn ("successfully parsed " ++ show f)
-                       return (parsed, ast)
-
-                 withFile :: IO FilePath -> (FilePath -> IO r) -> IO r
-                 withFile iofile f =
-                   X.bracket iofile (if keep then const (pure ()) else removeFile) f
-
-             (parsed1, ast) <- processLL file
+           askOption $ \keep ->
+           testCase pfx
+           $ do
+             let procLL = processLL roundtrip keep llvmAs llvmDis pfx
+             (parsed1, ast) <- procLL file
              case ast of               -- this Maybe also encodes the data of optRoundtrip
                Nothing   -> return ()
                Just ast1 -> do
-                 (_, Just ast2) <- processLL parsed1 -- Re-assemble and re-disassemble
-                 diff ast1 ast2                      -- Ensure that the ASTs match
+                 (_, Just ast2) <- procLL parsed1 -- Re-assemble and re-disassemble
+                 diff ast1 ast2                   -- Ensure that the ASTs match
                  -- Ensure that the disassembled files match.
                  -- This is usually too strict (and doesn't really provide more info).
                  -- We normalize the AST (see below) to ensure that the ASTs match modulo
@@ -378,9 +363,6 @@ runTest sweet expct
   where file  = TS.rootFile sweet
         pfx   = TS.rootBaseName sweet
         assertF ls = assertFailure $ unlines ls
-        logError (ParseError msg) =
-          assertFailure $ unlines $
-            "failure" : map ("; " ++) (lines (formatError msg))
         diff file1 file2 = do
           (code, stdout, stderr) <-
             Proc.readCreateProcessWithExitCode (Proc.proc "diff" ["-u", file1, file2]) ""
@@ -391,6 +373,26 @@ runTest sweet expct
               then assertF ["non-empty diff", stdout, stderr]
               else mapM_ putStrLn ["success: empty diff: ", file1, file2]
 
+
+processLL :: Roundtrip -> Keep -> LLVMAs -> LLVMDis -> FilePath -> FilePath
+          -> IO (FilePath, Maybe FilePath)
+processLL roundtrip keep llvmAs llvmDis pfx f = do
+  putStrLn (showString f ": ")
+  X.handle logError                               $
+    withFile keep (generateBitCode    llvmAs  pfx f)  $ \ bc   ->
+    withFile keep (normalizeBitCode keep llvmDis pfx bc) $ \ norm -> do
+      (parsed, ast) <- processBitCode keep roundtrip pfx bc
+      ignore (Proc.callProcess "diff" ["-u", norm, parsed])
+      putStrLn ("successfully parsed " ++ show f)
+      return (parsed, ast)
+  where
+    logError (ParseError msg) =
+      assertFailure $ unlines
+      $ "failure" : map ("; " ++) (lines (formatError msg))
+
+
+----------------------------------------------------------------------
+-- Helpers
 
 -- | Assemble some llvm assembly, producing a bitcode file in /tmp.
 generateBitCode :: LLVMAs -> FilePath -> FilePath -> IO FilePath
@@ -499,3 +501,7 @@ ignore  = X.handle f
 callProc :: String -> [String] -> IO ()
 callProc p args = -- putStrLn ("Calling process: " ++ p ++ " " ++ unwords args) >>
   Proc.callProcess p args
+
+withFile :: Keep -> IO FilePath -> (FilePath -> IO r) -> IO r
+withFile (Keep keep) iofile f =
+  X.bracket iofile (if keep then const (pure ()) else removeFile) f
