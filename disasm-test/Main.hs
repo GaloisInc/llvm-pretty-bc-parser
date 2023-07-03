@@ -10,10 +10,10 @@ import           Data.LLVM.BitCode (parseBitCodeLazyFromFile,Error(..),formatErr
 import qualified Text.LLVM.AST as AST
 import           Text.LLVM.PP (ppLLVM,ppModule)
 
-import qualified Control.Monad.Catch as X
 import qualified Control.Exception as EX
 import           Control.Lens ( (^?), _Right )
 import           Control.Monad ( unless, when )
+import qualified Control.Monad.Catch as X
 import           Control.Monad.IO.Class ( MonadIO, liftIO )
 import           Control.Monad.Trans.State
 import           Data.Bifunctor (first)
@@ -39,6 +39,7 @@ import           System.IO (openBinaryTempFile,hClose,openTempFile,hPutStrLn)
 import qualified System.IO as IO (stderr)
 import qualified System.Process as Proc
 import           Test.Tasty
+import           Test.Tasty.ExpectedFailure ( ignoreTestBecause )
 import           Test.Tasty.HUnit ( assertFailure, testCase )
 import qualified Test.Tasty.Options as TO
 import qualified Test.Tasty.Runners as TR
@@ -391,12 +392,14 @@ runAssemblyTest sweet expct
        -- test cases that require a minimum LLVM version, this technique is
        -- used to prevent running the test on older LLVM versions.
        skipTest <- ("SKIP_TEST" `L.isPrefixOf`) <$> L.readFile (TS.expectedFile expct)
-
-       if skipTest
-         then pure []
-         else pure $ (:[]) $
-           testCaseM pfx
-           $ with2Files (processLL pfx $ TS.rootFile sweet) $ \(parsed1, ast) ->
+       let tmod = if skipTest
+                  then ignoreTestBecause "not valid for this LLVM version"
+                  else id
+       let pfx = TS.rootBaseName sweet
+       return $ (:[]) $ tmod
+         $ testCaseM pfx
+         $ with2Files (processLL pfx $ TS.rootFile sweet)
+         $ \(parsed1, ast) ->
              case ast of
                Nothing   -> return ()
                Just ast1 ->
@@ -412,7 +415,6 @@ runAssemblyTest sweet expct
                  -- it.
                  --
                  -- diffCmp parsed1 parsed2
-  where pfx = TS.rootBaseName sweet
 
 
 diffCmp :: FilePath -> FilePath -> TestM ()
@@ -486,27 +488,27 @@ compilerCube = assemblyCube
 runCompileTest :: TS.Sweets -> TS.Expectation -> IO [TestTree]
 runCompileTest sweet expct = do
   skipTest <- ("SKIP_TEST" `L.isPrefixOf`) <$> L.readFile (TS.expectedFile expct)
-  if skipTest
-    then return []
-    else return $ (:[])
-         $ let pfx = TS.rootBaseName sweet
-           in testCaseM pfx
-              $ withFile (compileToBitCode pfx $ TS.rootFile sweet)
-              $ \bc ->
-                  with2Files (parseBC pfx bc)
-                  $ \(parsed1, ast) ->
-                      case ast of
-                        Nothing ->
-                          -- No round trip, so this just verifies that the
-                          -- bitcode could be parsed without generating an error.
-                          return ()
-                        Just ast1 ->
-                          -- Assemble and re-parse the bitcode to make sure it
-                          -- can be round-tripped successfully.
-                          with2Files (processLL pfx parsed1)
-                          $ \(_, Just ast2) -> diffCmp ast1 ast2
-                            -- .ll files are not compared; see runAssemblyTest
-                            -- for details.
+  let tmod = if skipTest
+             then ignoreTestBecause "not valid for this LLVM version"
+             else id
+  let pfx = TS.rootBaseName sweet
+  return $ (:[]) $ tmod
+    $ testCaseM pfx
+    $ withFile (compileToBitCode pfx $ TS.rootFile sweet)
+    $ \bc ->
+        with2Files (parseBC pfx bc)
+        $ \(parsed1, ast) ->
+            case ast of
+              Nothing ->
+                -- No round trip, so this just verifies that the bitcode could be
+                -- parsed without generating an error.
+                return ()
+              Just ast1 ->
+                -- Assemble and re-parse the bitcode to make sure it can be
+                -- round-tripped successfully.
+                with2Files (processLL pfx parsed1)
+                $ \(_, Just ast2) -> diffCmp ast1 ast2
+                  -- .ll files are not compared; see runAssemblyTest for details.
 
 
 ----------------------------------------------------------------------
