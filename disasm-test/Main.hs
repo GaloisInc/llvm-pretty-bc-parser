@@ -96,13 +96,13 @@ descr = PP.vcat $
   , ""
   , PP.indent 2 $ PP.hang 2 $ block
     [iii|* Metadata information between the two AST text formats is *not*
-           compared (and is actually discarded before serialization (resetting
+           compared (and is actually discarded before serialization, resetting
            all indices to zero).  This is because metadata indexes are
            dynamically generated and therefore unstable.
         |]
   , ""
   , PP.indent 2 $ PP.hang 2 $ block
-    [iii|* If the --roundtrip-disabled is specified on the command line
+    [iii|* If the --roundtrip-disabled option is specified on the command line,
            then only one assembly-disassembly will be performed and
            the results will not be compared to anything (although any
            llvm-dis/llvm-disasm differences will still be shown).
@@ -182,7 +182,7 @@ parseCmdLine = do
     OA.info (OA.helper <*> disasmOptParser)
     ( OA.fullDesc
       <> OA.header "llvm-pretty-bc-parser disassembly test suite"
-      <> OA.footerDoc (Just $ PP.align $ descr)
+      <> OA.footerDoc (Just $ PP.align descr)
     )
 
 
