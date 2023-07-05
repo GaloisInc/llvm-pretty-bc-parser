@@ -150,6 +150,7 @@ Test-suite disasm-test
                        transformers >= 0.5 && < 0.7,
                        terminal-size >= 0.3 && < 0.4,
                        text,
+                       utf8-string,
                        versions < 7,
                        llvm-pretty,
                        llvm-pretty-bc-parser
