@@ -671,10 +671,11 @@ postParseTests m = ensureValidMetadataIndices m
       let numDups = length idxs - length uniqIdxs
       unless (numDups == 0)
         $ do Details det <- gets showDetails
-             when det $ liftIO
-               $ putStrLn $ "Unnamed MetaData indices: " <> show idxs
+             when det $ liftIO $ putStrLn
+               $ "Unnamed metadata (modUnnamedMd) indices: " <> show idxs
              liftIO $ assertFailure
-               $ show numDups <> " duplicated Unnamed MetaData indices"
+               $ show numDups
+               <> " duplicated Unnamed metadata (modUnnamedMd) indices"
 
 
 
@@ -747,7 +748,10 @@ rmFile tmp = do Keep keep <- gets keepTemp
 
 knownBugs :: [ (FilePath, String) ]  -- FilePath is TS.rootMatchName
 knownBugs =
-  let pr223pr228 = "unnamed metadata indices are currently duplicated (see https://github.com/GaloisInc/llvm-pretty-bc-parser/pull/223 and https://github.com/GaloisInc/llvm-pretty-bc-parser/pull/228)"
+  let pr223pr228 =
+        "unnamed metadata indices are currently duplicated \
+        \ (see https://github.com/GaloisInc/llvm-pretty-bc-parser/pull/223 \
+        \ and https://github.com/GaloisInc/llvm-pretty-bc-parser/pull/228)"
   in
     [
       ( "p0.ll",  pr223pr228 )
