@@ -67,7 +67,9 @@ descr = PP.vcat $
  suite). Then the test will use both llvm-dis (from the LLVM tool suite)
  and llvm-disasm (from this package, via direct library calls) to convert
  that bitcode back into the .ll text format, and also (for the latter) into
- an AST representation.
+ an AST representation.  [NOTE: C sources should be kept minimal to be focused
+ in particular; if too large there are too many opportunities for unrelated
+ issues to interfere in successful evaluation.]
        |]
   , ""
   , block [iii|
