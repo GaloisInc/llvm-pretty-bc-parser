@@ -657,9 +657,14 @@ processBitCode pfx file = do
         return (parsed, Nothing)
 
 
+-- | These are common tests that should be run on the AST that is parsed from the
+-- bitcode file.  This tests invariants that are not accessible or testable from
+-- the serialized formats.
 postParseTests :: AST.Module -> TestM ()
 postParseTests m = ensureValidMetadataIndices m
   where
+    -- This test is to ensure that all unnamed metadata instances have a unique
+    -- index value.
     ensureValidMetadataIndices md = do
       let idxs = AST.umIndex <$> AST.modUnnamedMd md
       let uniqIdxs = nub idxs
