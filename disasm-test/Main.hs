@@ -754,10 +754,12 @@ knownBugs =
         "unnamed metadata indices are currently duplicated \
         \ (see https://github.com/GaloisInc/llvm-pretty-bc-parser/pull/223 \
         \ and https://github.com/GaloisInc/llvm-pretty-bc-parser/pull/228)"
+      issue231 =
+        "label targets not pretty-printed correctly, causing llvm-as failure"
   in
     [
       ( "p0.ll",  pr223pr228 )
     , ( "p0.c",   pr223pr228 )
     , ( "T189.c", pr223pr228 )
-    , ( "callbr.c", "label targets not pretty-printed correctly, causing llvm-as failure" )
+    , ( "callbr.c", issue231 )
     ]
