@@ -1,8 +1,8 @@
 # Known Bugs for llvm-pretty-bc-parser
 
-This directory is used to keep files for known llvm-pretty-bc-parser.  The goal
-is that this directory is empty (other than this readme), but the reality is that
-sometimes there are issues that will take some time to address.
+This directory is used to keep files for known llvm-pretty-bc-parser bugs.  The
+goal is that this directory is empty (other than this readme), but the reality is
+that sometimes there are issues that will take some time to address.
 
 If an entry is made in this directory, corresponding tests will be *expected* to
 fail, and thus the entire CI test suite will pass even in the presence of these
