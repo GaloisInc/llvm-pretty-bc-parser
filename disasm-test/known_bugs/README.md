@@ -25,21 +25,28 @@ code changes elsewhere (and keeping the list of known bugs in source code invite
 the potential for merge conflicts when adding/resolving bugs in parallel efforts,
 whereas these separate files do not).
 
-Lines which begin with the word `"rootMatchName: "` should be followed by one or
+Lines which begin with `"##> rootMatchName: "` should be followed by one or
 more words which correspond to the corresponding tasty-sugar field in the
-provided `Sweets` structure when generating tests. This is the primary mechanism
-for matching a particular test with the expectation that it will fail.  There can
-be multiple files specified after this starting word, and there can be multiple
-lines starting with this word: all corresponding tasty-sugar sweets will be
-identified as failures.
+provided `Sweets` structure when generating tests.
 
-One and only one line should start with the word `"summary: "`; the remainder of
+Lines which begin with `"##> llvmver: "` should be followed by one or more words,
+each of which corresponds to an llvm version (in the format `"llvmN"`) that the
+bug is known to be present for.
+
+The above lines are the primary mechanism for matching a particular test with the
+expectation that it will fail.  There can be multiple values specified after each
+identifier word, and there can be multiple lines starting with each word: all
+corresponding tasty-sugar sweets will be identified as failures.  There must be
+at least one identifier line present, but any identifier lines not present will
+be treated as a wildcard.
+
+One and only one line should start with `"##> summary: "`; the remainder of
 that line is displayed along with the (expected) failure message when running the
 test.
 
 All other lines in the file are ignored by disasm-test.  It is recommended that
 the file contain additional information, including how to reproduce the issue,
-how to recognize the issue, links to actual issues (e.g. posted to Github) and
+how to recognize the issue, links to actual issues (e.g. posted to GitHub) and
 any thoughts regarding the potential cause of the issue.  This information can be
 helpful to whomever attempts to resolve this known bug (where success will be
 indicated by the ability to remove this corresponding known_bugs file).

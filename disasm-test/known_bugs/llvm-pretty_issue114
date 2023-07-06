@@ -1,5 +1,5 @@
-rootMatchName: callbr.c
-summary: label targets missing quotes
+##> rootMatchName: callbr.c
+##> summary: label targets missing quotes
 
 https://github.com/elliottt/llvm-pretty/issues/114
 
