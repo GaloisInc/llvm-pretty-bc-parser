@@ -124,6 +124,7 @@
                 # NOTE: this is the main location which determines what LLVM
                 # versions are tested.  The default is to run each of the listed
                 # LLVM versions here in parallel.
+                pkgs.llvm_9
                 pkgs.llvm_10
                 pkgs.llvm_11
               ]
