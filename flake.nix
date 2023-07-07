@@ -35,6 +35,10 @@
       url = "github:UnkindPartition/tasty/core-1.4.3";
       flake = false;
     };
+    tasty-expected-failure-src = {
+      url = "github:nomeata/tasty-expected-failure";
+      flake = false;
+    };
     tasty-sugar = {
       url = "github:kquick/tasty-sugar";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -50,6 +54,7 @@
             , fgl-visualize-src
             , optparse-applicative-src
             , tasty-src
+            , tasty-expected-failure-src
             , tasty-sugar
             }:
     let
@@ -149,7 +154,7 @@
           };
           llvm-pretty-bc-parser-test-build = mkHaskell "llvm-pretty-bc-parser-test-build" self {
             inherit llvm-pretty optparse-applicative tasty-sugar
-              tasty tasty-quickcheck tasty-hunit;
+              tasty tasty-quickcheck tasty-expected-failure tasty-hunit;
             adjustDrv = args: drv:
               with pkgs.haskell.lib;
               (doCheck (haskellAdj drv)).overrideAttrs (a:
@@ -173,6 +178,10 @@
           };
           tasty = mkHaskell "tasty" "${tasty-src}/core" {
             inherit optparse-applicative;
+            adjustDrv = args: haskellAdj;
+          };
+          tasty-expected-failure = mkHaskell "tasty-expected-failure" "${tasty-expected-failure-src}" {
+            inherit tasty;
             adjustDrv = args: haskellAdj;
           };
           tasty-hunit = mkHaskell "tasty-hunit" "${tasty-src}/hunit" {

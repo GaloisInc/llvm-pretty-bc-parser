@@ -164,8 +164,25 @@
         "llvm-pretty-src": "llvm-pretty-src",
         "nixpkgs": "nixpkgs",
         "optparse-applicative-src": "optparse-applicative-src",
+        "tasty-expected-failure-src": "tasty-expected-failure-src",
         "tasty-src": "tasty-src",
         "tasty-sugar": "tasty-sugar"
+      }
+    },
+    "tasty-expected-failure-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1613494231,
+        "narHash": "sha256-C/IWktTILklfPEAht/RE4IC8to6MrvrLmmbqgWsJlIM=",
+        "owner": "nomeata",
+        "repo": "tasty-expected-failure",
+        "rev": "33b71e694b954e35c05859fff3ca886d8cfe5bfe",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nomeata",
+        "repo": "tasty-expected-failure",
+        "type": "github"
       }
     },
     "tasty-hedgehog-src": {
