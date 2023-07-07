@@ -113,8 +113,12 @@
                        ''
                        ${pkgs.coreutils}/bin/cp -r ${built}/test-build/* .
                        export PATH=${llvm}/bin:${pkgs.diffutils}/bin:$PATH
+                       set -e
+                       echo Running unit-test
                        ./dist/build/unit-test/unit-test
+                       echo Running disasm-test
                        ./dist/build/disasm-test/disasm-test
+                       echo Finished testing
                        echo OK > $out
                        ''
                      ];
@@ -163,6 +167,7 @@
                     cp llvm-pretty-bc-parser.cabal $out/test-build
                     mkdir $out/test-build/disasm-test
                     cp -r disasm-test/tests $out/test-build/disasm-test
+                    cp -r disasm-test/known_bugs $out/test-build/disasm-test
                     cp -r dist $out/test-build/
                     '';
                 });
