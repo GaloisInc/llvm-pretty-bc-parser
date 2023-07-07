@@ -1,0 +1,10 @@
+##> rootMatchName: callbr.c
+##> summary: label targets missing quotes
+
+https://github.com/elliottt/llvm-pretty/issues/114
+
+        callbr: llvm-as: /tmp/nix-shell.B4GhyB/callbrllvm-disasm2252930-2.ll:36:64: error: expected string constant
+  call void @llvm.dbg.label(metadata !DILabel(scope: !8, name: loop,
+                                                               ^
+FAIL
+          Exception: callProcess: llvm-as "-o" "/tmp/nix-shell.B4GhyB/callbr2252930-4.bc" "/tmp/nix-shell.B4GhyB/callbrllvm-disasm2252930-2.ll" (exit 1): failed
