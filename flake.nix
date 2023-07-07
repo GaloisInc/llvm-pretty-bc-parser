@@ -3,7 +3,7 @@
   # nix develop
   # nix run .  [runs llvm-disasm]
   #
-  # nix run github:galoisinc/llvm-pretty   [runs llvm-disasm]
+  # nix run github:galoisinc/llvm-pretty-bc-parser   [runs llvm-disasm]
 
   description = "Flake to build the haskell-src package 'llvm-pretty-bc-parser' and dependencies";
 
@@ -91,7 +91,7 @@
                   (pkgs.lib.genAttrs names (oneshell s))
                   [ "ghc" ];
                 shells = pkgs.lib.attrsets.mapAttrs (n: v: v.default) outs;
-            in shells
+            in shells // { default = devShells.${s}.llvm-pretty-bc-parser-test-build; }
           ) ;
 
       packages = levers.eachSystem (system:
@@ -121,7 +121,7 @@
               buildInputs = [ llvm pkgs.diffutils pkgs.coreutils ];
             };
         in rec {
-          default = llvm-pretty-bc-parser-test-build;
+          default = llvm-pretty-bc-parser;
           TESTS = wrap "llvm-pretty-bc-parser-TESTS"
             (builtins.map
               (llvm-pretty-bc-parser-test llvm-pretty-bc-parser-test-build)
