@@ -476,7 +476,8 @@ parseBC pfx bc = do
     when dets $ liftIO $ do
       -- Informationally display if there are differences between the llvm-dis
       -- and llvm-disasm outputs, but no error if they differ.
-      ignore (Proc.callProcess "diff" ["-u", norm, parsed])
+      putStrLn "## Output differences: LLVM's llvm-dis <--> this llvm-disasm"
+      ignore (Proc.callProcess "diff" ["-u", "-b", "-B", "-w", norm, parsed])
       putStrLn ("successfully parsed " ++ show pfx ++ " bitcode")
     return (parsed, ast)
 
