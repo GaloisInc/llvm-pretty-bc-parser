@@ -3,7 +3,7 @@
   # nix develop
   # nix run .  [runs llvm-disasm]
   #
-  # nix run github:galoisinc/llvm-pretty   [runs llvm-disasm]
+  # nix run github:galoisinc/llvm-pretty-bc-parser   [runs llvm-disasm]
 
   description = "Flake to build the haskell-src package 'llvm-pretty-bc-parser' and dependencies";
 
@@ -91,7 +91,7 @@
                   (pkgs.lib.genAttrs names (oneshell s))
                   [ "ghc" ];
                 shells = pkgs.lib.attrsets.mapAttrs (n: v: v.default) outs;
-            in shells
+            in shells // { default = devShells.${s}.llvm-pretty-bc-parser-test-build; }
           ) ;
 
       packages = levers.eachSystem (system:
@@ -104,24 +104,30 @@
           haskellAdj = drv:
             with (pkgs.haskell).lib;
             dontHaddock (dontCheck (dontBenchmark (drv)));
-          llvm-pretty-bc-parser-test = built: llvm:
-            derivation {
+          llvm-pretty-bc-parser-test = built: llvmver:
+            let llvm = pkgs."llvm_${llvmver}";
+                clang = pkgs."clang_${llvmver}";
+            in derivation {
               inherit system;
-              name = "llvm-pretty-bc-parser-test-with-llvm${llvm.version}";
+              name = "llvm-pretty-bc-parser-test-with-llvm${llvmver}";
               builder = "${pkgs.bash}/bin/bash";
               args = [ "-c"
                        ''
                        ${pkgs.coreutils}/bin/cp -r ${built}/test-build/* .
-                       export PATH=${llvm}/bin:${pkgs.diffutils}/bin:$PATH
+                       export PATH=${llvm}/bin:${clang}/bin:${pkgs.diffutils}/bin:$PATH
+                       set -e
+                       echo Running unit-test
                        ./dist/build/unit-test/unit-test
+                       echo Running disasm-test
                        ./dist/build/disasm-test/disasm-test
+                       echo Finished testing
                        echo OK > $out
                        ''
                      ];
-              buildInputs = [ llvm pkgs.diffutils pkgs.coreutils ];
+              buildInputs = [ clang llvm pkgs.diffutils pkgs.coreutils ];
             };
         in rec {
-          default = llvm-pretty-bc-parser-test-build;
+          default = llvm-pretty-bc-parser;
           TESTS = wrap "llvm-pretty-bc-parser-TESTS"
             (builtins.map
               (llvm-pretty-bc-parser-test llvm-pretty-bc-parser-test-build)
@@ -129,9 +135,9 @@
                 # NOTE: this is the main location which determines what LLVM
                 # versions are tested.  The default is to run each of the listed
                 # LLVM versions here in parallel.
-                pkgs.llvm_9
-                pkgs.llvm_10
-                pkgs.llvm_11
+                "9"
+                "10"
+                "11"
               ]
             );
           TESTS_PREP = wrap "llvm-pretty-bc-parser-TESTS_PREP"
@@ -164,6 +170,7 @@
                     cp llvm-pretty-bc-parser.cabal $out/test-build
                     mkdir $out/test-build/disasm-test
                     cp -r disasm-test/tests $out/test-build/disasm-test
+                    cp -r disasm-test/known_bugs $out/test-build/disasm-test
                     cp -r dist $out/test-build/
                     '';
                 });

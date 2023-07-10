@@ -20,7 +20,7 @@ import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as L
 import           Data.Char (ord,isLetter,isSpace,chr)
 import           Data.Generics (everywhere, mkT) -- SYB
-import           Data.List ( find, isInfixOf, isPrefixOf, nub, sort )
+import           Data.List ( find, isInfixOf, isPrefixOf, isSuffixOf, nub, sort )
 import           Data.Map ( (!), (!?) )
 import qualified Data.Map as Map
 import           Data.Maybe ( fromMaybe )
@@ -211,7 +211,7 @@ disasmTestIngredients =
                    , TO.Option (Proxy @Keep)
                    , TO.Option (Proxy @Details)
                    ] :
-  TS.sugarIngredients [ assemblyCube, compilerCube ]
+  TS.sugarIngredients [ assemblyCube, cCompilerCube, ccCompilerCube ]
   <> defaultIngredients
 
 parseCmdLine :: IO TO.OptionSet
@@ -326,11 +326,14 @@ main =  do
 
   knownBugs <- getKnownBugs
   sweets1 <- TS.findSugar assemblyCube
-  sweets2 <- TS.findSugar compilerCube
+  sweets2 <- TS.findSugar cCompilerCube
+  sweets3 <- TS.findSugar ccCompilerCube
   atests <- TS.withSugarGroups sweets1 testGroup
             $ \s _ e -> runAssemblyTest knownBugs s e
   ctests <- TS.withSugarGroups sweets2 testGroup
             $ \s _ e -> runCompileTest knownBugs s e
+  cctests <- TS.withSugarGroups sweets3 testGroup
+             $ \s _ e -> runCompileTest knownBugs s e
   let tests = atests <> ctests
   case TR.tryIngredients
          disasmTestIngredients
@@ -338,6 +341,7 @@ main =  do
          (testGroup "Disassembly tests"
           [ testGroup (showVC llvmAsVC) atests
           , testGroup (showVC clangVC) ctests
+          , testGroup (showVC clangVC) cctests
           ]) of
     Nothing ->
       hPutStrLn IO.stderr
@@ -475,8 +479,17 @@ parseBC pfx bc = do
     Details dets <- gets showDetails
     when dets $ liftIO $ do
       -- Informationally display if there are differences between the llvm-dis
-      -- and llvm-disasm outputs, but no error if they differ.
-      ignore (Proc.callProcess "diff" ["-u", norm, parsed])
+      -- and llvm-disasm outputs, but no error if they differ.  Note that the
+      -- arguments to this diff are not the same as those supplied to the diffCmp
+      -- function. The diff here is intended to supply additional information to
+      -- the user for diagnostics, and whitespace changes are likely unimportant
+      -- in that context; this diff does not determine the pass/fail status of
+      -- the testing.  On the other hand, the diffCmp *does* determine if the
+      -- tests pass or fail, so ignoring whitespace in that determination would
+      -- potentially weaken the testing to an unsatisfactory degree and would
+      -- need more careful evaluation.
+      putStrLn "## Output differences: LLVM's llvm-dis <--> this llvm-disasm"
+      ignore (Proc.callProcess "diff" ["-u", "-b", "-B", "-w", norm, parsed])
       putStrLn ("successfully parsed " ++ show pfx ++ " bitcode")
     return (parsed, ast)
 
@@ -492,16 +505,21 @@ parseBC pfx bc = do
 -- clang-generated bitcode will contain version-current output which might have
 -- newer elements and ordering.
 --
--- The compilerCube uses .c files as the input, and .ll files for the expected
--- output.  The assemblyCube uses the .ll file as both input and output.  The
--- actual testing done is very similar, and the assemblyCube always generates a
--- superset of the compilerCube tests (i.e. when no .c file is present).
+-- The cCompilerCube uses .c (C source) files as the input and .ll files for the
+-- expected output.  The ccCompilerCube uses .cc (C++ source) files as the input
+-- and .ll files for the expected output.  The assemblyCube uses the .ll file as
+-- both input and output.  The actual testing done is very similar, and the
+-- assemblyCube always generates a superset of the compilerCube tests (i.e. when
+-- no .c or .cc file is present).
 
-compilerCube :: TS.CUBE
-compilerCube = assemblyCube
-               { TS.rootName = "*.c"
-               , TS.sweetAdjuster = rangeMatch
-               }
+cCompilerCube :: TS.CUBE
+cCompilerCube = assemblyCube
+                { TS.rootName = "*.c"
+                , TS.sweetAdjuster = rangeMatch
+                }
+
+ccCompilerCube :: TS.CUBE
+ccCompilerCube = cCompilerCube { TS.rootName = "*.cc"}
 
 
 runCompileTest :: KnownBugs -> TS.Sweets -> TS.Expectation -> IO [TestTree]
@@ -592,7 +610,8 @@ assembleToBitCode pfx file = do
 compileToBitCode :: FilePath -> FilePath -> TestM FilePath
 compileToBitCode pfx file = do
   tmp <- liftIO getTemporaryDirectory
-  Clang comp <- gets clang
+  Clang comp' <- gets clang
+  let comp = if ".cc" `isSuffixOf` file then comp' <> "++" else comp'
   X.bracketOnError
     (liftIO $ openBinaryTempFile tmp (pfx <.> "bc"))
     (\(bc,_) -> do exists <- liftIO $ doesFileExist bc
