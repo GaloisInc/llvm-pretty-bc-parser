@@ -702,8 +702,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
              then pure 0
              else parseField r 18 numeric) -- dicuNameTableKind
         <*> (if recordSize <= 19
-             then pure False
-             else parseField r 19 nonzero) -- dicuRangesBaseAddress
+             then pure Nothing
+             else Just <$> parseField r 19 nonzero) -- dicuRangesBaseAddress
         <*> (if recordSize <= 20
              then pure Nothing
              else mdStringOrNull ctx pm <$> parseField r 20 numeric) -- dicuSysRoot
