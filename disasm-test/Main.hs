@@ -479,7 +479,15 @@ parseBC pfx bc = do
     Details dets <- gets showDetails
     when dets $ liftIO $ do
       -- Informationally display if there are differences between the llvm-dis
-      -- and llvm-disasm outputs, but no error if they differ.
+      -- and llvm-disasm outputs, but no error if they differ.  Note that the
+      -- arguments to this diff are not the same as those supplied to the diffCmp
+      -- function. The diff here is intended to supply additional information to
+      -- the user for diagnostics, and whitespace changes are likely unimportant
+      -- in that context; this diff does not determine the pass/fail status of
+      -- the testing.  On the other hand, the diffCmp *does* determine if the
+      -- tests pass or fail, so ignoring whitespace in that determination would
+      -- potentially weaken the testing to an unsatisfactory degree and would
+      -- need more careful evaluation.
       putStrLn "## Output differences: LLVM's llvm-dis <--> this llvm-disasm"
       ignore (Proc.callProcess "diff" ["-u", "-b", "-B", "-w", norm, parsed])
       putStrLn ("successfully parsed " ++ show pfx ++ " bitcode")
