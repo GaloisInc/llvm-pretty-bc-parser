@@ -110,15 +110,16 @@
     "llvm-pretty-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1687789214,
-        "narHash": "sha256-dqy1HMfrpz3t02xFRbGxPjc8uh5kC/edVI9aLPqlJ/o=",
+        "lastModified": 1689018006,
+        "narHash": "sha256-z279A1m7ADn2zkn2nKoQyUF64cOrQV1pjkzjuL9FXNo=",
         "owner": "elliottt",
         "repo": "llvm-pretty",
-        "rev": "94e384842b214ba72446d1694446fb5261ab6ce2",
+        "rev": "d79976b2d476fce5df8d33fc6a365e2feb47b4de",
         "type": "github"
       },
       "original": {
         "owner": "elliottt",
+        "ref": "d79976b",
         "repo": "llvm-pretty",
         "type": "github"
       }
