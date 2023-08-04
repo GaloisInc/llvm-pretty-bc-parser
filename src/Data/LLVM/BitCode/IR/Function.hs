@@ -35,14 +35,14 @@ import qualified Data.Traversable as T
 -- When showing a Symbol to the user, show it in the manner that it would appear
 -- in LLVM text format.
 --
--- NOTE: this cannot be eta-reduced to point-free format because implicit
--- parameters are not supported in in point-free format.
+-- NOTE: this cannot be eta-reduced to point-free format because simplified
+-- subsumption rules (introduced in GHC 9) requires eta-expansion of some higher
+-- order functions in order to maintain soundness and typecheck.
 --
 -- TODO: this shows it in the manner that LLVM v3.5 would
 -- display the Symbol, but it should actually display the Symbol in the format of
 -- the current LLVM version being disassembled.
 prettySym :: Symbol -> String
--- prettySym = show . ppLLVM . ppSymbol  -- broken
 prettySym s = show $ ppLLVM $ ppSymbol s
 
 
