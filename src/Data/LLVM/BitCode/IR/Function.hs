@@ -43,7 +43,7 @@ import qualified Data.Traversable as T
 -- display the Symbol, but it should actually display the Symbol in the format of
 -- the current LLVM version being disassembled.
 prettySym :: Symbol -> String
-prettySym s = show $ ppLLVM $ ppSymbol s
+prettySym s = show $ ppLLVM $ llvmPP s
 
 
 -- Function Aliases ------------------------------------------------------------

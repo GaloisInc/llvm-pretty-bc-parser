@@ -8,7 +8,7 @@ module Main where
 
 import           Data.LLVM.BitCode (parseBitCodeLazyFromFile,Error(..),formatError)
 import qualified Text.LLVM.AST as AST
-import           Text.LLVM.PP (ppLLVM,ppModule)
+import           Text.LLVM.PP (ppLLVM,llvmPP)
 
 import qualified Control.Exception as EX
 import           Control.Lens ( (^?), _Right )
@@ -675,7 +675,7 @@ processBitCode pfx file = do
     Right m  -> do
       let m' = AST.fixupOpaquePtrs m
       postParseTests m'
-      parsed <- liftIO $ printToTempFile "ll" (show (ppLLVM (ppModule m')))
+      parsed <- liftIO $ printToTempFile "ll" (show (ppLLVM (llvmPP m')))
       Roundtrip roundtrip <- gets rndTrip
       -- stripComments parsed
       Details det <- gets showDetails
