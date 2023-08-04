@@ -31,6 +31,21 @@ import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Traversable as T
 
+
+-- When showing a Symbol to the user, show it in the manner that it would appear
+-- in LLVM text format.
+--
+-- NOTE: this cannot be eta-reduced to point-free format because simplified
+-- subsumption rules (introduced in GHC 9) requires eta-expansion of some higher
+-- order functions in order to maintain soundness and typecheck.
+--
+-- TODO: this shows it in the manner that LLVM v3.5 would
+-- display the Symbol, but it should actually display the Symbol in the format of
+-- the current LLVM version being disassembled.
+prettySym :: Symbol -> String
+prettySym s = show $ ppLLVM $ ppSymbol s
+
+
 -- Function Aliases ------------------------------------------------------------
 
 type AliasList = Seq.Seq PartialAlias
@@ -213,7 +228,7 @@ lookupBlockName dl = lkp
   where
   syms = Map.fromList [ (partialName d, partialSymtab d) | d <- F.toList dl ]
   lkp fn bid = case Map.lookup fn syms of
-    Nothing -> fail ("symbol " ++ show (ppLLVM (ppSymbol fn)) ++ " is not defined")
+    Nothing -> fail ("symbol " ++ prettySym fn ++ " is not defined")
     Just st -> case IntMap.lookup bid (bbSymtab st) of
       Nothing -> fail ("block id " ++ show bid ++ " does not exist")
       Just sn -> return (mkBlockLabel sn)
@@ -358,7 +373,7 @@ parseFunctionBlock unnamedGlobals ents =
   -- pop the function prototype off of the internal stack
   proto <- popFunProto
 
-  label (show (ppSymbol (protoSym proto))) $ withValueSymtab symtab $ do
+  label (prettySym (protoSym proto)) $ withValueSymtab symtab $ do
 
     -- generate the initial partial definition
     pd  <- emptyPartialDefine proto
