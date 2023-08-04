@@ -4,7 +4,7 @@
 import Data.LLVM.BitCode (parseBitCode, formatError)
 import Data.LLVM.CFG (buildCFG, CFG(..), blockId)
 import Text.LLVM.AST (defBody, modDefines,Module)
-import Text.LLVM.PP (ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, ppModule)
+import Text.LLVM.PP (ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP)
 import Text.PrettyPrint (Style(..), renderStyle, style)
 
 import Control.Monad (when)
@@ -103,21 +103,21 @@ renderLLVM opts m = do
   let v         = optLLVMVersion opts
   let putRender = putStrLn . renderStyle s
   if -- try the 3.5 style for 3.4
-     | v == "3.4"            -> putRender (ppLLVM35 (ppModule m))
-     | v == "3.5"            -> putRender (ppLLVM35 (ppModule m))
-     | v == "3.6"            -> putRender (ppLLVM36 (ppModule m))
-     | v == "3.7"            -> putRender (ppLLVM37 (ppModule m))
-     | v == "3.8"            -> putRender (ppLLVM38 (ppModule m))
+     | v == "3.4"            -> putRender (ppLLVM35 (llvmPP m))
+     | v == "3.5"            -> putRender (ppLLVM35 (llvmPP m))
+     | v == "3.6"            -> putRender (ppLLVM36 (llvmPP m))
+     | v == "3.7"            -> putRender (ppLLVM37 (llvmPP m))
+     | v == "3.8"            -> putRender (ppLLVM38 (llvmPP m))
      -- try the 3.8 style for 3.9-11.0
-     | v == "3.9"            -> putRender (ppLLVM38 (ppModule m))
-     | v `elem` ["4", "4.0"] -> putRender (ppLLVM38 (ppModule m))
-     | v `elem` ["5", "5.0"] -> putRender (ppLLVM38 (ppModule m))
-     | v `elem` ["6", "6.0"] -> putRender (ppLLVM38 (ppModule m))
-     | v `elem` ["7", "7.0"] -> putRender (ppLLVM38 (ppModule m))
-     | v `elem` ["8", "8.0"] -> putRender (ppLLVM38 (ppModule m))
-     | v `elem` ["9", "9.0"] -> putRender (ppLLVM38 (ppModule m))
-     | v `elem` ["10", "10.0"] -> putRender (ppLLVM38 (ppModule m))
-     | v `elem` ["11", "11.0"] -> putRender (ppLLVM38 (ppModule m))
+     | v == "3.9"            -> putRender (ppLLVM38 (llvmPP m))
+     | v `elem` ["4", "4.0"] -> putRender (ppLLVM38 (llvmPP m))
+     | v `elem` ["5", "5.0"] -> putRender (ppLLVM38 (llvmPP m))
+     | v `elem` ["6", "6.0"] -> putRender (ppLLVM38 (llvmPP m))
+     | v `elem` ["7", "7.0"] -> putRender (ppLLVM38 (llvmPP m))
+     | v `elem` ["8", "8.0"] -> putRender (ppLLVM38 (llvmPP m))
+     | v `elem` ["9", "9.0"] -> putRender (ppLLVM38 (llvmPP m))
+     | v `elem` ["10", "10.0"] -> putRender (ppLLVM38 (llvmPP m))
+     | v `elem` ["11", "11.0"] -> putRender (ppLLVM38 (llvmPP m))
      | otherwise -> printUsage ["unsupported LLVM version: " ++ v] >> exitFailure
   when (optDoCFG opts) $ do
     let cfgs  = map (buildCFG . defBody) $ modDefines m
