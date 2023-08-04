@@ -416,7 +416,7 @@ runAssemblyTest llvmVersion knownBugs sweet expct
   = do shouldSkip <- skipTest expct
        let tmod = if shouldSkip
                   then ignoreTestBecause "not valid for this LLVM version"
-                  else case isKnownBug knownBugs sweet expct of
+                  else case isKnownBug knownBugs sweet expct llvmVersion of
                          Just (from, why) ->
                            expectFailBecause $ why <> " [see " <> from <> "]"
                          Nothing -> id
@@ -530,7 +530,7 @@ runCompileTest llvmVersion knownBugs sweet expct = do
   shouldSkip <- skipTest expct
   let tmod = if shouldSkip
              then ignoreTestBecause "not valid for this LLVM version"
-             else case isKnownBug knownBugs sweet expct of
+             else case isKnownBug knownBugs sweet expct llvmVersion of
                     Just (from, why) ->
                       expectFailBecause $ why <> " [see " <> from <> "]"
                     Nothing -> id
@@ -842,14 +842,15 @@ getKnownBugs = do
 -- | This function checks to see if the current test being defined corresponds to
 -- one of those known bugs, and if so, returns the name of the known bugs file
 -- and the summary string from that file.
-isKnownBug :: KnownBugs -> TS.Sweets -> TS.Expectation -> Maybe (FilePath, String)
-isKnownBug knownBugs sweet expct =
+isKnownBug :: KnownBugs -> TS.Sweets -> TS.Expectation -> VersionCheck
+           -> Maybe (FilePath, String)
+isKnownBug knownBugs sweet _expct llvmver =
   let matchOf (_,km) = and (uncurry isMatch <$> Map.assocs km)
       isMatch = \case
         "rootMatchName:" -> (TS.rootMatchName sweet `elem`)
-        "llvmver:" -> maybe (const False) elem
-                      (lookup "llvmVer" (TS.expParamsMatch expct)
-                       >>= TS.getParamVal)
+        "llvmver:" -> case vcVersioning llvmver ^? (_Right . major) of
+                        Just v -> (show v `elem`)
+                        Nothing -> const False
         _ -> const True
       found = find matchOf $ Map.assocs knownBugs
       getSummary (f,_) = (f
