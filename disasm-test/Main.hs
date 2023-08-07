@@ -8,7 +8,7 @@ module Main where
 
 import           Data.LLVM.BitCode (parseBitCodeLazyFromFile,Error(..),formatError)
 import qualified Text.LLVM.AST as AST
-import           Text.LLVM.PP
+import           Text.LLVM.PP ( ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP )
 
 import qualified Control.Exception as EX
 import           Control.Lens ( (^?), _Right )
