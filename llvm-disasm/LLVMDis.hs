@@ -59,8 +59,16 @@ getOptions =
 printUsage :: [String] -> IO ()
 printUsage errs =
   do prog <- getProgName
-     let banner = "Usage: " ++ prog ++ " [OPTIONS]"
-     putStrLn (usageInfo (unlines (errs ++ [banner])) options)
+     let banner = [ "Usage: " ++ prog ++ " [OPTIONS]"
+                  , ""
+                  , "  Converts LLVM bitcode format (.bc) to LLVM text form (.ll) on stdout."
+                  , "  Supports LLVM versions 3.4 through " <> show llvmVlatest <> "."
+                  , ""
+                  , "  Comparable to the llvm-dis tool from LLVM (which only supports"
+                  , "  the *current* version) but writes to stdout instead of a file."
+                  ]
+
+     putStrLn (usageInfo (unlines (errs ++ banner)) options)
 
 setLLVMVersion :: String -> Endo Options
 setLLVMVersion str = Endo (\opt -> opt { optLLVMVersion = str })
