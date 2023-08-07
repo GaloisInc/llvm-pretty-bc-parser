@@ -138,8 +138,11 @@ descr = PP.vcat $
 
 newtype LLVMAs = LLVMAs FilePath
 
+defaultLLVMAs :: LLVMAs
+defaultLLVMAs = LLVMAs "llvm-as"
+
 instance TO.IsOption LLVMAs where
-  defaultValue = LLVMAs "llvm-as"
+  defaultValue = defaultLLVMAs
   parseValue = Just . LLVMAs
   optionName = pure "with-llvm-as"
   optionHelp = pure "path to llvm-as"
@@ -202,8 +205,8 @@ instance TO.IsOption Details where
   optionCLParser = TO.mkOptionCLParser $
     OA.short 'd'
 
-disasmTestIngredients :: [TR.Ingredient]
-disasmTestIngredients =
+disasmTestIngredients :: VersionCheck -> [TR.Ingredient]
+disasmTestIngredients llvmver =
   includingOptions [ TO.Option (Proxy @LLVMAs)
                    , TO.Option (Proxy @LLVMDis)
                    , TO.Option (Proxy @Clang)
@@ -211,16 +214,19 @@ disasmTestIngredients =
                    , TO.Option (Proxy @Keep)
                    , TO.Option (Proxy @Details)
                    ] :
-  TS.sugarIngredients [ assemblyCube, cCompilerCube, ccCompilerCube ]
+  TS.sugarIngredients [ assemblyCube llvmver
+                      , cCompilerCube llvmver
+                      , ccCompilerCube llvmver ]
   <> defaultIngredients
 
 parseCmdLine :: IO TO.OptionSet
 parseCmdLine = do
   TR.installSignalHandlers
+  llvmver <- getLLVMAsVersion defaultLLVMAs
   let disasmOptDescrs = TO.uniqueOptionDescriptions $
         TR.coreOptions ++
         TS.sugarOptions ++
-        TR.ingredientsOptions disasmTestIngredients
+        TR.ingredientsOptions (disasmTestIngredients llvmver)
       (disasmOptWarns, disasmOptParser) = TR.optionParser disasmOptDescrs
   mapM_ (hPutStrLn IO.stderr) disasmOptWarns
   ts <- maybe 80 Term.width <$> Term.size
@@ -325,9 +331,9 @@ main =  do
       ]
 
   knownBugs <- getKnownBugs
-  sweets1 <- TS.findSugar assemblyCube
-  sweets2 <- TS.findSugar cCompilerCube
-  sweets3 <- TS.findSugar ccCompilerCube
+  sweets1 <- TS.findSugar $ assemblyCube llvmAsVC
+  sweets2 <- TS.findSugar $ cCompilerCube llvmAsVC
+  sweets3 <- TS.findSugar $ ccCompilerCube llvmAsVC
   atests <- TS.withSugarGroups sweets1 testGroup
             $ \s _ e -> runAssemblyTest llvmAsVC knownBugs s e
   ctests <- TS.withSugarGroups sweets2 testGroup
@@ -336,7 +342,7 @@ main =  do
              $ \s _ e -> runCompileTest llvmAsVC knownBugs s e
   let tests = atests <> ctests
   case TR.tryIngredients
-         disasmTestIngredients
+         (disasmTestIngredients llvmAsVC)
          disasmOpts
          (testGroup "Disassembly tests"
           [ testGroup (showVC llvmAsVC) atests
@@ -350,14 +356,14 @@ main =  do
       ok <- act
       if ok then exitSuccess else exitFailure
 
-  defaultMainWithIngredients disasmTestIngredients $
+  defaultMainWithIngredients (disasmTestIngredients llvmAsVC) $
     testGroup "Disassembly tests" tests
 
 ----------------------------------------------------------------------
 -- Assembly/disassembly tests
 
-assemblyCube :: TS.CUBE
-assemblyCube = TS.mkCUBE
+assemblyCube :: VersionCheck -> TS.CUBE
+assemblyCube llvmver = TS.mkCUBE
   { TS.inputDirs = ["disasm-test/tests"]
   , TS.rootName = "*.ll"
   , TS.separators = "."
@@ -381,18 +387,16 @@ assemblyCube = TS.mkCUBE
       -- (e.g. remove: root=poison.ll with exp=poison.pre-llvm12.ll).
       let rootExpSame s e = TS.rootFile s == TS.expectedFile e
           addExpFilter s = s { TS.expected = filter (rootExpSame s) $ TS.expected s }
-      in fmap (fmap addExpFilter) . rangeMatch cb
+      in fmap (fmap addExpFilter) . rangeMatch llvmver cb
   }
 
 
-rangeMatch :: MonadIO m => TS.CUBE -> [TS.Sweets] -> m [TS.Sweets]
-rangeMatch cb swts = do
+rangeMatch :: MonadIO m => VersionCheck -> TS.CUBE -> [TS.Sweets] -> m [TS.Sweets]
+rangeMatch llvmver cb swts = do
   -- Perform ranged-matching of the llvm-range parameter against the version of
   -- llvm (reported by llvm-as) to filter the tasty-sugar expectations.  Note
   -- that there is a built-in expectation here that there is only one llvm
   -- version available to the test.
-  disasmOpts <- liftIO $ parseCmdLine
-  llvmver <- liftIO $ getLLVMAsVersion $ TO.lookupOption disasmOpts
   TS.rangedParamAdjuster "llvm-range"
     (readMaybe . drop (length ("pre-llvm" :: String)))
     (<)
@@ -514,14 +518,14 @@ parseBC pfx bc = do
 -- assemblyCube always generates a superset of the compilerCube tests (i.e. when
 -- no .c or .cc file is present).
 
-cCompilerCube :: TS.CUBE
-cCompilerCube = assemblyCube
-                { TS.rootName = "*.c"
-                , TS.sweetAdjuster = rangeMatch
-                }
+cCompilerCube :: VersionCheck -> TS.CUBE
+cCompilerCube llvmver = (assemblyCube llvmver)
+                        { TS.rootName = "*.c"
+                        , TS.sweetAdjuster = rangeMatch llvmver
+                        }
 
-ccCompilerCube :: TS.CUBE
-ccCompilerCube = cCompilerCube { TS.rootName = "*.cc"}
+ccCompilerCube :: VersionCheck -> TS.CUBE
+ccCompilerCube llvmver = (cCompilerCube llvmver) { TS.rootName = "*.cc"}
 
 
 runCompileTest :: VersionCheck -> KnownBugs -> TS.Sweets -> TS.Expectation
