@@ -27,7 +27,7 @@ whereas these separate files do not).
 
 All files in this directory are processed (including this one!), regardless of
 filename or extension.  Only files which contain marker lines (described below)
-will be added a s a known bug; this file describes marker lines but is careful to
+will be added as a known bug; this file describes marker lines but is careful to
 not contain marker lines (i.e. a line which begins with `"##>"`), so that it will
 not be treated as a known bug.
 
