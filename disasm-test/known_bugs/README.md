@@ -36,8 +36,8 @@ more words which correspond to the corresponding tasty-sugar field in the
 provided `Sweets` structure when generating tests.
 
 Lines which begin with `"##> llvmver: "` should be followed by one or more words,
-each of which corresponds to an llvm version (in the format `"llvmN"`) that the
-bug is known to be present for.
+each of which corresponds to an llvm version (in numeric format, e.g. `10` `11`
+`4`) that the bug is known to be present for.
 
 The above lines are the primary mechanism for matching a particular test with the
 expectation that it will fail.  There can be multiple values specified after each
