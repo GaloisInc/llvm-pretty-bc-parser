@@ -1,16 +1,14 @@
-{-# LANGUAGE ImplicitParams #-}
-{-# LANGUAGE MultiWayIf #-}
-
 import Data.LLVM.BitCode (parseBitCode, formatError)
 import Data.LLVM.CFG (buildCFG, CFG(..), blockId)
 import Text.LLVM.AST (defBody, modDefines,Module)
-import Text.LLVM.PP (ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP)
-import Text.PrettyPrint (Style(..), renderStyle, style)
+import Text.LLVM.PP (ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP, llvmVlatest)
 
 import Control.Monad (when)
 import Data.Graph.Inductive.Graph (nmap, emap)
 import Data.Graph.Inductive.Dot (fglToDotString, showDot)
 import Data.Monoid (Endo(..))
+import Text.PrettyPrint (Style(..), renderStyle, style)
+import Text.Read (readMaybe)
 import Text.Show.Pretty (pPrint)
 import System.Console.GetOpt
   (ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo)
@@ -28,7 +26,7 @@ data Options = Options {
 
 defaultOptions :: Options
 defaultOptions  = Options {
-    optLLVMVersion = "3.8"
+    optLLVMVersion = show llvmVlatest
   , optDoCFG       = False
   , optAST         = False
   , optHelp        = False
@@ -37,7 +35,7 @@ defaultOptions  = Options {
 options :: [OptDescr (Endo Options)]
 options  =
   [ Option "" ["llvm-version"] (ReqArg setLLVMVersion "VERSION")
-    "print assembly compatible with this LLVM version (e.g., 3.8)"
+    "output for LLVM version (e.g., 3.5, 3.6. 3.7, 3.8, 4, 5, 6, ...)."
   , Option "" ["cfg"] (NoArg setDoCFG)
     "output CFG in graphviz format"
   , Option "" ["ast"] (NoArg setAST)
@@ -61,8 +59,16 @@ getOptions =
 printUsage :: [String] -> IO ()
 printUsage errs =
   do prog <- getProgName
-     let banner = "Usage: " ++ prog ++ " [OPTIONS]"
-     putStrLn (usageInfo (unlines (errs ++ [banner])) options)
+     let banner = [ "Usage: " ++ prog ++ " [OPTIONS]"
+                  , ""
+                  , "  Converts LLVM bitcode format (.bc) to LLVM text form (.ll) on stdout."
+                  , "  Supports LLVM versions 3.4 through " <> show llvmVlatest <> "."
+                  , ""
+                  , "  Comparable to the llvm-dis tool from LLVM (which only supports"
+                  , "  the *current* version) but writes to stdout instead of a file."
+                  ]
+
+     putStrLn (usageInfo (unlines (errs ++ banner)) options)
 
 setLLVMVersion :: String -> Endo Options
 setLLVMVersion str = Endo (\opt -> opt { optLLVMVersion = str })
@@ -102,23 +108,15 @@ renderLLVM opts m = do
   let s         = style { lineLength = maxBound, ribbonsPerLine = 1.0 }
   let v         = optLLVMVersion opts
   let putRender = putStrLn . renderStyle s
-  if -- try the 3.5 style for 3.4
-     | v == "3.4"            -> putRender (ppLLVM35 (llvmPP m))
-     | v == "3.5"            -> putRender (ppLLVM35 (llvmPP m))
-     | v == "3.6"            -> putRender (ppLLVM36 (llvmPP m))
-     | v == "3.7"            -> putRender (ppLLVM37 (llvmPP m))
-     | v == "3.8"            -> putRender (ppLLVM38 (llvmPP m))
-     -- try the 3.8 style for 3.9-11.0
-     | v == "3.9"            -> putRender (ppLLVM38 (llvmPP m))
-     | v `elem` ["4", "4.0"] -> putRender (ppLLVM38 (llvmPP m))
-     | v `elem` ["5", "5.0"] -> putRender (ppLLVM38 (llvmPP m))
-     | v `elem` ["6", "6.0"] -> putRender (ppLLVM38 (llvmPP m))
-     | v `elem` ["7", "7.0"] -> putRender (ppLLVM38 (llvmPP m))
-     | v `elem` ["8", "8.0"] -> putRender (ppLLVM38 (llvmPP m))
-     | v `elem` ["9", "9.0"] -> putRender (ppLLVM38 (llvmPP m))
-     | v `elem` ["10", "10.0"] -> putRender (ppLLVM38 (llvmPP m))
-     | v `elem` ["11", "11.0"] -> putRender (ppLLVM38 (llvmPP m))
-     | otherwise -> printUsage ["unsupported LLVM version: " ++ v] >> exitFailure
+  case readMaybe v :: Maybe Int of
+    Just n -> putRender (ppLLVM n (llvmPP m))
+    Nothing -> case readMaybe v :: Maybe Float of
+                 Just 3.4 -> putRender (ppLLVM35 (llvmPP m))
+                 Just 3.5 -> putRender (ppLLVM35 (llvmPP m))
+                 Just 3.6 -> putRender (ppLLVM36 (llvmPP m))
+                 Just 3.7 -> putRender (ppLLVM37 (llvmPP m))
+                 Just 3.8 -> putRender (ppLLVM38 (llvmPP m))
+                 _ -> printUsage ["unsupported LLVM version: " ++ v] >> exitFailure
   when (optDoCFG opts) $ do
     let cfgs  = map (buildCFG . defBody) $ modDefines m
         fixup = nmap (show . blockId) . emap (const "")

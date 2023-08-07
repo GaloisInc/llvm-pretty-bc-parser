@@ -32,18 +32,19 @@ import qualified Data.Sequence as Seq
 import qualified Data.Traversable as T
 
 
--- When showing a Symbol to the user, show it in the manner that it would appear
--- in LLVM text format.
---
+-- | When showing a Symbol to the user, show it in the manner that it would appear
+-- in LLVM text format.  This displays the Symbol in the format associated with
+-- the latest version of LLVM supported by llvm-pretty and this library; the
+-- Symbol syntax has not changed from LLVM 3.5 through LLVM 16, and this library
+-- is intended to be able to import *any* version of LLVM, so this is not a
+-- significant issue that would drive the code changes necessary to make an
+-- actual LLVM version available here.
+
 -- NOTE: this cannot be eta-reduced to point-free format because simplified
 -- subsumption rules (introduced in GHC 9) requires eta-expansion of some higher
 -- order functions in order to maintain soundness and typecheck.
---
--- TODO: this shows it in the manner that LLVM v3.5 would
--- display the Symbol, but it should actually display the Symbol in the format of
--- the current LLVM version being disassembled.
 prettySym :: Symbol -> String
-prettySym s = show $ ppLLVM $ llvmPP s
+prettySym s = show $ ppLLVM llvmVlatest $ llvmPP s
 
 
 -- Function Aliases ------------------------------------------------------------

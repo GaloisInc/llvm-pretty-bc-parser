@@ -8,7 +8,7 @@ module Main where
 
 import           Data.LLVM.BitCode (parseBitCodeLazyFromFile,Error(..),formatError)
 import qualified Text.LLVM.AST as AST
-import           Text.LLVM.PP
+import           Text.LLVM.PP ( ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP )
 
 import qualified Control.Exception as EX
 import           Control.Lens ( (^?), _Right )
@@ -687,8 +687,9 @@ processBitCode pfx file = do
       llvmVersion <- gets llvmVer
       llvmAssembly <-
         case vcVersioning llvmVersion ^? (_Right . major) of
-          Nothing -> do liftIO $ putStrLn ( "warning: unknown LLVM version ("
-                                            <> showVC llvmVersion <> "), assuming 3.5")
+          Nothing -> do liftIO $ hPutStrLn IO.stderr
+                          ( "warning: unknown LLVM version ("
+                            <> showVC llvmVersion <> "), assuming 3.5")
                         return $ ppLLVM35 $ llvmPP m'
           Just v ->
             case v of
@@ -700,7 +701,7 @@ processBitCode pfx file = do
                      o -> if maybe True (< 5) o
                           then return $ ppLLVM35 $ llvmPP m'
                           else return $ ppLLVM38 $ llvmPP m'
-              _ -> return $ ppLLVM38 $ llvmPP m'  -- TODO: LLVM38 is the last one currently defined
+              _ -> return $ ppLLVM (fromEnum v) $ llvmPP m'
       parsed <- liftIO $ printToTempFile "ll" $ show llvmAssembly
       Roundtrip roundtrip <- gets rndTrip
       -- stripComments parsed
