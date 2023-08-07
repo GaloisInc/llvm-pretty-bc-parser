@@ -697,7 +697,7 @@ processBitCode pfx file = do
                      o -> if maybe True (< 5) o
                           then return $ ppLLVM35 $ llvmPP m'
                           else return $ ppLLVM38 $ llvmPP m'
-              _ -> return $ ppLLVM38 $ llvmPP m'  -- TODO: LLVM38 is the last one currently defined
+              _ -> return $ ppLLVM (fromEnum v) $ llvmPP m'
       parsed <- liftIO $ printToTempFile "ll" $ show llvmAssembly
       Roundtrip roundtrip <- gets rndTrip
       -- stripComments parsed
