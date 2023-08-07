@@ -569,7 +569,7 @@ getTypeId n = do
   symtab <- getTypeSymtab
   case Map.lookup n (tsByName symtab) of
     Just ix -> return ix
-    Nothing -> fail ("unknown type alias " ++ show (ppLLVM (ppIdent n)))
+    Nothing -> fail ("unknown type alias " ++ show (ppLLVM llvmVlatest (llvmPP n)))
 
 
 -- Value Symbol Table ----------------------------------------------------------

@@ -70,7 +70,7 @@ Library
                        bytestring  >= 0.10,
                        containers  >= 0.4,
                        fgl         >= 5.5,
-                       llvm-pretty >= 0.11.0.0.99 && < 0.12,
+                       llvm-pretty >= 0.11.0.0.100 && < 0.12,
                        mtl         >= 2.2.2,
                        pretty      >= 1.0.1,
                        uniplate    >= 1.6,
