@@ -25,13 +25,19 @@ code changes elsewhere (and keeping the list of known bugs in source code invite
 the potential for merge conflicts when adding/resolving bugs in parallel efforts,
 whereas these separate files do not).
 
+All files in this directory are processed (including this one!), regardless of
+filename or extension.  Only files which contain marker lines (described below)
+will be added as a known bug; this file describes marker lines but is careful to
+not contain marker lines (i.e. a line which begins with `"##>"`), so that it will
+not be treated as a known bug.
+
 Lines which begin with `"##> rootMatchName: "` should be followed by one or
 more words which correspond to the corresponding tasty-sugar field in the
 provided `Sweets` structure when generating tests.
 
 Lines which begin with `"##> llvmver: "` should be followed by one or more words,
-each of which corresponds to an llvm version (in the format `"llvmN"`) that the
-bug is known to be present for.
+each of which corresponds to an llvm version (in numeric format, e.g. `10` `11`
+`4`) that the bug is known to be present for.
 
 The above lines are the primary mechanism for matching a particular test with the
 expectation that it will fail.  There can be multiple values specified after each
