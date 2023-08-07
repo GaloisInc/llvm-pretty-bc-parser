@@ -683,8 +683,9 @@ processBitCode pfx file = do
       llvmVersion <- gets llvmVer
       llvmAssembly <-
         case vcVersioning llvmVersion ^? (_Right . major) of
-          Nothing -> do liftIO $ putStrLn ( "warning: unknown LLVM version ("
-                                            <> showVC llvmVersion <> "), assuming 3.5")
+          Nothing -> do liftIO $ hPutStrLn IO.stderr
+                          ( "warning: unknown LLVM version ("
+                            <> showVC llvmVersion <> "), assuming 3.5")
                         return $ ppLLVM35 $ llvmPP m'
           Just v ->
             case v of
