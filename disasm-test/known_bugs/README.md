@@ -25,6 +25,12 @@ code changes elsewhere (and keeping the list of known bugs in source code invite
 the potential for merge conflicts when adding/resolving bugs in parallel efforts,
 whereas these separate files do not).
 
+All files in this directory are processed (including this one!), regardless of
+filename or extension.  Only files which contain marker lines (described below)
+will be added a s a known bug; this file describes marker lines but is careful to
+not contain marker lines (i.e. a line which begins with `"##>"`), so that it will
+not be treated as a known bug.
+
 Lines which begin with `"##> rootMatchName: "` should be followed by one or
 more words which correspond to the corresponding tasty-sugar field in the
 provided `Sweets` structure when generating tests.
