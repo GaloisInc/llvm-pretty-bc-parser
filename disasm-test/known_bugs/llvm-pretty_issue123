@@ -1,0 +1,42 @@
+##> rootMatchName: global-var.c
+##> summary: global variables tagged as external AND initialized
+##> llvmver: 11 12 13 14 15
+
+## Running: llvm-as -o /tmp/nix-shell.UBduFW/global-var.pre-llvm10136388-9.bc /tmp/nix-shell.UBduFW/global-var.pre-llvm10llvm-disasm136388-7.ll
+llvm-as: /tmp/nix-shell.UBduFW/global-var.pre-llvm10llvm-disasm136388-7.ll:4:43: error: expected top-level entity
+@global_var = external default global i32 0, align 4
+                                          ^
+FAIL
+          Exception: callProcess: llvm-as "-o" "/tmp/nix-shell.UBduFW/global-var.pre-llvm10136388-9.bc" "/tmp/nix-shell.UBduFW/global-var.pre-llvm10llvm-disasm136388-7.ll" (exit 1): failed
+          Use -p '/global-var/&&/global-var.pre-llvm10/' to rerun this test only.
+
+
+Examining the output, llvm-dis produces:
+
+@global_var = common global i32 0, align 4
+
+but llvm-disasm from this package produces:
+
+@global_var = external default global i32 0, align 4
+
+----------
+
+When clang-v9 or clang-v10 compiles, the output is:
+
+llvm-dis:    @global_var = common global i32 0, align 4, !dbg !0
+llvm-disasm: @global_var = common default global i32 0, align 4, !dbg !4
+
+Then this is llvm-as and the result of the round trip is:
+
+llvm-dis:    @global_var = common global i32 0, align 4, !dbg !0
+llvm-disasm: @global_var = common default global i32 0, align 4, !dbg !4
+
+----------
+
+with clang-11, the output is:
+
+llvm-dis:    @global_var = global i32 0, align 4, !dbg !0
+llvm-disasm: @global_var = external default global i32 0, align 4, !dbg !4
+
+The latter fails, presumably because it's not valid to initialize an external.
+Starting with clang-11, the "common" is dropped as the expected default.
