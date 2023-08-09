@@ -1100,7 +1100,7 @@ addInstrAttachments atts blocks = go 0 (Map.toList atts) (Seq.viewl blocks)
     b' | null use  = b
        | otherwise = b { partialStmts = foldl addMd (partialStmts b) use }
 
-    addMd stmts (i,md') = Seq.adjust update i stmts
+    addMd stmts (i,md') = Seq.adjust update (i-off) stmts
       where
       update (Result n s md) = Result n s (md ++ md')
       update (Effect   s md) = Effect   s (md ++ md')
