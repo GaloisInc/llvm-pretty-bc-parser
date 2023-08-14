@@ -592,7 +592,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoFile diFile)) pm
 
     17 -> label "METADATA_DERIVED_TYPE" $ do
-      assertRecordSizeBetween 12 14
+      -- While upstream LLVM currently imposes a maximum of 14 records per
+      -- entry, we raise this to 15 for the sake of parsing Apple LLVM.
+      -- See Note [Apple LLVM].
+      assertRecordSizeBetween 12 15
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       didt       <- DIDerivedType
@@ -1226,3 +1229,32 @@ parseMetadataKindEntry r = do
   kind <- parseField  r 0 numeric
   name <- parseFields r 1 char
   addKind kind (UTF8.decode name)
+
+{-
+Note [Apple LLVM]
+~~~~~~~~~~~~~~~~~
+Apple maintains a fork of LLVM, whose source code can be found at
+https://github.com/apple/llvm-project. The version of Clang that is shipped
+with Xcode, and thereby the de facto default Clang version on macOS, is based
+on this LLVM fork. To distinguish between the two LLVM codebases, we will refer
+to "upstream LLVM" and "Apple LLVM" throughout this Note.
+
+One of the more noticeable differences between upstream and Apple LLVM is that
+Apple LLVM uses a slightly different bitcode format. In particular, Apple LLVM
+has support for pointer authentication
+(https://lists.llvm.org/pipermail/llvm-dev/2019-October/136091.html), which
+requires adding an extra record to the METADATA_DERIVED_TYPE entry that is not
+present in upstream LLVM. This impacts llvm-pretty-bc-parser, as we currently
+check that the number of records does not exceed a certain maximum, but this
+maximum is different depending on whether we parse upstream or Apple LLVM
+bitcode.
+
+For now, we work around this issue by raising the maximum number of
+METADATA_DERIVED_TYPE records by one to accommodate Apple LLVM, but we do not
+actually parse any information related to pointer authentication. This should
+work provided that Apple LLVM continues to encode pointer authentication–related
+metadata in the same part of METADATA_DERIVED_TYPE in future releases. If this
+assumption does not hold true in the future, we will likely need a more
+sophisticated solution that involves parsing the bitcode differently depending
+on what Apple LLVM version was used to produce a bitcode file.
+-}
