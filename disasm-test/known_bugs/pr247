@@ -1,0 +1,7 @@
+##> rootMatchName: apple-llvm.bc
+##> summary: unnamed metadata indices are currently duplicated
+
+This is a manifestation of
+https://github.com/GaloisInc/llvm-pretty-bc-parser/issues/222, which will
+eventually be address by
+https://github.com/GaloisInc/llvm-pretty-bc-parser/pull/228.
