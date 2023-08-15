@@ -489,7 +489,10 @@ processLL pfx f = do
 
 parseBC :: FilePath -> FilePath -> TestM (FilePath, Maybe FilePath)
 parseBC pfx bc = do
-  withFile (disasmBitCode pfx bc) $ \ norm -> do
+  withFile (X.handle
+            (\(_ :: GE.IOException) -> return "LLVM llvm-dis failed to parse this file")
+            (disasmBitCode pfx bc))
+    $ \ norm -> do
     (parsed, ast) <- processBitCode pfx bc
     Details dets <- gets showDetails
     when dets $ liftIO $ do
@@ -661,9 +664,7 @@ assembleToBitCode pfx file = do
   LLVMAs asm <- gets llvmAs
   X.bracketOnError
     (liftIO $ openBinaryTempFile tmp (pfx <.> "bc"))
-    (\(bc,_) -> do exists <- liftIO $ doesFileExist bc
-                   when exists $ rmFile bc
-    )
+    (rmFile . fst)
     $ \(bc,h) ->
         do liftIO $ hClose h
            callProc asm ["-o", bc, file]
@@ -677,9 +678,7 @@ compileToBitCode pfx file = do
   let comp = if ".cc" `isSuffixOf` file then comp' <> "++" else comp'
   X.bracketOnError
     (liftIO $ openBinaryTempFile tmp (pfx <.> "bc"))
-    (\(bc,_) -> do exists <- liftIO $ doesFileExist bc
-                   when exists $ rmFile bc
-    )
+    (rmFile . fst)
     $ \(bc,h) ->
         do liftIO $ hClose h
            callProc comp ["-c", "-emit-llvm", "-O0", "-g", "-o", bc, file]
@@ -693,9 +692,7 @@ disasmBitCode pfx file = do
   LLVMDis dis <- gets llvmDis
   X.bracketOnError
     (liftIO $ openTempFile tmp (pfx ++ "llvm-dis" <.> "ll"))
-    (\(norm,_) -> do exists <- liftIO $ doesFileExist norm
-                     when exists $ rmFile norm
-    )
+    (rmFile . fst)
     $ \(norm,h) ->
         do liftIO $ hClose h
            callProc dis ["-o", norm, file]
@@ -855,9 +852,11 @@ with2Files iofiles f =
 rmFile :: FilePath -> TestM ()
 rmFile tmp = do Keep keep <- gets keepTemp
                 unless keep
-                  $ do Details dets <- gets showDetails
-                       when dets $ liftIO $ putStrLn $ "## Removing " <> tmp
-                       liftIO $ removeFile tmp
+                  $ do do exists <- liftIO $ doesFileExist tmp
+                          when exists $ do
+                            Details dets <- gets showDetails
+                            when dets $ liftIO $ putStrLn $ "## Removing " <> tmp
+                            liftIO $ removeFile tmp
 
 ----------------------------------------------------------------------
 
