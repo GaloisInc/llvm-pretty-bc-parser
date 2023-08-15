@@ -91,8 +91,8 @@ descr = PP.vcat $
   , "                     ^   `-[llvm-disasm]---> .ll"
   , "                     |                   `-> .AST"
   , " .c --[clang]--------+                         |"
-  , "                                             [show]"
-  , "                                               |"
+  , "                     |                        [show]"
+  , " .bc -[pre-existing]-+                         |"
   , "                                               v"
   , "      [compare first and second of these:]   .txt"
   , ""
@@ -334,20 +334,24 @@ main =  do
   sweets1 <- TS.findSugar $ assemblyCube llvmAsVC
   sweets2 <- TS.findSugar $ cCompilerCube llvmAsVC
   sweets3 <- TS.findSugar $ ccCompilerCube llvmAsVC
+  sweets4 <- TS.findSugar $ bitcodeCube llvmAsVC
   atests <- TS.withSugarGroups sweets1 testGroup
             $ \s _ e -> runAssemblyTest llvmAsVC knownBugs s e
   ctests <- TS.withSugarGroups sweets2 testGroup
             $ \s _ e -> runCompileTest llvmAsVC knownBugs s e
   cctests <- TS.withSugarGroups sweets3 testGroup
              $ \s _ e -> runCompileTest llvmAsVC knownBugs s e
+  bctests <- TS.withSugarGroups sweets4 testGroup
+             $ \s _ e -> runRawBCTest llvmAsVC knownBugs s e
   let tests = atests <> ctests
   case TR.tryIngredients
          (disasmTestIngredients llvmAsVC)
          disasmOpts
          (testGroup "Disassembly tests"
-          [ testGroup (showVC llvmAsVC) atests
-          , testGroup (showVC clangVC) ctests
-          , testGroup (showVC clangVC) cctests
+          [ testGroup ("llvm-as " <> showVC llvmAsVC) atests
+          , testGroup ("C " <> showVC clangVC) ctests
+          , testGroup ("C++ " <> showVC clangVC) cctests
+          , testGroup ("rawBC " <> showVC llvmAsVC) bctests
           ]) of
     Nothing ->
       hPutStrLn IO.stderr
@@ -544,6 +548,45 @@ runCompileTest llvmVersion knownBugs sweet expct = do
     $ withFile (compileToBitCode pfx $ TS.rootFile sweet)
     $ \bc ->
         with2Files (parseBC pfx bc)
+        $ \(parsed1, ast) ->
+            case ast of
+              Nothing ->
+                -- No round trip, so this just verifies that the bitcode could be
+                -- parsed without generating an error.
+                return ()
+              Just ast1 ->
+                -- Assemble and re-parse the bitcode to make sure it can be
+                -- round-tripped successfully.
+                with2Files (processLL pfx parsed1)
+                $ \(_, Just ast2) -> diffCmp ast1 ast2
+                  -- .ll files are not compared; see runAssemblyTest for details.
+
+
+----------------------------------------------------------------------
+-- Pre-existing bitcode tests tests
+
+bitcodeCube :: VersionCheck -> TS.CUBE
+bitcodeCube llvmver = (assemblyCube llvmver)
+                        { TS.rootName = "*.bc"
+                        , TS.inputDirs = ["disasm-test/bc_src_tests"]
+                        , TS.sweetAdjuster = rangeMatch llvmver
+                        }
+
+runRawBCTest :: VersionCheck -> KnownBugs -> TS.Sweets -> TS.Expectation
+               -> IO [TestTree]
+runRawBCTest llvmVersion knownBugs sweet expct = do
+  shouldSkip <- skipTest expct
+  let tmod = if shouldSkip
+             then ignoreTestBecause "not valid for this LLVM version"
+             else case isKnownBug knownBugs sweet expct llvmVersion of
+                    Just (from, why) ->
+                      expectFailBecause $ why <> " [see " <> from <> "]"
+                    Nothing -> id
+  let pfx = TS.rootBaseName sweet
+  let bc = TS.rootFile sweet
+  return $ (:[]) $ tmod
+    $ testCaseM llvmVersion pfx
+    $ with2Files (parseBC pfx bc)
         $ \(parsed1, ast) ->
             case ast of
               Nothing ->
