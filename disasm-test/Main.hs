@@ -91,8 +91,8 @@ descr = PP.vcat $
   , "                     ^   `-[llvm-disasm]---> .ll"
   , "                     |                   `-> .AST"
   , " .c --[clang]--------+                         |"
-  , "                                             [show]"
-  , "                                               |"
+  , "                     |                        [show]"
+  , " .bc -[pre-existing]-+                         |"
   , "                                               v"
   , "      [compare first and second of these:]   .txt"
   , ""
@@ -334,20 +334,24 @@ main =  do
   sweets1 <- TS.findSugar $ assemblyCube llvmAsVC
   sweets2 <- TS.findSugar $ cCompilerCube llvmAsVC
   sweets3 <- TS.findSugar $ ccCompilerCube llvmAsVC
+  sweets4 <- TS.findSugar $ bitcodeCube llvmAsVC
   atests <- TS.withSugarGroups sweets1 testGroup
             $ \s _ e -> runAssemblyTest llvmAsVC knownBugs s e
   ctests <- TS.withSugarGroups sweets2 testGroup
             $ \s _ e -> runCompileTest llvmAsVC knownBugs s e
   cctests <- TS.withSugarGroups sweets3 testGroup
              $ \s _ e -> runCompileTest llvmAsVC knownBugs s e
+  bctests <- TS.withSugarGroups sweets4 testGroup
+             $ \s _ e -> runRawBCTest llvmAsVC knownBugs s e
   let tests = atests <> ctests
   case TR.tryIngredients
          (disasmTestIngredients llvmAsVC)
          disasmOpts
          (testGroup "Disassembly tests"
-          [ testGroup (showVC llvmAsVC) atests
-          , testGroup (showVC clangVC) ctests
-          , testGroup (showVC clangVC) cctests
+          [ testGroup ("llvm-as " <> showVC llvmAsVC) atests
+          , testGroup ("C " <> showVC clangVC) ctests
+          , testGroup ("C++ " <> showVC clangVC) cctests
+          , testGroup ("rawBC " <> showVC llvmAsVC) bctests
           ]) of
     Nothing ->
       hPutStrLn IO.stderr
@@ -433,17 +437,22 @@ runAssemblyTest llvmVersion knownBugs sweet expct
                Nothing   -> return ()
                Just ast1 ->
                  -- Re-assemble and re-disassemble
-                 with2Files (processLL pfx parsed1) $ \(_, Just ast2) -> do
-                 diffCmp ast1 ast2 -- Ensure that the ASTs match
+                 with2Files (processLL pfx parsed1)
+                 $ \(_, mb'ast2) ->
+                     case mb'ast2 of
+                       Just ast2 -> diffCmp ast1 ast2 -- Ensure that the ASTs match
 
-                 -- Ensure that the disassembled files match.  This is usually
-                 -- too strict (and doesn't really provide more info).  We
-                 -- normalize the AST (see below) to ensure that the ASTs match
-                 -- modulo metadata numbering, but the equivalent isn't possible
-                 -- for the assembly: we need llvm-as to be able to re-assemble
-                 -- it.
-                 --
-                 -- diffCmp parsed1 parsed2
+                                    -- Ensure that the disassembled files match.
+                                    -- This is usually too strict (and doesn't
+                                    -- really provide more info).  We normalize
+                                    -- the AST (see below) to ensure that the
+                                    -- ASTs match modulo metadata numbering, but
+                                    -- the equivalent isn't possible for the
+                                    -- assembly: we need llvm-as to be able to
+                                    -- re-assemble it.
+                                    --
+                                    -- diffCmp parsed1 parsed2
+                       Nothing -> error "Failed processLL"
 
 
 diffCmp :: FilePath -> FilePath -> TestM ()
@@ -480,7 +489,10 @@ processLL pfx f = do
 
 parseBC :: FilePath -> FilePath -> TestM (FilePath, Maybe FilePath)
 parseBC pfx bc = do
-  withFile (disasmBitCode pfx bc) $ \ norm -> do
+  withFile (X.handle
+            (\(_ :: GE.IOException) -> return "LLVM llvm-dis failed to parse this file")
+            (disasmBitCode pfx bc))
+    $ \ norm -> do
     (parsed, ast) <- processBitCode pfx bc
     Details dets <- gets showDetails
     when dets $ liftIO $ do
@@ -554,8 +566,53 @@ runCompileTest llvmVersion knownBugs sweet expct = do
                 -- Assemble and re-parse the bitcode to make sure it can be
                 -- round-tripped successfully.
                 with2Files (processLL pfx parsed1)
-                $ \(_, Just ast2) -> diffCmp ast1 ast2
-                  -- .ll files are not compared; see runAssemblyTest for details.
+                $ \(_, mb'ast2) -> case mb'ast2 of
+                                     Just ast2 -> diffCmp ast1 ast2
+                                     Nothing -> error "failed processLL"
+                  -- fst is ignored because .ll files are not compared; see
+                  -- runAssemblyTest for details.
+
+
+----------------------------------------------------------------------
+-- Pre-existing bitcode tests tests
+
+bitcodeCube :: VersionCheck -> TS.CUBE
+bitcodeCube llvmver = (assemblyCube llvmver)
+                        { TS.rootName = "*.bc"
+                        , TS.inputDirs = ["disasm-test/bc_src_tests"]
+                        , TS.sweetAdjuster = rangeMatch llvmver
+                        }
+
+runRawBCTest :: VersionCheck -> KnownBugs -> TS.Sweets -> TS.Expectation
+               -> IO [TestTree]
+runRawBCTest llvmVersion knownBugs sweet expct = do
+  shouldSkip <- skipTest expct
+  let tmod = if shouldSkip
+             then ignoreTestBecause "not valid for this LLVM version"
+             else case isKnownBug knownBugs sweet expct llvmVersion of
+                    Just (from, why) ->
+                      expectFailBecause $ why <> " [see " <> from <> "]"
+                    Nothing -> id
+  let pfx = TS.rootBaseName sweet
+  let bc = TS.rootFile sweet
+  return $ (:[]) $ tmod
+    $ testCaseM llvmVersion pfx
+    $ with2Files (parseBC pfx bc)
+        $ \(parsed1, ast) ->
+            case ast of
+              Nothing ->
+                -- No round trip, so this just verifies that the bitcode could be
+                -- parsed without generating an error.
+                return ()
+              Just ast1 ->
+                -- Assemble and re-parse the bitcode to make sure it can be
+                -- round-tripped successfully.
+                with2Files (processLL pfx parsed1)
+                $ \(_, mb'ast2) -> case mb'ast2 of
+                                     Just ast2 -> diffCmp ast1 ast2
+                                     Nothing -> error "Failed processLL"
+                  -- fst is ignored because .ll files are not compared; see
+                  -- runAssemblyTest for details.
 
 
 ----------------------------------------------------------------------
@@ -607,9 +664,7 @@ assembleToBitCode pfx file = do
   LLVMAs asm <- gets llvmAs
   X.bracketOnError
     (liftIO $ openBinaryTempFile tmp (pfx <.> "bc"))
-    (\(bc,_) -> do exists <- liftIO $ doesFileExist bc
-                   when exists $ rmFile bc
-    )
+    (rmFile . fst)
     $ \(bc,h) ->
         do liftIO $ hClose h
            callProc asm ["-o", bc, file]
@@ -623,9 +678,7 @@ compileToBitCode pfx file = do
   let comp = if ".cc" `isSuffixOf` file then comp' <> "++" else comp'
   X.bracketOnError
     (liftIO $ openBinaryTempFile tmp (pfx <.> "bc"))
-    (\(bc,_) -> do exists <- liftIO $ doesFileExist bc
-                   when exists $ rmFile bc
-    )
+    (rmFile . fst)
     $ \(bc,h) ->
         do liftIO $ hClose h
            callProc comp ["-c", "-emit-llvm", "-O0", "-g", "-o", bc, file]
@@ -639,9 +692,7 @@ disasmBitCode pfx file = do
   LLVMDis dis <- gets llvmDis
   X.bracketOnError
     (liftIO $ openTempFile tmp (pfx ++ "llvm-dis" <.> "ll"))
-    (\(norm,_) -> do exists <- liftIO $ doesFileExist norm
-                     when exists $ rmFile norm
-    )
+    (rmFile . fst)
     $ \(norm,h) ->
         do liftIO $ hClose h
            callProc dis ["-o", norm, file]
@@ -801,9 +852,11 @@ with2Files iofiles f =
 rmFile :: FilePath -> TestM ()
 rmFile tmp = do Keep keep <- gets keepTemp
                 unless keep
-                  $ do Details dets <- gets showDetails
-                       when dets $ liftIO $ putStrLn $ "## Removing " <> tmp
-                       liftIO $ removeFile tmp
+                  $ do do exists <- liftIO $ doesFileExist tmp
+                          when exists $ do
+                            Details dets <- gets showDetails
+                            when dets $ liftIO $ putStrLn $ "## Removing " <> tmp
+                            liftIO $ removeFile tmp
 
 ----------------------------------------------------------------------
 
