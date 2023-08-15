@@ -437,17 +437,22 @@ runAssemblyTest llvmVersion knownBugs sweet expct
                Nothing   -> return ()
                Just ast1 ->
                  -- Re-assemble and re-disassemble
-                 with2Files (processLL pfx parsed1) $ \(_, Just ast2) -> do
-                 diffCmp ast1 ast2 -- Ensure that the ASTs match
+                 with2Files (processLL pfx parsed1)
+                 $ \(_, mb'ast2) ->
+                     case mb'ast2 of
+                       Just ast2 -> diffCmp ast1 ast2 -- Ensure that the ASTs match
 
-                 -- Ensure that the disassembled files match.  This is usually
-                 -- too strict (and doesn't really provide more info).  We
-                 -- normalize the AST (see below) to ensure that the ASTs match
-                 -- modulo metadata numbering, but the equivalent isn't possible
-                 -- for the assembly: we need llvm-as to be able to re-assemble
-                 -- it.
-                 --
-                 -- diffCmp parsed1 parsed2
+                                    -- Ensure that the disassembled files match.
+                                    -- This is usually too strict (and doesn't
+                                    -- really provide more info).  We normalize
+                                    -- the AST (see below) to ensure that the
+                                    -- ASTs match modulo metadata numbering, but
+                                    -- the equivalent isn't possible for the
+                                    -- assembly: we need llvm-as to be able to
+                                    -- re-assemble it.
+                                    --
+                                    -- diffCmp parsed1 parsed2
+                       Nothing -> error "Failed processLL"
 
 
 diffCmp :: FilePath -> FilePath -> TestM ()
@@ -558,8 +563,11 @@ runCompileTest llvmVersion knownBugs sweet expct = do
                 -- Assemble and re-parse the bitcode to make sure it can be
                 -- round-tripped successfully.
                 with2Files (processLL pfx parsed1)
-                $ \(_, Just ast2) -> diffCmp ast1 ast2
-                  -- .ll files are not compared; see runAssemblyTest for details.
+                $ \(_, mb'ast2) -> case mb'ast2 of
+                                     Just ast2 -> diffCmp ast1 ast2
+                                     Nothing -> error "failed processLL"
+                  -- fst is ignored because .ll files are not compared; see
+                  -- runAssemblyTest for details.
 
 
 ----------------------------------------------------------------------
@@ -597,8 +605,11 @@ runRawBCTest llvmVersion knownBugs sweet expct = do
                 -- Assemble and re-parse the bitcode to make sure it can be
                 -- round-tripped successfully.
                 with2Files (processLL pfx parsed1)
-                $ \(_, Just ast2) -> diffCmp ast1 ast2
-                  -- .ll files are not compared; see runAssemblyTest for details.
+                $ \(_, mb'ast2) -> case mb'ast2 of
+                                     Just ast2 -> diffCmp ast1 ast2
+                                     Nothing -> error "Failed processLL"
+                  -- fst is ignored because .ll files are not compared; see
+                  -- runAssemblyTest for details.
 
 
 ----------------------------------------------------------------------
