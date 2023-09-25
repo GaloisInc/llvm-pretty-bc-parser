@@ -536,6 +536,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       assertRecordSizeIn [3, 5]
       field0 <- parseField r 0 unsigned
       let isDistinct = field0 .&. 0 == 1
+      -- The format field determines what set of fields are contained in this
+      -- record and what their types are (see
+      -- https://github.com/llvm/llvm-project/blob/bbe8cd13/llvm/lib/Bitcode/Reader/MetadataLoader.cpp#L1437-L1444).
       let format = field0 `shiftR` 1
       ctx <- getContext
       diNode <- case format of
