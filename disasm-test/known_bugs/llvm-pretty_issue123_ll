@@ -1,6 +1,0 @@
-##> rootMatchName: global-var.ll
-##> summary: global variables tagged as external AND initialized
-
-This is identical to llvm-pretty_issue123, but since the input is .ll, it never
-varies and therefore fails for all versions of LLVM (thus, this known_bugs file
-has no llvmver restrictions.
