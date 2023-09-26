@@ -611,8 +611,17 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         <*> parseField r 10 numeric                                 -- didtFlags
         <*> (mdForwardRefOrNull ctx mt <$> parseField r 11 numeric) -- didtExtraData
         <*> (if length (recordFields r) <= 12
-             then pure Nothing
-             else Just                 <$> parseField r 12 numeric) -- didtDwarfAddressSpace
+             then pure Nothing  -- field not present
+             else do v <- parseField r 12 numeric
+                     -- dwarf address space is encoded in bitcode as +1; a value
+                     -- of zero means there is no dwarf address space present:
+                     -- https://github.com/llvm/llvm-project/blob/bbe8cd1/llvm/lib/Bitcode/Reader/MetadataLoader.cpp#L1544-L1548
+                     -- The AST representation is the actual address space, or
+                     -- Nothing if there is no address space (indistinguishable
+                     -- from "field not present" for LLVM 4 and earlier).
+                     if v == 0
+                       then return Nothing
+                       else return $ Just $ v - 1)
         <*> (if length (recordFields r) <= 13
              then pure Nothing
              else mdForwardRefOrNull ctx mt <$> parseField r 13 numeric) -- didtAnnotations
