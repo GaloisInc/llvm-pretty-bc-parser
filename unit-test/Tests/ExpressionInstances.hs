@@ -37,7 +37,7 @@ instance Arbitrary lab => Arbitrary (DILexicalBlock' lab)             where arbi
 instance Arbitrary lab => Arbitrary (DILexicalBlockFile' lab)         where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DILocalVariable' lab)            where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DISubprogram' lab)               where arbitrary = genericArbitrary uniform
-instance Arbitrary DISubrange                                         where arbitrary = genericArbitrary uniform
+instance Arbitrary lab => Arbitrary (DISubrange' lab)                 where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DISubroutineType' lab)           where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DILabel' lab)                    where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DIArgList' lab)                  where arbitrary = genericArbitrary uniform
