@@ -137,6 +137,11 @@
                 # LLVM versions here in parallel.
                 "10"
                 "11"
+                "12"
+                "13"
+                "14"
+                "15"
+                "16"
               ]
             );
           TESTS_PREP = wrap "llvm-pretty-bc-parser-TESTS_PREP"
