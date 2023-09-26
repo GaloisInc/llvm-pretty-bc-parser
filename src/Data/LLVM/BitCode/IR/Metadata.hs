@@ -614,7 +614,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
              then pure Nothing  -- field not present
              else do v <- parseField r 12 numeric
                      -- dwarf address space is encoded in bitcode as +1; a value
-                     -- of zero means there is no dwarf address space present.
+                     -- of zero means there is no dwarf address space present:
+                     -- https://github.com/llvm/llvm-project/blob/bbe8cd1/llvm/lib/Bitcode/Reader/MetadataLoader.cpp#L1544-L1548
                      -- The AST representation is the actual address space, or
                      -- Nothing if there is no address space (indistinguishable
                      -- from "field not present" for LLVM 4 and earlier).
