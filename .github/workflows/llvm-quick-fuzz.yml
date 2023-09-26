@@ -1,9 +1,20 @@
 name: llvm-quick-fuzz
 on:
-  workflow_dispatch:
-  schedule:
-    # * is a special character in YAML so you have to quote this string
-    - cron:  '* 3 * * *'
+  workflow_dispatch:   # i.e. manual activation
+  # This workflow utilizes a wide range of llvm versions, each of which can be
+  # installed.  When not cached, this could take a long time to run and therefore
+  # running it nightly (at 3AM) can help ensure it doesn't impact normal
+  # development.  However, notifications of failures are sent to the last person
+  # that updated this cron syntax portion, or who last enabled the workflow.
+  # That's pretty inconvenient (and brittle), so now that caching is enabled,
+  # this is set to be run on approved branches and master merges.
+  # schedule:
+  #   # * is a special character in YAML so you have to quote this string
+  #   - cron:  '* 3 * * *'
+
+  pull_request_review:
+    types: [submitted]  # + github.event.review.state check below
+
 
 env:
   # The CACHE_VERSION can be updated to force the use of a new cache if
@@ -15,8 +26,9 @@ env:
   CACHE_VERSION: 1
 
 jobs:
-  build:
+  fuzz:
     runs-on: ${{ matrix.os }}
+    if: github.event.review.state == 'approved'
     strategy:
       fail-fast: false
       matrix:
