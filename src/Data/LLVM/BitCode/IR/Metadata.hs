@@ -541,18 +541,22 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       -- https://github.com/llvm/llvm-project/blob/bbe8cd13/llvm/lib/Bitcode/Reader/MetadataLoader.cpp#L1437-L1444).
       let format = field0 `shiftR` 1
       ctx <- getContext
+      let asValMdInt64 x = Just $ ValMdValue
+                           $ Typed { typedType = PrimType $ Integer 64
+                                   , typedValue = ValInteger x
+                                   }
       diNode <- case format of
         2 -> do count <- mdForwardRefOrNull ctx mt <$> parseField r 1 numeric
                 lwrBnd <- mdForwardRefOrNull ctx mt <$> parseField r 2 numeric
                 uprBnd <- mdForwardRefOrNull ctx mt <$> parseField r 3 numeric
                 stride <- mdForwardRefOrNull ctx mt <$> parseField r 4 numeric
-                return $ DISubrange (Right count) (Right lwrBnd) uprBnd stride
+                return $ DISubrange count lwrBnd uprBnd stride
         1 -> do count <- mdForwardRefOrNull ctx mt <$> parseField r 1 numeric
-                lwrBnd <- parseField r 2 signedInt64
-                return $ DISubrange (Right count) (Left lwrBnd) Nothing Nothing
-        0 -> do count <- parseField r 1 numeric
-                lwrBnd <- parseField r 2 signedInt64
-                return $ DISubrange (Left count) (Left lwrBnd) Nothing Nothing
+                lwrBnd <- asValMdInt64 . fromIntegral <$> parseField r 2 signedInt64
+                return $ DISubrange count lwrBnd Nothing Nothing
+        0 -> do count <- asValMdInt64 <$> parseField r 1 numeric
+                lwrBnd <- asValMdInt64 . fromIntegral <$> parseField r 2 signedInt64
+                return $ DISubrange count lwrBnd Nothing Nothing
         _ -> fail $ "Unknown format: " <> show format
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoSubrange diNode)) pm
