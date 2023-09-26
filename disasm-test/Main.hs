@@ -681,7 +681,7 @@ compileToBitCode pfx file = do
     (rmFile . fst)
     $ \(bc,h) ->
         do liftIO $ hClose h
-           callProc comp ["-c", "-emit-llvm", "-O0", "-g", "-o", bc, file]
+           callProc comp ["-c", "-emit-llvm", "-O0", "-U_FORTIFY_SOURCE", "-g", "-o", bc, file]
            return bc
 
 -- | Use llvm-dis to parse a bitcode file, to obtain a normalized version of the
