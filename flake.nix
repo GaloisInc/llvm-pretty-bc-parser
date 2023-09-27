@@ -125,6 +125,7 @@
                        ''
                      ];
               buildInputs = [ clang llvm pkgs.diffutils pkgs.coreutils ];
+              hardeningDisable = [ "all" ];  # tests will build with -O0
             };
         in rec {
           default = llvm-pretty-bc-parser;
