@@ -424,6 +424,21 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
              fail $ unlines $ [ "Invalid record size: " ++ show len
                               , "Expected size of " ++ show lb ++ " or greater"
                               ] ++ msg
+
+      -- Helper for a common pattern which appears below in the parsing
+      ron n = do ctx <- getContext
+                 mdForwardRefOrNull ctx mt <$> parseField r n numeric
+
+  -- Note: the parsing cases below use a Monadic coding style, as opposed to an
+  -- Applicative style (as was originally used) for performance reasons:
+  -- Applicative record construction has quadratic size and corresponding
+  -- performance impacts (the initial conversion from Applicative to Monadic
+  -- saved 11s when parsing a 22MB bitcode file).
+  --
+  -- Additionally, this module uses RecordWildcards... a pragma that is not
+  -- normally adviseable but which does work to good effect in this situation to
+  -- simplify the following and remove boilerplate intermediary assignments.
+
   in case recordCode r of
     -- [values]
     1 -> label "METADATA_STRING" $ do
@@ -472,14 +487,14 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       let field = parseField r
       cxt        <- getContext
       isDistinct <- field 0 nonzero
-      _dlLine <- field 1 numeric
-      _dlCol <- field 2 numeric
-      _dlScope <- mdForwardRef cxt mt <$> field 3 numeric
-      _dlIA <- mdForwardRefOrNull cxt mt <$> field 4 numeric
-      _dlImplicit <- if length (recordFields r) <= 5
-                     then pure False
-                     else parseField r 5 nonzero
-      let loc = DebugLoc _dlLine _dlCol _dlScope _dlIA _dlImplicit
+      dlLine <- field 1 numeric
+      dlCol <- field 2 numeric
+      dlScope <- mdForwardRef cxt mt <$> field 3 numeric
+      dlIA <- mdForwardRefOrNull cxt mt <$> field 4 numeric
+      dlImplicit <- if length (recordFields r) <= 5
+                    then pure False
+                    else parseField r 5 nonzero
+      let loc = DebugLoc {..}
       return $! updateMetadataTable (addLoc isDistinct loc) pm
 
 
@@ -527,23 +542,26 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       -- record and what their types are (see
       -- https://github.com/llvm/llvm-project/blob/bbe8cd13/llvm/lib/Bitcode/Reader/MetadataLoader.cpp#L1437-L1444).
       let format = field0 `shiftR` 1
-      ctx <- getContext
       let asValMdInt64 x = Just $ ValMdValue
                            $ Typed { typedType = PrimType $ Integer 64
                                    , typedValue = ValInteger x
                                    }
       diNode <- case format of
-        2 -> do count <- mdForwardRefOrNull ctx mt <$> parseField r 1 numeric
-                lwrBnd <- mdForwardRefOrNull ctx mt <$> parseField r 2 numeric
-                uprBnd <- mdForwardRefOrNull ctx mt <$> parseField r 3 numeric
-                stride <- mdForwardRefOrNull ctx mt <$> parseField r 4 numeric
-                return $ DISubrange count lwrBnd uprBnd stride
-        1 -> do count <- mdForwardRefOrNull ctx mt <$> parseField r 1 numeric
-                lwrBnd <- asValMdInt64 . fromIntegral <$> parseField r 2 signedInt64
-                return $ DISubrange count lwrBnd Nothing Nothing
-        0 -> do count <- asValMdInt64 <$> parseField r 1 numeric
-                lwrBnd <- asValMdInt64 . fromIntegral <$> parseField r 2 signedInt64
-                return $ DISubrange count lwrBnd Nothing Nothing
+        2 -> do disrCount <- ron 1
+                disrLowerBound <- ron 2
+                disrUpperBound <- ron 3
+                disrStride <- ron 4
+                return $ DISubrange {..}
+        1 -> do disrCount <- ron 1
+                disrLowerBound <- ron 2
+                let disrUpperBound = Nothing
+                let disrStride = Nothing
+                return $ DISubrange {..}
+        0 -> do disrCount <- asValMdInt64 <$> parseField r 1 numeric
+                disrLowerBound <- asValMdInt64 . fromIntegral <$> parseField r 2 signedInt64
+                let disrUpperBound = Nothing
+                let disrStride = Nothing
+                return $ DISubrange {..}
         _ -> fail $ "Unknown format: " <> show format
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoSubrange diNode)) pm
@@ -570,15 +588,15 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       assertRecordSizeIn [6, 7]
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
-      _dibtTag <- parseField r 1 numeric
-      _dibtName <- mdString ctx pm <$> parseField r 2 numeric
-      _dibtSize <- parseField r 3 numeric
-      _dibtAlign <- parseField r 4 numeric
-      _dibtEncoding <- parseField r 5 numeric
-      _dibtFlags <- if length (recordFields r) <= 6
-                    then pure Nothing
-                    else Just <$> parseField r 6 numeric
-      let dibt = DIBasicType _dibtTag _dibtName _dibtSize _dibtAlign _dibtEncoding _dibtFlags
+      dibtTag <- parseField r 1 numeric
+      dibtName <- mdString ctx pm <$> parseField r 2 numeric
+      dibtSize <- parseField r 3 numeric
+      dibtAlign <- parseField r 4 numeric
+      dibtEncoding <- parseField r 5 numeric
+      dibtFlags <- if length (recordFields r) <= 6
+                   then pure Nothing
+                   else Just <$> parseField r 6 numeric
+      let dibt = DIBasicType {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoBasicType dibt)) pm
 
@@ -587,9 +605,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       assertRecordSizeIn [3, 5]
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
-      _difFilename <- mdStringOrEmpty ctx pm <$> parseField r 1 numeric
-      _difDirectory <- mdStringOrEmpty ctx pm <$> parseField r 2 numeric
-      let diFile = DIFile _difFilename _difDirectory
+      difFilename <- mdStringOrEmpty ctx pm <$> parseField r 1 numeric
+      difDirectory <- mdStringOrEmpty ctx pm <$> parseField r 2 numeric
+      let diFile = DIFile {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoFile diFile)) pm
 
@@ -600,18 +618,18 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       assertRecordSizeBetween 12 15
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
-      _didtTag <- parseField r 1 numeric
-      _didtName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
-      _didtFile <- mdForwardRefOrNull ctx mt <$> parseField r 3 numeric
-      _didtLine <- parseField r 4 numeric
-      _didtScope <- mdForwardRefOrNull ctx mt <$> parseField r 5 numeric
-      _didtBaseType <- mdForwardRefOrNull ctx mt <$> parseField r 6 numeric
-      _didtSize <- parseField r 7 numeric
-      _didtAlign <- parseField r 8 numeric
-      _didtOffset <- parseField r 9 numeric
-      _didtFlags <- parseField r 10 numeric
-      _didtExtraData <- mdForwardRefOrNull ctx mt <$> parseField r 11 numeric
-      _didtDwarfAddrSpace <-
+      didtTag <- parseField r 1 numeric
+      didtName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
+      didtFile <- ron 3
+      didtLine <- parseField r 4 numeric
+      didtScope <- ron 5
+      didtBaseType <- ron 6
+      didtSize <- parseField r 7 numeric
+      didtAlign <- parseField r 8 numeric
+      didtOffset <- parseField r 9 numeric
+      didtFlags <- parseField r 10 numeric
+      didtExtraData <- ron 11
+      didtDwarfAddressSpace <-
         if length (recordFields r) <= 12
         then pure Nothing  -- field not present
         else do v <- parseField r 12 numeric
@@ -624,69 +642,60 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
                 if v == 0
                   then return Nothing
                   else return $ Just $ v - 1
-      _didtAnnotations <- if length (recordFields r) <= 13
-                          then pure Nothing
-                          else mdForwardRefOrNull ctx mt <$> parseField r 13 numeric
-      let didt = DIDerivedType _didtTag _didtName _didtFile _didtLine _didtScope
-                 _didtBaseType _didtSize _didtAlign _didtOffset
-                 _didtFlags _didtExtraData _didtDwarfAddrSpace _didtAnnotations
+      didtAnnotations <- if length (recordFields r) <= 13
+                         then pure Nothing
+                         else ron 13
+      let didt = DIDerivedType {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoDerivedType didt)) pm
 
     18 -> label "METADATA_COMPOSITE_TYPE" $ do
       assertRecordSizeBetween 16 22
       ctx        <- getContext
-      let ron n = mdForwardRefOrNull ctx mt <$> parseField r n numeric
       isDistinct <- parseField r 0 nonzero
-      _dictTag <- parseField r 1 numeric
-      _dictName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
-      _dictFile <- ron 3
-      _dictLine <- parseField r 4 numeric
-      _dictScope <- ron 5
-      _dictBaseType <- ron 6
-      _dictSize <- parseField r 7 numeric
-      _dictAlign <- parseField r 8 numeric
-      _dictOffset <- parseField r 9 numeric
-      _dictFlags <- parseField r 10 numeric
-      _dictElements <- ron 11
-      _dictRuntimeLang <- parseField r 12 numeric
-      _dictVTableHolder <- ron 13
-      _dictTemplateParams <- ron 14
-      _dictIdentifier <- mdStringOrNull ctx pm <$> parseField r 15 numeric
-      _dictDiscriminator <- if length (recordFields r) <= 16
-                            then pure Nothing
-                            else ron 16
-      _dictDataLocation <- if length (recordFields r) <= 17
+      dictTag <- parseField r 1 numeric
+      dictName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
+      dictFile <- ron 3
+      dictLine <- parseField r 4 numeric
+      dictScope <- ron 5
+      dictBaseType <- ron 6
+      dictSize <- parseField r 7 numeric
+      dictAlign <- parseField r 8 numeric
+      dictOffset <- parseField r 9 numeric
+      dictFlags <- parseField r 10 numeric
+      dictElements <- ron 11
+      dictRuntimeLang <- parseField r 12 numeric
+      dictVTableHolder <- ron 13
+      dictTemplateParams <- ron 14
+      dictIdentifier <- mdStringOrNull ctx pm <$> parseField r 15 numeric
+      dictDiscriminator <- if length (recordFields r) <= 16
                            then pure Nothing
-                           else ron 17
-      _dictAssociated <- if length (recordFields r) <= 18
-                         then pure Nothing
-                         else ron 18
-      _dictAllocated <- if length (recordFields r) <= 19
-                        then pure Nothing
-                        else ron 19
-      _dictRank <- if length (recordFields r) <= 20
-                   then pure Nothing
-                   else ron 20
-      _dictAnnotations <- if length (recordFields r) <= 21
+                           else ron 16
+      dictDataLocation <- if length (recordFields r) <= 17
                           then pure Nothing
-                          else ron 21
-      let dict = DICompositeType _dictTag _dictName _dictFile _dictLine
-                 _dictScope _dictBaseType _dictSize _dictAlign _dictOffset
-                 _dictFlags _dictElements _dictRuntimeLang _dictVTableHolder
-                 _dictTemplateParams _dictIdentifier _dictDiscriminator
-                 _dictDataLocation _dictAssociated _dictAllocated _dictRank
-                 _dictAnnotations
+                          else ron 17
+      dictAssociated <- if length (recordFields r) <= 18
+                        then pure Nothing
+                        else ron 18
+      dictAllocated <- if length (recordFields r) <= 19
+                       then pure Nothing
+                       else ron 19
+      dictRank <- if length (recordFields r) <= 20
+                  then pure Nothing
+                  else ron 20
+      dictAnnotations <- if length (recordFields r) <= 21
+                         then pure Nothing
+                         else ron 21
+      let dict = DICompositeType {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoCompositeType dict)) pm
 
     19 -> label "METADATA_SUBROUTINE_TYPE" $ do
       assertRecordSizeBetween 3 4
-      ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
-      _distFlags <- parseField r 1 numeric
-      _distTypeArray <- mdForwardRefOrNull ctx mt <$> parseField r 2 numeric
-      let dist = DISubroutineType _distFlags _distTypeArray
+      distFlags <- parseField r 1 numeric
+      distTypeArray <- ron 2
+      let dist = DISubroutineType {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoSubroutineType dist)) pm
 
@@ -694,52 +703,45 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       assertRecordSizeBetween 14 22
       let recordSize = length (recordFields r)
       ctx        <- getContext
-      let ron n = mdForwardRefOrNull ctx mt <$> parseField r n numeric
       isDistinct <- parseField r 0 nonzero
-      _dicuLanguage <- parseField r 1 numeric
-      _dicuFile <- ron 2
-      _dicuProducer <- mdStringOrNull ctx pm <$> parseField r 3 numeric
-      _dicuIsOptimized <- parseField r 4 nonzero
-      _dicuFlags <- mdStringOrNull ctx pm <$> parseField r 5 numeric
-      _dicuRuntimeVersion <- parseField r 6 numeric
-      _dicuSplitDebugFilename <- mdStringOrNull ctx pm <$> parseField r 7 numeric
-      _dicuEmissionKind <- parseField r 8 numeric
-      _dicuEnums <- ron 9
-      _dicuRetainedTypes <- ron 10
-      _dicuSubprograms <- ron 11
-      _dicuGlobals <- ron 12
-      _dicuImports <- ron 13
-      _dicuMacros <- if recordSize <= 15
-                     then pure Nothing
-                     else ron 15
-      _dicuDWOId <- if recordSize <= 14
-                    then pure 0
-                    else parseField r 14 numeric
-      _dicuSplitDebugInlining <- if recordSize <= 16
-                                 then pure True
-                                 else parseField r 16 nonzero
-      _dicuDebugInfoForProf <- if recordSize <= 17
+      dicuLanguage <- parseField r 1 numeric
+      dicuFile <- ron 2
+      dicuProducer <- mdStringOrNull ctx pm <$> parseField r 3 numeric
+      dicuIsOptimized <- parseField r 4 nonzero
+      dicuFlags <- mdStringOrNull ctx pm <$> parseField r 5 numeric
+      dicuRuntimeVersion <- parseField r 6 numeric
+      dicuSplitDebugFilename <- mdStringOrNull ctx pm <$> parseField r 7 numeric
+      dicuEmissionKind <- parseField r 8 numeric
+      dicuEnums <- ron 9
+      dicuRetainedTypes <- ron 10
+      dicuSubprograms <- ron 11
+      dicuGlobals <- ron 12
+      dicuImports <- ron 13
+      dicuMacros <- if recordSize <= 15
+                    then pure Nothing
+                    else ron 15
+      dicuDWOId <- if recordSize <= 14
+                   then pure 0
+                   else parseField r 14 numeric
+      dicuSplitDebugInlining <- if recordSize <= 16
+                                then pure True
+                                else parseField r 16 nonzero
+      dicuDebugInfoForProf <- if recordSize <= 17
+                              then pure False
+                              else parseField r 17 nonzero
+      dicuNameTableKind <- if recordSize <= 18
+                           then pure 0
+                           else parseField r 18 numeric
+      dicuRangesBaseAddress <- if recordSize <= 19
                                then pure False
-                               else parseField r 17 nonzero
-      _dicuNameTableKind <- if recordSize <= 18
-                            then pure 0
-                            else parseField r 18 numeric
-      _dicuRangesBaseAddress <- if recordSize <= 19
-                                then pure False
-                                else parseField r 19 nonzero
-      _dicuSysRoot <- if recordSize <= 20
-                      then pure Nothing
-                      else mdStringOrNull ctx pm <$> parseField r 20 numeric
-      _dicuSDK <- if recordSize <= 21
-                  then pure Nothing
-                  else mdStringOrNull ctx pm <$> parseField r 21 numeric
-      let dicu = DICompileUnit _dicuLanguage _dicuFile _dicuProducer
-                 _dicuIsOptimized _dicuFlags _dicuRuntimeVersion
-                 _dicuSplitDebugFilename _dicuEmissionKind _dicuEnums
-                 _dicuRetainedTypes _dicuSubprograms _dicuGlobals _dicuImports
-                 _dicuMacros _dicuDWOId _dicuSplitDebugInlining
-                 _dicuDebugInfoForProf _dicuNameTableKind _dicuRangesBaseAddress
-                 _dicuSysRoot _dicuSDK
+                               else parseField r 19 nonzero
+      dicuSysRoot <- if recordSize <= 20
+                     then pure Nothing
+                     else mdStringOrNull ctx pm <$> parseField r 20 numeric
+      dicuSDK <- if recordSize <= 21
+                 then pure Nothing
+                 else mdStringOrNull ctx pm <$> parseField r 21 numeric
+      let dicu = DICompileUnit {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoCompileUnit dicu)) pm
 
@@ -770,8 +772,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
           spFlagIsOptimized  = bit 4
           spFlagIsMain       = bit 8
 
-          diFlags :: Word32
-          diFlags
+          dispFlags :: Word32
+          dispFlags
             | hasOldMainSubprogramFlag = diFlags0 .&. complement diFlagMainSubprogram
             | otherwise                = diFlags0
 
@@ -781,7 +783,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
             | otherwise                = spFlags0
 
       -- TODO, isMain isn't exposed via DISubprogram
-      (isLocal, isDefinition, isOptimized, virtuality, _isMain) <-
+      (dispIsLocal, dispIsDefinition, dispIsOptimized, dispVirtuality, _isMain) <-
         if hasSPFlags then
           let spIsLocal       = spFlags .&. spFlagIsLocal /= 0
               spIsDefinition  = spFlags .&. spFlagIsDefinition /= 0
@@ -844,34 +846,26 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
             then mdForwardRefOrNull ctx mt <$> parseField r n numeric
             else pure Nothing
 
-      let ron n = mdForwardRefOrNull ctx mt <$> parseField r n numeric
+      dispScope <- ron 1
+      dispName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
+      dispLinkageName <- mdStringOrNull ctx pm <$> parseField r 3 numeric
+      dispFile <- ron 4
+      dispLine <- parseField r 5 numeric
+      dispType <- ron 6
+      dispScopeLine <- parseField r (7 + offsetA) numeric
+      dispContainingType <- ron (8 + offsetA)
+      dispVirtualIndex <- parseField r (10 + offsetA) numeric
+      dispThisAdjustment <- if hasThisAdjustment
+                            then parseField r (16 + offsetB) numeric
+                            else return 0
+      dispUnit <- optFwdRef hasUnit (12 + offsetB)
+      dispTemplateParams <- ron (13 + offsetB)
+      dispDeclaration <- ron (14 + offsetB)
+      dispRetainedNodes <- ron (15 + offsetB)
+      dispThrownTypes <- optFwdRef hasThrownTypes (17 + offsetB)
+      dispAnnotations <- optFwdRef hasAnnotations (18 + offsetB)
 
-      _dispScope <- ron 1
-      _dispName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
-      _dispLinkageName <- mdStringOrNull ctx pm <$> parseField r 3 numeric
-      _dispFile <- ron 4
-      _dispLine <- parseField r 5 numeric
-      _dispType <- ron 6
-      _dispScopeLine <- parseField r (7 + offsetA) numeric
-      _dispContainingType <- ron (8 + offsetA)
-      _dispVirtualIndex <- parseField r (10 + offsetA) numeric
-      _dispThisAdjustment <- if hasThisAdjustment
-                             then parseField r (16 + offsetB) numeric
-                             else return 0
-      _dispUnit <- optFwdRef hasUnit (12 + offsetB)
-      _dispTemplateParams <- ron (13 + offsetB)
-      _dispDeclaration <- ron (14 + offsetB)
-      _dispVariables <- ron (15 + offsetB)
-      _dispThrownTypes <- optFwdRef hasThrownTypes (17 + offsetB)
-      _dispAnnotations <- optFwdRef hasAnnotations (18 + offsetB)
-
-      let disp = DISubprogram _dispScope _dispName _dispLinkageName _dispFile
-                 _dispLine _dispType isLocal isDefinition
-                 _dispScopeLine _dispContainingType virtuality
-                 _dispVirtualIndex _dispThisAdjustment diFlags
-                 isOptimized _dispUnit _dispTemplateParams
-                 _dispDeclaration _dispVariables _dispThrownTypes
-                 _dispAnnotations
+      let disp = DISubprogram {..}
 
       -- TODO: in the LLVM parser, it then goes into the metadata table
       -- and updates function entries to point to subprograms. Is that
@@ -881,13 +875,12 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
     22 -> label "METADATA_LEXICAL_BLOCK" $ do
       assertRecordSizeIn [5]
-      cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
-      _dilbScope <- mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
-      _dilbFile <- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
-      _dilbLine <- parseField r 3 numeric
-      _dilbColumn <- parseField r 4 numeric
-      let dilb = DILexicalBlock _dilbScope _dilbFile _dilbLine _dilbColumn
+      dilbScope <- ron 1
+      dilbFile <- ron 2
+      dilbLine <- parseField r 3 numeric
+      dilbColumn <- parseField r 4 numeric
+      let dilb = DILexicalBlock {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoLexicalBlock dilb)) pm
 
@@ -895,10 +888,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       assertRecordSizeIn [4]
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
-      _dilbfScope <- mdForwardRef cxt mt <$> parseField r 1 numeric
-      _dilbfFile <- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
-      _dilbfDiscriminator <- parseField r 3 numeric
-      let dilbf = DILexicalBlockFile _dilbfScope _dilbfFile _dilbfDiscriminator
+      dilbfScope <- mdForwardRef cxt mt <$> parseField r 1 numeric
+      dilbfFile <- ron 2
+      dilbfDiscriminator <- parseField r 3 numeric
+      let dilbf = DILexicalBlockFile {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoLexicalBlockFile dilbf)) pm
 
@@ -913,13 +906,13 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
-      _dinsName <- mdStringOrNull cxt pm <$> parseField r nameIdx numeric
-      _dinsScope <- mdForwardRef cxt mt <$> parseField r 1 numeric
-      _dinsFile <- if isNew
-                   then return (ValMdString "")
-                   else mdForwardRef cxt mt <$> parseField r 2 numeric
-      _dinsLine <- if isNew then return 0 else parseField r 4 numeric
-      let dins = DINameSpace _dinsName _dinsScope _dinsFile _dinsLine
+      dinsName <- mdStringOrNull cxt pm <$> parseField r nameIdx numeric
+      dinsScope <- mdForwardRef cxt mt <$> parseField r 1 numeric
+      dinsFile <- if isNew
+                  then return (ValMdString "")
+                  else mdForwardRef cxt mt <$> parseField r 2 numeric
+      dinsLine <- if isNew then return 0 else parseField r 4 numeric
+      let dins = DINameSpace {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoNameSpace dins)) pm
 
@@ -931,12 +924,12 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
                        | otherwise = error "Impossible (METADATA_TEMPLATE_TYPE)" -- see assertion
       cxt <- getContext
       isDistinct <- parseField r 0 nonzero
-      _dittpName <- mdStringOrNull cxt pm <$> parseField r 1 numeric
-      _dittpType <- mdForwardRefOrNull cxt mt  <$> parseField r 2 numeric
-      _dittpIsDefault <- if hasIsDefault
-                         then Just <$> parseField r 3 boolean
-                         else pure Nothing
-      let dittp = DITemplateTypeParameter _dittpName _dittpType _dittpIsDefault
+      dittpName <- mdStringOrNull cxt pm <$> parseField r 1 numeric
+      dittpType <- ron 2
+      dittpIsDefault <- if hasIsDefault
+                        then Just <$> parseField r 3 boolean
+                        else pure Nothing
+      let dittp = DITemplateTypeParameter {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoTemplateTypeParameter dittp)) pm
 
@@ -948,15 +941,14 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
                        | otherwise = error "Impossible (METADATA_TEMPLATE_TYPE)" -- see assertion
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
-      _ditvpTag <- parseField r 1 numeric
-      _ditvpName <- mdStringOrNull cxt pm <$> parseField r 2 numeric
-      _ditvpType <- mdForwardRefOrNull cxt mt <$> parseField r 3 numeric
-      _ditvpIsDefault <- if hasIsDefault
-                         then Just <$> parseField r 4 boolean
-                         else pure Nothing
-      _ditvpValue <- mdForwardRef cxt mt <$> parseField r (if hasIsDefault then 5 else 4) numeric
-      let ditvp = DITemplateValueParameter _ditvpTag _ditvpName _ditvpType
-                  _ditvpIsDefault _ditvpValue
+      ditvpTag <- parseField r 1 numeric
+      ditvpName <- mdStringOrNull cxt pm <$> parseField r 2 numeric
+      ditvpType <- ron 3
+      ditvpIsDefault <- if hasIsDefault
+                        then Just <$> parseField r 4 boolean
+                        else pure Nothing
+      ditvpValue <- mdForwardRef cxt mt <$> parseField r (if hasIsDefault then 5 else 4) numeric
+      let ditvp = DITemplateValueParameter {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoTemplateValueParameter ditvp)) pm
 
@@ -967,25 +959,23 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       let isDistinct = testBit field0 0
           _version   = shiftR  field0 1 :: Int
 
-      _digvScope <- mdForwardRefOrNull ctx mt <$> parseField r 1 numeric
-      _digvName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
-      _digvLinkageName <- mdStringOrNull ctx pm <$> parseField r 3 numeric
-      _digvFile <- mdForwardRefOrNull ctx mt <$> parseField r 4 numeric
-      _digvLine <- parseField r 5 numeric
-      _digvType <- mdForwardRefOrNull ctx mt <$> parseField r 6 numeric
-      _digvIsLocal <- parseField r 7 nonzero
-      _digvIsDefinition <- parseField r 8 nonzero
-      _digvVariable <- mdForwardRefOrNull ctx mt <$> parseField r 9 numeric
-      _digvDeclaration <- mdForwardRefOrNull ctx mt <$> parseField r 10 numeric
-      _digvAlignment <- if length (recordFields r) > 11
-                        then Just <$> parseField r 11 numeric
-                        else pure Nothing
-      _digvAnnotations <- if length (recordFields r) > 12
-                          then mdForwardRefOrNull ctx mt <$> parseField r 12 numeric
-                          else pure Nothing
-      let digv = DIGlobalVariable _digvScope _digvName _digvLinkageName _digvFile
-                 _digvLine _digvType _digvIsLocal _digvIsDefinition _digvVariable
-                 _digvDeclaration _digvAlignment _digvAnnotations
+      digvScope <- ron 1
+      digvName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
+      digvLinkageName <- mdStringOrNull ctx pm <$> parseField r 3 numeric
+      digvFile <- ron 4
+      digvLine <- parseField r 5 numeric
+      digvType <- ron 6
+      digvIsLocal <- parseField r 7 nonzero
+      digvIsDefinition <- parseField r 8 nonzero
+      digvVariable <- ron 9
+      digvDeclaration <- ron 10
+      digvAlignment <- if length (recordFields r) > 11
+                       then Just <$> parseField r 11 numeric
+                       else pure Nothing
+      digvAnnotations <- if length (recordFields r) > 12
+                         then ron 12
+                         else pure Nothing
+      let digv = DIGlobalVariable {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoGlobalVariable digv)) pm
 
@@ -1003,31 +993,29 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
           adj i = i + hasTag
 
-      alignInBits <-
+
+      dilvScope <- mdForwardRefOrNull ("dilvScope":ctx) mt
+                   <$> parseField r (adj 1) numeric
+      dilvName <- mdStringOrNull     ("dilvName" :ctx) pm
+                  <$> parseField r (adj 2) numeric
+      dilvFile <- mdForwardRefOrNull ("dilvFile" :ctx) mt
+                  <$> parseField r (adj 3) numeric
+      dilvLine <- parseField r (adj 4) numeric
+      dilvType <- mdForwardRefOrNull ("dilvType" :ctx) mt
+                  <$> parseField r (adj 5) numeric
+      dilvArg <- parseField r (adj 6) numeric
+      dilvFlags <- parseField r (adj 7) numeric
+      dilvAlignment <-
         if hasAlignment
           then do n <- parseField r 8 numeric
                   when ((n :: Word64) > fromIntegral (maxBound :: Word32))
                         (fail "Alignment value is too large")
                   return $ Just (fromIntegral n :: Word32)
-
           else return Nothing
-
-      _dilvScope <- mdForwardRefOrNull ("dilvScope":ctx) mt
-                    <$> parseField r (adj 1) numeric
-      _dilvName <- mdStringOrNull     ("dilvName" :ctx) pm
-                   <$> parseField r (adj 2) numeric
-      _dilvFile <- mdForwardRefOrNull ("dilvFile" :ctx) mt
-                   <$> parseField r (adj 3) numeric
-      _dilvLine <- parseField r (adj 4) numeric
-      _dilvType <- mdForwardRefOrNull ("dilvType" :ctx) mt
-                   <$> parseField r (adj 5) numeric
-      _dilvArg <- parseField r (adj 6) numeric
-      _dilvFlags <- parseField r (adj 7) numeric
-      _dilvAnnotations <- if hasAlignment && length (recordFields r) > 9
-                          then mdForwardRefOrNull ctx mt <$> parseField r 9 numeric
+      dilvAnnotations <- if hasAlignment && length (recordFields r) > 9
+                          then ron 9
                           else pure Nothing
-      let dilv = DILocalVariable _dilvScope _dilvName _dilvFile _dilvLine
-                 _dilvType _dilvArg _dilvFlags alignInBits _dilvAnnotations
+      let dilv = DILocalVariable {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoLocalVariable dilv)) pm
 
@@ -1051,17 +1039,15 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       assertRecordSizeIn [6, 7]
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
-      _diieTag <- parseField r 1 numeric
-      _diieScope <- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
-      _diieEntity <- mdForwardRefOrNull cxt mt <$> parseField r 3 numeric
-      _diieFile <- if length (recordFields r) >= 7
-                   then mdForwardRefOrNull cxt mt <$> parseField r 6 numeric
-                   else pure Nothing
-      _diieLine <- parseField r 4 numeric
-      _diieName <- mdStringOrNull cxt pm <$> parseField r 5 numeric
-      let diie = DIImportedEntity _diieTag _diieScope _diieEntity _diieFile
-                 _diieLine _diieName
-
+      diieTag <- parseField r 1 numeric
+      diieScope <- ron 2
+      diieEntity <- ron 3
+      diieFile <- if length (recordFields r) >= 7
+                  then ron 6
+                  else pure Nothing
+      diieLine <- parseField r 4 numeric
+      diieName <- mdStringOrNull cxt pm <$> parseField r 5 numeric
+      let diie = DIImportedEntity {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoImportedEntity diie)) pm
 
@@ -1129,11 +1115,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
     37 -> label "METADATA_GLOBAL_VAR_EXPR" $ do
       assertRecordSizeIn [3]
-      cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
-      _digveVariable <- mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
-      _digveExpression <- mdForwardRefOrNull cxt mt <$> parseField r 2 numeric
-      let digve = DIGlobalVariableExpression _digveVariable _digveExpression
+      digveVariable <- ron 1
+      digveExpression <- ron 2
+      let digve = DIGlobalVariableExpression {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoGlobalVariableExpression digve)) pm
 
@@ -1157,11 +1142,11 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       assertRecordSizeIn [5]
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
-      _dilScope <- mdForwardRefOrNull cxt mt <$> parseField r 1 numeric
-      _dilName <- mdString cxt pm <$> parseField r 2 numeric
-      _dilFile <- mdForwardRefOrNull cxt mt <$> parseField r 3 numeric
-      _dilLine <- parseField r 4 numeric
-      let dil = DILabel _dilScope _dilName _dilFile _dilLine
+      dilScope <- ron 1
+      dilName <- mdString cxt pm <$> parseField r 2 numeric
+      dilFile <- ron 3
+      dilLine <- parseField r 4 numeric
+      let dil = DILabel {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoLabel dil)) pm
 
