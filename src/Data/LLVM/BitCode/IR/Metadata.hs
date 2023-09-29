@@ -436,7 +436,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
   -- saved 11s when parsing a 22MB bitcode file).
   --
   -- Additionally, this module uses RecordWildcards... a pragma that is not
-  -- normally adviseable but which does work to good effect in this situation to
+  -- normally advisable but which does work to good effect in this situation to
   -- simplify the following and remove boilerplate intermediary assignments.
 
   in case recordCode r of
