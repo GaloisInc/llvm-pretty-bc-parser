@@ -51,17 +51,32 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
                 then field 6 visibility
                 else pure DefaultVisibility
 
+  unnamed <-
+    if length (recordFields r) > (8 + offset)
+    then do
+      field 8 unnamedAddr
+    else return Nothing
+
+  addrspace <- if explicitTy
+                  then return . AddrSpace . fromIntegral $ shiftR mask 2
+                  else case ptrty of
+                         PtrTo as _ -> return as
+                         PtrOpaque as -> return as
+                         _ -> fail $ "Invalid type for value: " ++ show ptrty
+
   ty <- if explicitTy
            then return ptrty
            else elimPtrTo ptrty `mplus` (fail $ "Invalid type for value: " ++ show ptrty)
 
-  _       <- pushValue (Typed (PtrTo ty) (ValSymbol name))
+  _       <- pushValue (Typed (PtrTo addrspace ty) (ValSymbol name))
   let valid | initid == 0 = Nothing
             | otherwise   = Just (initid - 1)
       attrs = GlobalAttrs
-        { gaLinkage    = Just link
-        , gaVisibility = Just vis
-        , gaConstant   = isconst
+        { gaLinkage     = Just link
+        , gaVisibility  = Just vis
+        , gaUnnamedAddr = unnamed
+        , gaConstant    = isconst
+        , gaAddrSpace   = addrspace
         }
 
   return PartialGlobal

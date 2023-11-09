@@ -540,9 +540,11 @@ parseInlineAsm code getTy r = do
   let field = parseField r
 
   -- If using InlineAsmCode30 or later, we parse the type as an explicit
-  -- field.
+  -- field. We use the default function address space, all inline asm is
+  -- cast to a function type.
   let parseTy  = do ty <- getType =<< field 0 numeric
-                    return (PtrTo ty, 1)
+                    addrSpace <- getDefaultFunctionAddrSpace
+                    return (PtrTo addrSpace ty, 1)
   -- If using an older InlineAsmCode, then we retrieve the type from the
   -- current context.
   let useCurTy = do ty <- getTy

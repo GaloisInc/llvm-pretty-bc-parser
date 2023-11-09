@@ -182,7 +182,9 @@ parseModuleBlockEntry pm (moduleCodeDatalayout -> Just r) = do
   layout <- UTF8.decode <$> parseFields r 0 char
   case parseDataLayout layout of
     Nothing -> fail ("unable to parse data layout: ``" ++ layout ++ "''")
-    Just dl -> return (pm { partialDataLayout = dl })
+    Just dl -> do
+      setDataLayout dl
+      return (pm { partialDataLayout = dl })
 
 parseModuleBlockEntry pm (moduleCodeAsm -> Just r) = do
   -- MODULE_CODE_ASM
@@ -320,9 +322,14 @@ parseFunProto r pm = label "FUNCTION" $ do
   (name, offset) <- oldOrStrtabName ix r
   let field i = parseField r (i + offset)
   funTy   <- getType =<< field 0 numeric
+
+  addrSpace <- if length (recordFields r) >= (16 + offset)
+               then AddrSpace <$> field 16 numeric
+               else getDefaultFunctionAddrSpace
+
   let ty = case funTy of
-             PtrTo _  -> funTy
-             _        -> PtrTo funTy
+             PtrTo _ _  -> funTy
+             _          -> PtrTo addrSpace funTy
 
   isProto <-             field 2 numeric
 
@@ -342,6 +349,12 @@ parseFunProto r pm = label "FUNCTION" $ do
 
        else return Nothing
 
+  unnamed <-
+    if length (recordFields r) >= 9
+    then do
+      field 9 unnamedAddr
+    else return Nothing
+
   -- push the function type
   _    <- pushValue (Typed ty (ValSymbol name))
   let lkMb t x
@@ -359,11 +372,13 @@ parseFunProto r pm = label "FUNCTION" $ do
              guard (link /= External)
              return link
         , protoVisibility = Just vis
+        , protoUnnamedAddr = unnamed
         , protoGC    = Nothing
         , protoSym   = name
         , protoIndex = ix
         , protoSect  = section
         , protoComdat = comdat
+        , protoAddrSpace = addrSpace
         }
 
   if isProto == (0 :: Int)

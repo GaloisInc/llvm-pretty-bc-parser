@@ -83,7 +83,7 @@ parseAlias r = do
   (name, offset) <- oldOrStrtabName n r
   let field i = parseField r (i + offset)
   ty       <- getType =<< field 0 numeric
-  _addrSp  <-             field 1 unsigned
+  addrSp <- AddrSpace <$> field 1 numeric
   tgt      <-             field 2 numeric
   lnk      <-             field 3 linkage
   vis      <-             field 4 visibility
@@ -91,7 +91,7 @@ parseAlias r = do
 
   -- XXX: is it the case that the alias type will always be a pointer to the
   -- aliasee?
-  _   <- pushValue (Typed (PtrTo ty) (ValSymbol name))
+  _   <- pushValue (Typed (PtrTo addrSp ty) (ValSymbol name))
 
   return PartialAlias
     { paLinkage    = Just lnk
@@ -122,15 +122,18 @@ type DeclareList = Seq.Seq FunProto
 -- | Turn a function prototype into a declaration.
 finalizeDeclare :: FunProto -> Parse Declare
 finalizeDeclare fp = case protoType fp of
-  PtrTo (FunTy ret args va) -> return Declare
+  PtrTo adr (FunTy ret args va) -> return Declare
     { decLinkage    = protoLinkage fp
     , decVisibility = protoVisibility fp
+    , decUnnamedAddr = protoUnnamedAddr fp
     , decRetType    = ret
     , decName       = protoSym fp
     , decArgs       = args
     , decVarArgs    = va
     , decAttrs      = []
     , decComdat     = protoComdat fp
+    -- TODO what if this isn't equal to adr?
+    , decAddrSpace  = protoAddrSpace fp
     }
   _ -> fail "invalid type on function prototype"
 
@@ -144,6 +147,7 @@ type DefineList = Seq.Seq PartialDefine
 data PartialDefine = PartialDefine
   { partialLinkage    :: Maybe Linkage
   , partialVisibility :: Maybe Visibility
+  , partialAddrSpace  :: AddrSpace
   , partialGC         :: Maybe GC
   , partialSection    :: Maybe String
   , partialRetType    :: Type
@@ -171,6 +175,7 @@ emptyPartialDefine proto = do
   return PartialDefine
     { partialLinkage    = protoLinkage proto
     , partialVisibility = protoVisibility proto
+    , partialAddrSpace  = protoAddrSpace proto
     , partialGC         = protoGC proto
     , partialSection    = protoSect proto
     , partialRetType    = rty
@@ -246,6 +251,7 @@ finalizePartialDefine lkp pd =
     return Define
       { defLinkage    = partialLinkage pd
       , defVisibility = partialVisibility pd
+      , defAddrSpace  = partialAddrSpace pd
       , defGC         = partialGC pd
       , defAttrs      = []
       , defRetType    = partialRetType pd
@@ -599,6 +605,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     ty     <- getType           =<< field 1 numeric -- size type
     size   <- getFnValueById ty =<< field 2 numeric -- size value
     align  <-                       field 3 numeric -- alignment value
+    as <- getDefaultAllocaAddrSpace
 
     let sval = case typedValue size of
           ValInteger i | i == 1 -> Nothing
@@ -609,13 +616,13 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
                (1 `shiftL` 7)     -- swift error
         aval = (1 `shiftL` (fromIntegral (align .&. complement mask))) `shiftR` 1
         explicitType = testBit align 6
-        ity = if explicitType then PtrTo instty else instty
+        ity = if explicitType then PtrTo as instty else instty
 
     ret <- if explicitType
            then return instty
            else Assert.elimPtrTo "In return type:" instty
 
-    result ity (Alloca ret sval (Just aval)) d
+    result ity (Alloca ret as sval (Just aval)) d
 
   -- [opty,op,align,vol]
   20 -> label "FUNC_CODE_INST_LOAD" $ do
@@ -1284,7 +1291,7 @@ interpGep :: Type -> Typed PValue -> [Typed PValue] -> Parse Type
 interpGep baseTy ptr vs = check (resolveGep baseTy ptr vs)
   where
   check res = case res of
-    HasType rty -> return (PtrTo rty)
+    HasType rty -> return (PtrTo (ptrAddrSpace ptr) rty)
     Invalid -> fail $ unlines $
       [ "Unable to determine the type of getelementptr"
       , "Base type: " ++ show baseTy

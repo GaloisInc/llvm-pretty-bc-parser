@@ -45,3 +45,13 @@ visibility = choose <=< numeric
     1 -> return HiddenVisibility
     2 -> return ProtectedVisibility
     _ -> mzero
+
+unnamedAddr :: Match Field (Maybe UnnamedAddr)
+unnamedAddr = choose <=< numeric
+  where
+  choose :: Match Int (Maybe UnnamedAddr)
+  choose n = case n of
+    0 -> return Nothing
+    1 -> return $ Just GlobalUnnamedAddr
+    2 -> return $ Just LocalUnnamedAddr
+    _ -> mzero

@@ -114,6 +114,7 @@ data ParseState = ParseState
   , psLastLoc       :: Maybe PDebugLoc
   , psKinds         :: !KindTable
   , psModVersion    :: !Int
+  , psDataLayout    :: Maybe DataLayout
   } deriving (Show)
 
 -- | The initial parsing state.
@@ -132,6 +133,7 @@ emptyParseState  = ParseState
   , psLastLoc       = Nothing
   , psKinds         = emptyKindTable
   , psModVersion    = 0
+  , psDataLayout    = Nothing
   }
 
 -- | The next implicit result id.
@@ -172,6 +174,22 @@ setModVersion v = Parse $ do
 
 getModVersion :: Parse Int
 getModVersion = Parse (psModVersion <$> get)
+
+setDataLayout :: DataLayout -> Parse ()
+setDataLayout v = Parse $ do
+  ps <- get
+  put $! ps { psDataLayout = Just v }
+
+getDataLayout :: Parse (Maybe DataLayout)
+getDataLayout = Parse (psDataLayout <$> get)
+
+getDefaultFunctionAddrSpace :: Parse AddrSpace
+getDefaultFunctionAddrSpace =
+  maybe (AddrSpace 0) programAddrSpace <$> getDataLayout
+
+getDefaultAllocaAddrSpace :: Parse AddrSpace
+getDefaultAllocaAddrSpace =
+  maybe (AddrSpace 0) allocaAddrSpace <$> getDataLayout
 
 -- | Sort of a hack to preserve state between function body parses.  It would
 -- really be nice to separate this into a different monad, that could just run
@@ -449,14 +467,16 @@ setMdRefs refs = Parse $ do
 -- Function Prototypes ---------------------------------------------------------
 
 data FunProto = FunProto
-  { protoType       :: Type
-  , protoLinkage    :: Maybe Linkage
-  , protoVisibility :: Maybe Visibility
-  , protoGC         :: Maybe GC
-  , protoSym        :: Symbol
-  , protoIndex      :: Int
-  , protoSect       :: Maybe String
-  , protoComdat     :: Maybe String
+  { protoType        :: Type
+  , protoLinkage     :: Maybe Linkage
+  , protoVisibility  :: Maybe Visibility
+  , protoUnnamedAddr :: Maybe UnnamedAddr
+  , protoGC          :: Maybe GC
+  , protoSym         :: Symbol
+  , protoIndex       :: Int
+  , protoSect        :: Maybe String
+  , protoComdat      :: Maybe String
+  , protoAddrSpace   :: AddrSpace
   } deriving Show
 
 -- | Push a function prototype on to the prototype stack.
