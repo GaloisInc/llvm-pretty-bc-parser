@@ -225,7 +225,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   4 -> label "CST_CODE_INTEGER" $ do
     let field = parseField r
     ty <- getTy
-    n  <- field 0 signedWord64
+    n  <- field 0 signedInt64
     let val = fromMaybe (ValInteger (toInteger n)) $ do
                 Integer 0 <- elimPrimType ty
                 return (ValBool (n /= 0))
