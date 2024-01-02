@@ -77,7 +77,7 @@ descr = PP.vcat $
        |]
   , ""
   , block [iii|
- The compiler test method starts with a known .c file and uses clang to directly
+ The compiler test method starts with a known .c or .cpp file and uses clang to directly
  generate a bitcode file.  The test then proceeds just as with the assembler
  test.  The only difference therefore is the starting file and first command
  used on that file, but the compiler method will usually generate more variance
@@ -90,7 +90,7 @@ descr = PP.vcat $
   , " .ll --[llvm-as]--> .bc ---[llvm-dis]--> .ll   |"
   , "                     ^   `-[llvm-disasm]---> .ll"
   , "                     |                   `-> .AST"
-  , " .c --[clang]--------+                         |"
+  , " .c/.cpp --[clang]---+                         |"
   , "                     |                        [show]"
   , " .bc -[pre-existing]-+                         |"
   , "                                               v"
@@ -532,7 +532,7 @@ parseBC pfx bc = do
 
 cCompilerCube :: VersionCheck -> TS.CUBE
 cCompilerCube llvmver = (assemblyCube llvmver)
-                        { TS.rootName = "*.c"
+                        { TS.rootName = "*.(c|cc|cpp)"
                         , TS.sweetAdjuster = rangeMatch llvmver
                         }
 
