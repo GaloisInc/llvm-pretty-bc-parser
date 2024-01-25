@@ -111,6 +111,7 @@ data ParseState = ParseState
   , psNextResultId  :: !Int
   , psTypeName      :: Maybe String
   , psNextTypeId    :: !Int
+  , psNextSymbolId  :: !Int
   , psLastLoc       :: Maybe PDebugLoc
   , psKinds         :: !KindTable
   , psModVersion    :: !Int
@@ -130,6 +131,7 @@ emptyParseState  = ParseState
   , psNextResultId  = 0
   , psTypeName      = Nothing
   , psNextTypeId    = 0
+  , psNextSymbolId  = 0
   , psLastLoc       = Nothing
   , psKinds         = emptyKindTable
   , psModVersion    = 0
@@ -142,6 +144,14 @@ nextResultId  = Parse $ do
   ps <- get
   put ps { psNextResultId = psNextResultId ps + 1 }
   return (psNextResultId ps)
+
+-- | The next implicit result id.
+nextSymbolId :: Parse Int
+nextSymbolId  = Parse $ do
+  ps <- get
+  put ps { psNextSymbolId = psNextSymbolId ps + 1 }
+  return (psNextSymbolId ps)
+
 
 type PDebugLoc = DebugLoc' Int
 
