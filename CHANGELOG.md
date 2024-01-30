@@ -1,6 +1,6 @@
 # Revision history for llvm-pretty-bc-parser
 
-## next (TBA)
+## 0.4.1.0 (January 2024)
 
 * Add preliminary support for LLVM versions up through 16.
 * Require building with `llvm-pretty-0.12.*`.
