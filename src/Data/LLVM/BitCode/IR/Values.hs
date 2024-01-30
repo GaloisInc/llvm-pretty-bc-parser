@@ -2,7 +2,6 @@
 
 module Data.LLVM.BitCode.IR.Values (
     getValueTypePair
-  , getConstantFwdRefAdjustedId
   , getValue
   , getFnValueById, getFnValueById'
   , parseValueSymbolTableBlock
@@ -18,18 +17,6 @@ import Control.Monad ((<=<),foldM)
 
 
 -- Value Table -----------------------------------------------------------------
-
-getConstantFwdRefAdjustedId :: ValueTable -> Type -> Int -> Parse (Typed PValue)
-getConstantFwdRefAdjustedId t ty n' = label "getConstantFwdRefAdjustedId" $ do
-  mb <- lookupValue n'
-  case mb of
-    Just tv -> return tv
-
-    -- forward reference
-    Nothing -> do
-      cxt <- getContext
-      let ref = forwardRef cxt n' t
-      return (Typed ty (typedValue ref))
 
 -- | Get either a value from the value table, with its value, or parse a value
 -- and a type.

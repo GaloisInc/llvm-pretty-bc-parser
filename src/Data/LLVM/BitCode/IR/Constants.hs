@@ -8,7 +8,6 @@ module Data.LLVM.BitCode.IR.Constants where
 
 import qualified Data.LLVM.BitCode.Assert as Assert
 import           Data.LLVM.BitCode.Bitstream
-import           Data.LLVM.BitCode.IR.Values
 import           Data.LLVM.BitCode.Match
 import           Data.LLVM.BitCode.Parse
 import           Data.LLVM.BitCode.Record
@@ -345,9 +344,12 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
   -- [opty, opval, opval, pred]
   17 -> label "CST_CODE_CE_CMP" $ do
     let field = parseField r
-    opty <- getType                  =<< field 0 numeric
-    op0  <- getConstantFwdRefAdjustedId t opty =<< field 1 numeric
-    op1  <- getConstantFwdRefAdjustedId t opty =<< field 2 numeric
+    opty <- getType =<< field 0 numeric
+    ix0  <- field 1 numeric
+    ix1  <- field 2 numeric
+    cxt  <- getContext
+    let op0 = forwardRef cxt ix0 t
+    let op1 = forwardRef cxt ix1 t
 
     let isFloat = isPrimTypeOf isFloatingPoint
     cst <- if isFloat opty || isVectorOf isFloat opty
