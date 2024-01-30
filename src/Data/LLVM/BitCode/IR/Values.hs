@@ -2,7 +2,7 @@
 
 module Data.LLVM.BitCode.IR.Values (
     getValueTypePair
-  , getConstantFwdRef, getConstantFwdRefAdjustedId
+  , getConstantFwdRefAdjustedId
   , getValue
   , getFnValueById, getFnValueById'
   , parseValueSymbolTableBlock
@@ -18,11 +18,6 @@ import Control.Monad ((<=<),foldM)
 
 
 -- Value Table -----------------------------------------------------------------
-
--- | Return a forward reference if the value is not in the incremental table.
-getConstantFwdRef :: ValueTable -> Type -> Int -> Parse (Typed PValue)
-getConstantFwdRef t ty n = label "getConstantFwdRef" $
-    adjustId n >>= getConstantFwdRefAdjustedId t ty
 
 getConstantFwdRefAdjustedId :: ValueTable -> Type -> Int -> Parse (Typed PValue)
 getConstantFwdRefAdjustedId t ty n' = label "getConstantFwdRefAdjustedId" $ do
