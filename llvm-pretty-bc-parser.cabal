@@ -1,6 +1,6 @@
 cabal-version:       2.4
 Name:                llvm-pretty-bc-parser
-Version:             0.4.0.0.99
+Version:             0.4.1.0.99
 License:             BSD-3-Clause
 License-file:        LICENSE
 Author:              Trevor Elliott <trevor@galois.com>
@@ -18,7 +18,7 @@ Description:
 
 Extra-source-files:  disasm-test/tests/*.ll
 
-extra-doc-files: README.md
+extra-doc-files: CHANGELOG.md, README.md
 
 Flag fuzz
   Description:         Enable fuzzing harness
@@ -75,7 +75,7 @@ Library
                        bytestring  >= 0.10,
                        containers  >= 0.4,
                        fgl         >= 5.5,
-                       llvm-pretty >= 0.11.0.0.101 && < 0.12,
+                       llvm-pretty >= 0.12.0.0.99 && < 0.13,
                        mtl         >= 2.2.2,
                        pretty      >= 1.0.1,
                        uniplate    >= 1.6,
