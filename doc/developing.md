@@ -96,4 +96,5 @@ When updating the supported GHC versions, remember to update:
 
 - [The README](../README.md)
 - [The Cabal file](../llvm-pretty-bc-parser.cabal)'s `Tested-with` field
+- [The Nix flake](../flake.nix)
 - [CI workflows](../.github/workflows)
