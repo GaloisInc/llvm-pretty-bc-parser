@@ -10,7 +10,8 @@
   nixConfig.bash-prompt-suffix = "llvm-pretty-bc-parser.env} ";
 
   inputs = {
-    nixpkgs = { url = "github:nixos/nixpkgs/23.05"; };
+    nixpkgs-ghc8 = { url = "github:nixos/nixpkgs/23.05"; };
+    nixpkgs = { url = "github:nixos/nixpkgs/nixpkgs-unstable"; };
     levers = {
       url = "github:kquick/nix-levers";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -20,7 +21,7 @@
       flake = false;
     };
     fgl-src = {
-      url = "github:haskell/fgl/5.8.1.1";
+      url = "https://hackage.haskell.org/package/fgl-5.8.2.0/fgl-5.8.2.0.tar.gz";
       flake = false;
     };
     fgl-visualize-src = {
@@ -48,7 +49,7 @@
     };
   };
 
-  outputs = { self, levers, nixpkgs
+  outputs = { self, levers, nixpkgs, nixpkgs-ghc8
             , llvm-pretty-src
             , fgl-src
             , fgl-visualize-src
@@ -96,10 +97,18 @@
 
       packages = levers.eachSystem (system:
         let
-          mkHaskell = levers.mkHaskellPkg {
+          mkHaskellGhc9 = levers.mkHaskellPkg {
             inherit nixpkgs system;
             };
-          pkgs = import nixpkgs { inherit system; };
+          mkHaskellGhc8 = levers.mkHaskellPkg {
+            inherit system;
+            nixpkgs = nixpkgs-ghc8;
+            };
+          mkHaskell = name: src: ovrDrvOrArgs:
+            let blds8 = mkHaskellGhc8 name src ovrDrvOrArgs;
+                blds9 = mkHaskellGhc9 name src ovrDrvOrArgs;
+            in (blds8 // blds9);
+          pkgs = import nixpkgs-ghc8 { inherit system; };
           wrap = levers.pkg_wrapper system pkgs;
           haskellAdj = drv:
             with (pkgs.haskell).lib;

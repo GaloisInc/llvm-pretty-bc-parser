@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        ghc-version: [ "ghc96", "ghc94", "ghc92", "ghc810", "ghc88" ]
+        ghc-version: [ "ghc98", "ghc96", "ghc94" ]
     steps:
       - uses: cachix/install-nix-action@v20
         with:

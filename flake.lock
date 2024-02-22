@@ -3,23 +3,20 @@
     "fgl-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1676021714,
-        "narHash": "sha256-812R4Hf/smMikINWgpvDYOLm6h+PkF6FAsSPcHSzKBE=",
-        "owner": "haskell",
-        "repo": "fgl",
-        "rev": "b8c417f470dd6ac25eebacd326c3b2db85e71f27",
-        "type": "github"
+        "lastModified": 1000000000,
+        "narHash": "sha256-2sJ1uyziIe2ZwAHLQCoYTo+35nMSof30XeU/2ZcjLOM=",
+        "type": "tarball",
+        "url": "https://hackage.haskell.org/package/fgl-5.8.2.0/fgl-5.8.2.0.tar.gz"
       },
       "original": {
-        "owner": "haskell",
-        "ref": "5.8.1.1",
-        "repo": "fgl",
-        "type": "github"
+        "type": "tarball",
+        "url": "https://hackage.haskell.org/package/fgl-5.8.2.0/fgl-5.8.2.0.tar.gz"
       }
     },
     "fgl-visualize-src": {
       "flake": false,
       "locked": {
+        "lastModified": 1368739575,
         "narHash": "sha256-2EC57Y+B5ryWjWeLqzHeSNkb4RjUtvj8+8vebz86dnQ=",
         "type": "tarball",
         "url": "https://hackage.haskell.org/package/fgl-visualize-0.1.0.1/fgl-visualize-0.1.0.1.tar.gz"
@@ -110,11 +107,11 @@
     "llvm-pretty-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1706635035,
-        "narHash": "sha256-d6roSOu6FMa/z/Rlio1TO+kJ09vx34gOz0NDhfMrF0o=",
+        "lastModified": 1709056806,
+        "narHash": "sha256-f5f6wmCKqINPL8d/ShWf5K37drhgJGnzb3fruv5gX9U=",
         "owner": "elliottt",
         "repo": "llvm-pretty",
-        "rev": "e7b2bf1371e51bbc9e7a35070ae311b5a4b2c387",
+        "rev": "1f6118dfd25930aac09a7030990c57f857544ee7",
         "type": "github"
       },
       "original": {
@@ -124,6 +121,22 @@
       }
     },
     "nixpkgs": {
+      "locked": {
+        "lastModified": 1709038661,
+        "narHash": "sha256-Ys611iT6pChGv954aa4f8oKoDKJG3IXjJjPhnj6uaLY=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "8520c158aee718c6e87b56881105fc4223c3c723",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixpkgs-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs-ghc8": {
       "locked": {
         "lastModified": 1685566663,
         "narHash": "sha256-btHN1czJ6rzteeCuE/PNrdssqYD2nIA4w48miQAFloM=",
@@ -163,6 +176,7 @@
         "levers": "levers",
         "llvm-pretty-src": "llvm-pretty-src",
         "nixpkgs": "nixpkgs",
+        "nixpkgs-ghc8": "nixpkgs-ghc8",
         "optparse-applicative-src": "optparse-applicative-src",
         "tasty-expected-failure-src": "tasty-expected-failure-src",
         "tasty-src": "tasty-src",
