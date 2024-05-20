@@ -152,6 +152,7 @@
                 "14"
                 "15"
                 "16"
+                "17"
               ]
             );
           TESTS_PREP = wrap "llvm-pretty-bc-parser-TESTS_PREP"
