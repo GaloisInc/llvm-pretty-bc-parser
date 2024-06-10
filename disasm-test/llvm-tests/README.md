@@ -20,7 +20,7 @@ of `llvm-as`.
      Revision checked out of tree: [de74840](https://github.com/llvm-mirror/llvm/blob/de7484036b628b08be6acbfb5feac405d7450300)
    + Corresponding LLVM release: 3.9
    + Purpose: References to `DICompositeType`s changed in 3.9. See
-     [llvm-pretty#39](https://github.com/elliottt/llvm-pretty/issues/39).
+     [llvm-pretty#39](https://github.com/GaloisInc/llvm-pretty/issues/39).
 
  - File: `cfi-eof-prologue.old.ll`
    + Path in LLVM source tree: `test/DebugInfo/AArch64/cfi-eof-prologue.ll`
