@@ -17,7 +17,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     llvm-pretty-src = {
-      url = "github:elliottt/llvm-pretty";
+      url = "github:GaloisInc/llvm-pretty";
       flake = false;
     };
     fgl-src = {

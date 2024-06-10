@@ -109,13 +109,13 @@
       "locked": {
         "lastModified": 1709056806,
         "narHash": "sha256-f5f6wmCKqINPL8d/ShWf5K37drhgJGnzb3fruv5gX9U=",
-        "owner": "elliottt",
+        "owner": "GaloisInc",
         "repo": "llvm-pretty",
         "rev": "1f6118dfd25930aac09a7030990c57f857544ee7",
         "type": "github"
       },
       "original": {
-        "owner": "elliottt",
+        "owner": "GaloisInc",
         "repo": "llvm-pretty",
         "type": "github"
       }
