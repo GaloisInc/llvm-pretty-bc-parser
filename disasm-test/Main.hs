@@ -372,10 +372,12 @@ assemblyCube llvmver = TS.mkCUBE
   , TS.rootName = "*.ll"
   , TS.separators = "."
   , TS.validParams = [ ("llvm-range", Just [ "recent-llvm"
+                                           , "pre-llvm9"
                                            , "pre-llvm12"
                                            , "pre-llvm13"
                                            , "pre-llvm14"
                                            , "pre-llvm15"
+                                           , "pre-llvm16"
                                            ])
                      ]
     -- Somewhat unusually for tasty-sugar, we make the expectedSuffix the same

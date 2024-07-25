@@ -1431,7 +1431,7 @@ getDecodedOrdering 6 = return (Just SeqCst)
 getDecodedOrdering i = Assert.unknownEntity "atomic ordering" i
 
 
--- https://github.com/llvm-mirror/llvm/blob/release_60/include/llvm/Bitcode/LLVMBitCodes.h#L377
+-- https://github.com/llvm/llvm-project/blob/e24dc34aa085b9e8d3ea58cc5f59f80bc4c7cdb4/llvm/include/llvm/Bitcode/LLVMBitCodes.h#L468-L489
 getDecodedAtomicRWOp :: Integer -> Parse AtomicRWOp
 getDecodedAtomicRWOp 0  = pure AtomicXchg
 getDecodedAtomicRWOp 1  = pure AtomicAdd
@@ -1444,6 +1444,12 @@ getDecodedAtomicRWOp 7  = pure AtomicMax
 getDecodedAtomicRWOp 8  = pure AtomicMin
 getDecodedAtomicRWOp 9  = pure AtomicUMax
 getDecodedAtomicRWOp 10 = pure AtomicUMin
+getDecodedAtomicRWOp 11 = pure AtomicFAdd
+getDecodedAtomicRWOp 12 = pure AtomicFSub
+getDecodedAtomicRWOp 13 = pure AtomicFMax
+getDecodedAtomicRWOp 14 = pure AtomicFMin
+getDecodedAtomicRWOp 15 = pure AtomicUIncWrap
+getDecodedAtomicRWOp 16 = pure AtomicUDecWrap
 getDecodedAtomicRWOp v  = Assert.unknownEntity "atomic RWOp" v
 
 {-
