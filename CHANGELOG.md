@@ -1,5 +1,11 @@
 # Revision history for llvm-pretty-bc-parser
 
+## 0.4.2.0 (August 2024)
+
+* Add support for GHC 9.8 and drop official support of 9.2.
+
+* Add support for new atomic operations in LLVM 9+.
+
 ## 0.4.1.0 (January 2024)
 
 * Add preliminary support for LLVM versions up through 16.
