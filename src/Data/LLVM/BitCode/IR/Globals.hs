@@ -50,6 +50,9 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
   vis <- if length (recordFields r) > (6 + offset) && not (link `elem` [Internal, Private])
                 then field 6 visibility
                 else pure DefaultVisibility
+  tl <- if length (recordFields r) > (7 + offset) -- && not (link `elem` [Internal, Private])
+                then field 7 threadLocal
+                else pure NotThreadLocal
 
   unnamed <-
     if length (recordFields r) > (8 + offset)
@@ -74,6 +77,7 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
       attrs = GlobalAttrs
         { gaLinkage     = Just link
         , gaVisibility  = Just vis
+        , gaThreadLocality = Just tl
         , gaUnnamedAddr = unnamed
         , gaConstant    = isconst
         , gaAddrSpace   = addrspace
