@@ -56,7 +56,7 @@ formatError err
 
 newtype Parse a = Parse
   { unParse :: ReaderT Env (StateT ParseState (Except Error)) a
-  } deriving (Functor, Applicative, MonadFix
+  } deriving ( Functor, Applicative, MonadFix
              , MonadReader Env
              , MonadState ParseState
              , MonadError Error
@@ -160,7 +160,6 @@ setRelIds b = Parse $ do
 
 getRelIds :: HasValueTable m => m Bool
 getRelIds  = valueRelIds <$> getValueTable
-  -- return (valueRelIds (psValueTable ps))
 
 getLastLoc :: Parse PDebugLoc
 getLastLoc  = do
@@ -486,9 +485,10 @@ popFunProto  = do
 
 -- Parsing Environment ---------------------------------------------------------
 
+-- | The Reader environment information maintained in the 'Parse' monad.
 data Env = Env
-  { envSymtab  :: Symtab
-  , envContext :: [String]
+  { envSymtab  :: Symtab  -- ^ the global symbol table
+  , envContext :: [String] -- ^ the stack of "label" strings (a "stacktrace")
   } deriving Show
 
 emptyEnv :: Env
@@ -506,6 +506,12 @@ addLabel :: String -> Env -> Env
 addLabel l env = env { envContext = l : envContext env }
 
 class Monad m => HasParseEnv m where
+  -- | Gets the "stacktrace" for what is currently being evaluated (as set by the
+  -- 'label' function, which calls 'addLabel' above).  Note that the label
+  -- referenced here is the parsing processing notation, and NOT the llvm-pretty
+  -- AST 'lab' type argument which references the Basic Block label and which is
+  -- set with the 'llvm-pretty.relabel' function... an unfortunate overloading of
+  -- the term "label".
   getContext :: m [String]
   -- | Retrieve the value symbol table
   getValueSymtab :: m ValueSymtab
@@ -610,14 +616,14 @@ getTypeId n = do
 -- operation), as well as other fixups to convert the "Partial" data
 -- structures into the structures defined by the `llvm-pretty` AST.
 
-type SymName = Either String Int
-
 data ValueSymtab =
   ValueSymtab
   { valSymtab :: IntMap.IntMap SymName
   , bbSymtab  :: IntMap.IntMap SymName
   , fnSymtab  :: IntMap.IntMap SymName
   } deriving (Show)
+
+type SymName = Either String Int
 
 instance Semigroup ValueSymtab where
   l <> r = ValueSymtab
@@ -668,7 +674,7 @@ entryNameMb n = do
             IntMap.lookup n (fnSymtab symtab)
 
 -- | Lookup the name of an entry.
-entryName :: HasParseEnv m => HasValueTable m => MonadFail m => Int -> m String
+entryName :: (HasParseEnv m, HasValueTable m, MonadFail m) => Int -> m String
 entryName n = do
   mentry <- entryNameMb n
   case mentry of
@@ -780,6 +786,12 @@ resolveStrtabSymbol (Strtab bs) start len =
 
 -- Finalize Monad --------------------------------------------------------------
 
+-- | During the "finalization" pass, all references should be resolved, including
+-- actual Block label value references, which may be to either global or
+-- function-local targets.  The 'Finalize' Monad provides access to the tables
+-- needed to perform this resolution via the 'FinalizeEnv' data in a Reader monad
+-- context.
+
 data FinalizeEnv = FinalizeEnv
                    { parsedEnv :: Env
                    , parsedMdTable :: ValueTable
@@ -844,6 +856,11 @@ failWithContext' msg =
        { errMessage = msg
        , errContext = envContext env
        }
+
+-- | Run a Finalize Monad operation in the context of a Parse monad.  The
+-- information for the 'FinalizeEnv' is obtained from the Parse monad's 'Env',
+-- plus the VALUE_SYMTAB_BLOCK information for each function as mapped by the
+-- function's name.
 
 liftFinalize :: FuncSymTabs -> Finalize a -> Parse a
 liftFinalize defs (Finalize m) =

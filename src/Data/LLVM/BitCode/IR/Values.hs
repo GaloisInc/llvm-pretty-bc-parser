@@ -52,10 +52,7 @@ getValue :: ValueTable -> Type -> Int -> Parse (Typed PValue)
 getValue vt ty n = label "getValue" (getFnValueById' (Just vt) ty =<< adjustId n)
 
 -- | Lookup a value by its absolute id, or perhaps some metadata.
-getFnValueById' :: HasMdTable m
-                => HasParseEnv m
-                => HasValueTable m
-                => MonadFail m
+getFnValueById' :: (HasMdTable m, HasParseEnv m, HasValueTable m, MonadFail m)
                 => Maybe ValueTable -> Type -> Int -> m (Typed PValue)
 getFnValueById' mbVt ty n = case ty of
 
