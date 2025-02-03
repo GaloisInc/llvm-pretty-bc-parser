@@ -70,27 +70,29 @@ emptyPartialModule  = PartialModule
 -- module.
 finalizeModule :: PartialModule -> Parse Module
 finalizeModule pm = label "finalizeModule" $ do
-  globals  <- T.mapM finalizeGlobal       (partialGlobals pm)
-  declares <- T.mapM finalizeDeclare      (partialDeclares pm)
-  aliases  <- T.mapM finalizePartialAlias (partialAliases pm)
-  unnamed  <- liftFinalize $ T.mapM finalizePartialUnnamedMd (dedupMetadata (partialUnnamedMd pm))
   types    <- resolveTypeDecls
-  let lkp = lookupBlockName (partialDefines pm)
-  defines <- T.mapM (finalizePartialDefine lkp) (partialDefines pm)
-  return emptyModule
-    { modSourceName = partialSourceName pm
-    , modTriple     = partialTriple pm
-    , modDataLayout = partialDataLayout pm
-    , modNamedMd    = F.toList (partialNamedMd pm)
-    , modUnnamedMd  = sortOn umIndex (F.toList unnamed)
-    , modGlobals    = F.toList globals
-    , modDefines    = F.toList defines
-    , modTypes      = types
-    , modDeclares   = F.toList declares
-    , modInlineAsm  = partialInlineAsm pm
-    , modAliases    = F.toList aliases
-    , modComdat     = Map.fromList (F.toList (partialComdat pm))
-    }
+  let defs = Map.fromList [ (partialName d, partialSymtab d)
+                          | d <- F.toList (partialDefines pm) ]
+  defines <- T.mapM (finalizePartialDefine defs) (partialDefines pm)
+  liftFinalize defs $ do
+    globals  <- T.mapM finalizeGlobal (partialGlobals pm)
+    declares <- T.mapM finalizeDeclare (partialDeclares pm)
+    aliases  <- T.mapM finalizePartialAlias (partialAliases pm)
+    unnamed  <- T.mapM finalizePartialUnnamedMd (dedupMetadata (partialUnnamedMd pm))
+    return emptyModule
+      { modSourceName = partialSourceName pm
+      , modTriple     = partialTriple pm
+      , modDataLayout = partialDataLayout pm
+      , modNamedMd    = F.toList (partialNamedMd pm)
+      , modUnnamedMd  = sortOn umIndex (F.toList unnamed)
+      , modGlobals    = F.toList globals
+      , modDefines    = F.toList defines
+      , modTypes      = types
+      , modDeclares   = F.toList declares
+      , modInlineAsm  = partialInlineAsm pm
+      , modAliases    = F.toList aliases
+      , modComdat     = Map.fromList (F.toList (partialComdat pm))
+      }
 
 -- | Parse an LLVM Module out of the top-level block in a Bitstream.
 parseModuleBlock :: [Entry] -> Parse Module

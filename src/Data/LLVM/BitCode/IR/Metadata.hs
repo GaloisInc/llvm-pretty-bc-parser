@@ -328,7 +328,7 @@ finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` finalizePValMd (pumValues pum)
     }
 
 finalizePValMd :: PValMd -> Finalize ValMd
-finalizePValMd = relabel (const requireBbEntryName)
+finalizePValMd = relabel requireBbEntryName
 
 -- | Partition unnamed entries into global and function local unnamed entries.
 unnamedEntries :: PartialMetadata -> (Seq PartialUnnamedMd, Seq PartialUnnamedMd)

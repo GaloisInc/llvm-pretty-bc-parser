@@ -1,0 +1,32 @@
+##> rootMatchName: localstatic.c
+##> rootMatchName: localstatic.ll
+##> summary: llvm.dbg.declare should use md refs and not inline
+
+Logged in https://github.com/GaloisInc/llvm-pretty-bc-parser/issues/260
+
+Attempts to inline declare the !DILocalVariable for the file-local static:
+
+  call void @llvm.dbg.declare(metadata i32* %2, metadata !DILocalVariable(scope: !DISubprogram(scope: !3, name: "has_local_static", file: !3, line: 5, type: !9, isLocal: false, isDefinition: true, scopeLine: 5, virtuality: 0, virtualIndex: 0, flags: 256, isOptimized: false, unit: !2, retainedNodes: !4), name: "x", file: !DIFile(filename: "localstatic.c", directory: "/home/kquick/work/DFAMS/tp241209/sources/llvm-pretty-bc-parser/disasm-test/tests"), line: 5, type: !DIBasicType(tag: 36, name: "int", size: 32, align: 0, encoding: 5, flags: 0), arg: 1, flags: 0, align: 0), metadata !DIExpression()), !dbg !DILocation(line: 5, column: 26, scope: !0)
+
+, but llvm-as rejects that:
+
+  llvm-as: file.ll:L:C: error: missing 'distinct', required for !DISubprogram that is a Definition
+
+Adding 'distinct' in various places on the line does not work
+
+The llvm-dis handles this as:
+
+  call void @llvm.dbg.declare(metadata i32* %2, metadata !21, metadata !DIExpression()), !dbg !22
+
+where:
+
+!2 = distinct !DISubprogram(name: "has_local_static", scope: !3, file: !3, line: 5, type: !4, scopeLine: 5, flags: DIFlagPrototyped, spFlags: DISPFlagDefinition, unit: !7, retainedNodes: !8)
+!21 = !DILocalVariable(name: "x", arg: 1, scope: !2, file: !3, line: 5, type: !6)
+
+Note that for the llvm-disasm version, we do have:
+
+!0 = distinct !DISubprogram(scope: !3, name: "has_local_static", file: !3, line: 5, type: !9, isLocal: false, isDefinition: true, scopeLine: 5, virtuality: 0, virtualIndex: 0, flags: 256, isOptimized: false, unit: !2, retainedNodes: !4)
+!21 = !DILocalVariable(scope: !0, name: "x", file: !3, line: 5, type: !7, arg: 1, flags: 0, align: 0)
+
+So apparently it is mostly needed to have the llvm.dbg.declare use the UnnamedMd
+indices (if available) rather than inlining them.

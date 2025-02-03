@@ -77,16 +77,16 @@ parseGlobalVar n r = label "GLOBALVAR" $ do
     , pgMd      = Map.empty
     }
 
-finalizeGlobal :: PartialGlobal -> Parse Global
+finalizeGlobal :: PartialGlobal -> Finalize Global
 finalizeGlobal pg = case pgValueIx pg of
-  Nothing -> liftFinalize $ mkGlobal Nothing
+  Nothing -> mkGlobal Nothing
   Just ix -> do
     tv <- getFnValueById (pgType pg) (fromIntegral ix)
-    val <- liftFinalize $ relabel (const requireBbEntryName) (typedValue tv)
-    liftFinalize $ mkGlobal (Just val)
+    val <- relabel requireBbEntryName (typedValue tv)
+    mkGlobal (Just val)
   where
   mkGlobal mval =
-    do md <- mapM (relabel (const requireBbEntryName)) (pgMd pg)
+    do md <- mapM (relabel requireBbEntryName) (pgMd pg)
        return Global { globalSym   = pgSym pg
                      , globalAttrs = pgAttrs pg
                      , globalType  = pgType pg
