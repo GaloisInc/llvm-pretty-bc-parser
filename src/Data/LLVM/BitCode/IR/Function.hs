@@ -26,7 +26,6 @@ import           Data.Bits (shiftR,bit,shiftL,testBit,(.&.),(.|.),complement,Bit
 import           Data.Int (Int32)
 import           Data.Word (Word32)
 import qualified Data.Foldable as F
-import qualified Data.IntMap as IntMap
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import qualified Data.Traversable as T
@@ -221,27 +220,14 @@ updateLastStmt f pd = case updatePartialBlock `mplus` updatePartialBody of
     Seq.EmptyR        -> mzero
 
 
-
-type BlockLookup = Symbol -> Int -> Finalize BlockLabel
-
-lookupBlockName :: DefineList -> BlockLookup
-lookupBlockName dl = lkp
-  where
-  syms = Map.fromList [ (partialName d, partialSymtab d) | d <- F.toList dl ]
-  lkp fn bid = case Map.lookup fn syms of
-    Nothing -> fail ("symbol " ++ prettySym fn ++ " is not defined")
-    Just st -> case IntMap.lookup bid (bbSymtab st) of
-      Nothing -> fail ("block id " ++ show bid ++ " does not exist")
-      Just sn -> return (mkBlockLabel sn)
-
 -- | Finalize a partial definition.
-finalizePartialDefine :: BlockLookup -> FuncSymTabs -> PartialDefine -> Parse Define
-finalizePartialDefine lkp defs pd =
+finalizePartialDefine :: FuncSymTabs -> PartialDefine -> Parse Define
+finalizePartialDefine defs pd =
   label "finalizePartialDefine" $
   -- augment the symbol table with implicitly named anonymous blocks, and
   -- generate basic blocks.
   withValueSymtab (partialSymtab pd) $ do
-    body <- liftFinalize defs $ finalizeBody lkp (partialBody pd)
+    body <- liftFinalize defs $ finalizeBody (partialBody pd)
     md <- finalizeMetadata defs (partialMetadata pd)
     return Define
       { defLinkage    = partialLinkage pd
@@ -261,12 +247,6 @@ finalizePartialDefine lkp defs pd =
 finalizeMetadata :: FuncSymTabs -> PFnMdAttachments -> Parse FnMdAttachments
 finalizeMetadata defs patt = Map.fromList <$> mapM f (Map.toList patt)
   where f (k,md) = (,) <$> getKind k <*> (liftFinalize defs $ finalizePValMd md)
-
--- | Individual label resolution step.
-resolveBlockLabel :: BlockLookup -> Maybe Symbol -> Int -> Finalize BlockLabel
-resolveBlockLabel lkp mbSym = case mbSym of
-  Nothing  -> requireBbEntryName mbSym
-  Just sym -> lkp sym
 
 -- | Name the next result with either its symbol, or the next available
 -- anonymous result id.
@@ -318,8 +298,8 @@ terminateBlock d = do
 type BlockList = Seq.Seq PartialBlock
 
 -- | Process a @BlockList@, turning it into a list of basic blocks.
-finalizeBody :: BlockLookup -> BlockList -> Finalize [BasicBlock]
-finalizeBody lkp = fmap F.toList . T.mapM (finalizePartialBlock lkp)
+finalizeBody :: BlockList -> Finalize [BasicBlock]
+finalizeBody = fmap F.toList . T.mapM finalizePartialBlock
 
 data PartialBlock = PartialBlock
   { partialLabel :: !Int
@@ -330,10 +310,10 @@ setPartialStmts :: StmtList -> PartialBlock -> PartialBlock
 setPartialStmts stmts pb = pb { partialStmts = stmts }
 
 -- | Process a partial basic block into a full basic block.
-finalizePartialBlock :: BlockLookup -> PartialBlock -> Finalize BasicBlock
-finalizePartialBlock lkp pb = BasicBlock
+finalizePartialBlock :: PartialBlock -> Finalize BasicBlock
+finalizePartialBlock pb = BasicBlock
                           <$> bbEntryName Nothing (partialLabel pb)
-                          <*> finalizeStmts lkp (partialStmts pb)
+                          <*> finalizeStmts (partialStmts pb)
 
 type PStmt = Stmt' Int
 
@@ -341,12 +321,11 @@ type StmtList = Seq.Seq PStmt
 
 -- | Process a list of statements with explicit block id labels into one with
 -- textual labels.
-finalizeStmts :: BlockLookup -> StmtList -> Finalize [Stmt]
-finalizeStmts lkp = mapM (finalizeStmt lkp) . F.toList
+finalizeStmts :: StmtList -> Finalize [Stmt]
+finalizeStmts = mapM finalizeStmt . F.toList
 
-finalizeStmt :: BlockLookup -> Stmt' Int -> Finalize Stmt
-finalizeStmt lkp = relabel (resolveBlockLabel lkp)
-
+finalizeStmt :: Stmt' Int -> Finalize Stmt
+finalizeStmt = relabel requireBbEntryName
 
 -- Function Block Parsing ------------------------------------------------------
 

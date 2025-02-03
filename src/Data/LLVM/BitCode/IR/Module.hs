@@ -71,10 +71,9 @@ emptyPartialModule  = PartialModule
 finalizeModule :: PartialModule -> Parse Module
 finalizeModule pm = label "finalizeModule" $ do
   types    <- resolveTypeDecls
-  let lkp = lookupBlockName (partialDefines pm)
   let defs = Map.fromList [ (partialName d, partialSymtab d)
                           | d <- F.toList (partialDefines pm) ]
-  defines <- T.mapM (finalizePartialDefine lkp defs) (partialDefines pm)
+  defines <- T.mapM (finalizePartialDefine defs) (partialDefines pm)
   liftFinalize defs $ do
     globals  <- T.mapM finalizeGlobal (partialGlobals pm)
     declares <- T.mapM finalizeDeclare (partialDeclares pm)
