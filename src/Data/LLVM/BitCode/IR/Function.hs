@@ -101,11 +101,11 @@ parseAlias r = do
     , paTarget     = tgt
     }
 
-finalizePartialAlias :: PartialAlias -> Parse GlobalAlias
-finalizePartialAlias pa = label "finalizePartialAlias" $ do
+finalizePartialAlias :: PartialAlias -> Finalize GlobalAlias
+finalizePartialAlias pa = do
   -- aliases refer to absolute offsets
   tv  <- getFnValueById (paType pa) (fromIntegral (paTarget pa))
-  tgt <- liftFinalize $ relabel (const requireBbEntryName) (typedValue tv)
+  tgt <- relabel (const requireBbEntryName) (typedValue tv)
   return GlobalAlias
     { aliasLinkage    = paLinkage pa
     , aliasVisibility = paVisibility pa
@@ -120,7 +120,7 @@ finalizePartialAlias pa = label "finalizePartialAlias" $ do
 type DeclareList = Seq.Seq FunProto
 
 -- | Turn a function prototype into a declaration.
-finalizeDeclare :: FunProto -> Parse Declare
+finalizeDeclare :: FunProto -> Finalize Declare
 finalizeDeclare fp = case protoType fp of
   PtrTo (FunTy ret args va) -> return Declare
     { decLinkage    = protoLinkage fp
