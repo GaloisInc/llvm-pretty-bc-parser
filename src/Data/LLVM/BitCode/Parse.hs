@@ -20,8 +20,9 @@ import qualified Control.Monad.Fail -- makes fail visible for instance
 #endif
 import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.Except (MonadError(..), Except, runExcept)
-import           Control.Monad.Reader (MonadReader(..), ReaderT(..))
-import           Control.Monad.State.Strict (MonadState(..), StateT(..))
+import           Control.Monad.Reader (MonadReader(..), ReaderT(..), asks)
+import           Control.Monad.State.Strict (MonadState(..), StateT(..)
+                                            , gets, modify)
 import           Data.Maybe (fromMaybe)
 import           Data.Semigroup
 import           Data.Typeable (Typeable)
@@ -55,7 +56,11 @@ formatError err
 
 newtype Parse a = Parse
   { unParse :: ReaderT Env (StateT ParseState (Except Error)) a
-  } deriving (Functor, Applicative, MonadFix)
+  } deriving (Functor, Applicative, MonadFix
+             , MonadReader Env
+             , MonadState ParseState
+             , MonadError Error
+             )
 
 instance Monad Parse where
 #if !MIN_VERSION_base(4,11,0)
@@ -153,10 +158,9 @@ setRelIds b = Parse $ do
   ps <- get
   put $! ps { psValueTable = (psValueTable ps) { valueRelIds = b }}
 
-getRelIds :: Parse Bool
-getRelIds  = do
-  ps <- Parse get
-  return (valueRelIds (psValueTable ps))
+getRelIds :: HasValueTable m => m Bool
+getRelIds  = valueRelIds <$> getValueTable
+  -- return (valueRelIds (psValueTable ps))
 
 getLastLoc :: Parse PDebugLoc
 getLastLoc  = do
@@ -327,7 +331,7 @@ pushValue tv = Parse $ do
 
 -- | Get the index for the next value.
 nextValueId :: Parse Int
-nextValueId  = Parse (valueNextId . psValueTable <$> get)
+nextValueId = valueNextId <$> getValueTable
 
 -- | Depending on whether or not relative ids are in use, adjust the id.
 adjustId :: Int -> Parse Int
@@ -350,7 +354,7 @@ lookupValueTableAbs :: Int -> ValueTable -> Maybe (Typed PValue)
 lookupValueTableAbs n values = IntMap.lookup n (valueEntries values)
 
 -- | When you know you have an absolute index.
-lookupValueAbs :: Int -> Parse (Maybe (Typed PValue))
+lookupValueAbs :: HasValueTable m => Int -> m (Maybe (Typed PValue))
 lookupValueAbs n = lookupValueTableAbs n `fmap` getValueTable
 
 -- | Lookup either a relative id, or an absolute id.
@@ -379,9 +383,12 @@ requireValue n = do
     Just tv -> return tv
     Nothing -> fail ("value " ++ show n ++ " is not defined")
 
--- | Get the current value table.
-getValueTable :: Parse ValueTable
-getValueTable  = Parse (psValueTable <$> get)
+class Monad m => HasValueTable m where
+  -- | Get the current value table.
+  getValueTable :: m ValueTable
+
+instance HasValueTable Parse where
+  getValueTable  = gets psValueTable
 
 -- | Retrieve the name for the next value.  Note that this doesn't assume that
 -- the name gets used, and doesn't update the next id in the value table.
@@ -413,13 +420,14 @@ type PValMd = ValMd' Int
 
 type MdTable = ValueTable
 
-getMdTable :: Parse MdTable
-getMdTable  = Parse (psMdTable <$> get)
+class Monad m => HasMdTable m where
+  getMdTable :: m MdTable
+
+instance HasMdTable Parse where
+  getMdTable = gets psMdTable
 
 setMdTable :: MdTable -> Parse ()
-setMdTable md = Parse $ do
-  ps <- get
-  put $! ps { psMdTable = md }
+setMdTable md = modify $ \ps -> ps { psMdTable = md }
 
 getMetadata :: Int -> Parse (Typed PValMd)
 getMetadata ix = do
@@ -497,9 +505,14 @@ extendSymtab symtab env = env { envSymtab = envSymtab env `mappend` symtab }
 addLabel :: String -> Env -> Env
 addLabel l env = env { envContext = l : envContext env }
 
-getContext :: Parse [String]
-getContext  = Parse (envContext `fmap` ask)
+class Monad m => HasParseEnv m where
+  getContext :: m [String]
+  -- | Retrieve the value symbol table
+  getValueSymtab :: m ValueSymtab
 
+instance HasParseEnv Parse where
+  getContext = asks envContext
+  getValueSymtab = asks $ symValueSymtab . envSymtab
 
 data Symtab = Symtab
   { symValueSymtab :: ValueSymtab
@@ -527,10 +540,6 @@ withSymtab symtab body = Parse $ do
 -- | Run a computation with an extended value symbol table.
 withValueSymtab :: ValueSymtab -> Parse a -> Parse a
 withValueSymtab symtab = withSymtab (mempty { symValueSymtab = symtab })
-
--- | Retrieve the value symbol table.
-getValueSymtab :: Finalize ValueSymtab
-getValueSymtab = Finalize (symValueSymtab . envSymtab <$> ask)
 
 -- | Run a computation with an extended type symbol table.
 withTypeSymtab :: TypeSymtab -> Parse a -> Parse a
@@ -573,6 +582,33 @@ getTypeId n = do
 
 
 -- Value Symbol Table ----------------------------------------------------------
+
+-- | An LLVM Bitcode file, it is comprised of nested Blocks of information,
+-- with records available at each block.  Different blocks hold different
+-- types of information, and the nesting represents program scope and what is
+-- defined/accessible at a particular point within the program.
+--
+-- The `Parse` and `Finalize` monads maintain a set of symbol tables to use
+-- for lookups, as stored in the `Env` structure referenced by those monads:
+--
+--   * `valSymtab` for value references
+--
+--   * `fnSymtab` for function references
+--
+--   * `bbSymTab` for basic-block references, either "named" by association
+--     with a symbol name (like the function's entry block) or "anonymous",
+--     where there is no direct symbol but there may be a block label (like
+--     for a goto statement or similar surface language construct.)
+--
+-- These lookups are necessary to "relabel" values that reference symbol or
+-- label addresses in the code with the actual targets as resolved by
+-- processing the entirety of the LLVM bitcode file.  The
+-- llvm-pretty-bc-parser runs in two phases: the initial phase where it
+-- processes the LLVM bitcode stream to create "Partial" representations of
+-- all of the elements, followed by a "finalization" phase where it performs
+-- all of the label references above (via the llvm-pretty `relabel`
+-- operation), as well as other fixups to convert the "Partial" data
+-- structures into the structures defined by the `llvm-pretty` AST.
 
 type SymName = Either String Int
 
@@ -624,22 +660,22 @@ addFwdFNEntry :: Int -> Int -> ValueSymtab -> ValueSymtab
 addFwdFNEntry i o t = t { fnSymtab = IntMap.insert i (Right o) (fnSymtab t) }
 
 -- | Lookup the name of an entry. Returns @Nothing@ when it's not present.
-entryNameMb :: Int -> Parse (Maybe String)
+entryNameMb :: HasParseEnv m => Int -> m (Maybe String)
 entryNameMb n = do
-  symtab <- liftFinalize getValueSymtab
+  symtab <- getValueSymtab
   return $! fmap renderName
          $  IntMap.lookup n (valSymtab symtab) `mplus`
             IntMap.lookup n (fnSymtab symtab)
 
 -- | Lookup the name of an entry.
-entryName :: Int -> Parse String
+entryName :: HasParseEnv m => HasValueTable m => MonadFail m => Int -> m String
 entryName n = do
   mentry <- entryNameMb n
   case mentry of
     Just name -> return name
     Nothing   ->
       do isRel  <- getRelIds
-         symtab <- liftFinalize getValueSymtab
+         symtab <- getValueSymtab
          fail $ unlines
            [ "entry " ++ show n ++ (if isRel then " (relative)" else "")
               ++ " is missing from the symbol table"
@@ -736,9 +772,14 @@ resolveStrtabSymbol (Strtab bs) start len =
 
 -- Finalize Monad --------------------------------------------------------------
 
+data FinalizeEnv = FinalizeEnv { parsedEnv :: Env
+                               , parsedMdTable :: ValueTable
+                               , parsedValueTable :: ValueTable
+                               }
+
 newtype Finalize a = Finalize
-  { unFinalize :: ReaderT Env (Except Error) a
-  } deriving (Functor, Applicative)
+  { unFinalize :: ReaderT FinalizeEnv (Except Error) a
+  } deriving (Functor, Applicative, MonadReader FinalizeEnv)
 
 instance Monad Finalize where
 #if !MIN_VERSION_base(4,11,0)
@@ -772,11 +813,21 @@ instance MonadPlus Finalize where
   {-# INLINE mplus #-}
   mplus = (<|>)
 
+instance HasParseEnv Finalize where
+  getContext = asks $ envContext . parsedEnv
+  getValueSymtab = asks $ symValueSymtab . envSymtab . parsedEnv
+
+instance HasMdTable Finalize where
+  getMdTable = asks parsedMdTable
+
+instance HasValueTable Finalize where
+  getValueTable = asks parsedValueTable
+
 -- | Fail, taking into account the current context.
 failWithContext' :: String -> Finalize a
 failWithContext' msg =
   Finalize $
-  do env <- ask
+  do env <- asks parsedEnv
      throwError Error
        { errMessage = msg
        , errContext = envContext env
@@ -784,7 +835,13 @@ failWithContext' msg =
 
 liftFinalize :: Finalize a -> Parse a
 liftFinalize (Finalize m) =
-  do env <- Parse ask
-     case runExcept (runReaderT m env) of
-       Left err -> Parse (throwError err)
+  do env <- ask
+     mdt <- getMdTable
+     valt <- getValueTable
+     let fenv = FinalizeEnv { parsedEnv = env
+                            , parsedMdTable = mdt
+                            , parsedValueTable = valt
+                            }
+     case runExcept (runReaderT m fenv) of
+       Left err -> throwError err
        Right a -> return a

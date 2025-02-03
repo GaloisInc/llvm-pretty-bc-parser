@@ -44,15 +44,20 @@ getValueTypePair t r ix = do
 --getValueNoFwdRef :: Type -> Int -> Parse (Typed PValue)
 --getValueNoFwdRef ty n = label "getValueNoFwdRef" (getFnValueById ty =<< adjustId n)
 
-getFnValueById :: Type -> Int -> Parse (Typed PValue)
+getFnValueById :: (HasMdTable m, HasParseEnv m, HasValueTable m, MonadFail m)
+               => Type -> Int -> m (Typed PValue)
 getFnValueById  = getFnValueById' Nothing
 
 getValue :: ValueTable -> Type -> Int -> Parse (Typed PValue)
 getValue vt ty n = label "getValue" (getFnValueById' (Just vt) ty =<< adjustId n)
 
 -- | Lookup a value by its absolute id, or perhaps some metadata.
-getFnValueById' :: Maybe ValueTable -> Type -> Int -> Parse (Typed PValue)
-getFnValueById' mbVt ty n = label "getFnValueById'" $ case ty of
+getFnValueById' :: HasMdTable m
+                => HasParseEnv m
+                => HasValueTable m
+                => MonadFail m
+                => Maybe ValueTable -> Type -> Int -> m (Typed PValue)
+getFnValueById' mbVt ty n = case ty of
 
   PrimType Metadata -> do
     cxt <- getContext
