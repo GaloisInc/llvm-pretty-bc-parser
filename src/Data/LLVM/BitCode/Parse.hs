@@ -682,18 +682,26 @@ entryName n = do
            , show symtab ]
 
 -- | Lookup the name of a basic block.
-bbEntryName :: Int -> Finalize (Maybe BlockLabel)
-bbEntryName n = do
-  symtab <- getValueSymtab
-  return (mkBlockLabel <$> IntMap.lookup n (bbSymtab symtab))
+bbEntryName :: Maybe Symbol -> Int -> Finalize (Maybe BlockLabel)
+bbEntryName mbSym n =
+  fmap mkBlockLabel
+  <$> case mbSym of
+        Just fn -> do
+          -- Lookup entry in a function (Defines) symbol table
+          funcSyms <- asks parsedFuncSymtabs
+          return (IntMap.lookup n . bbSymtab =<< Map.lookup fn funcSyms)
+        Nothing -> do
+          -- Lookup entry in global (top-level) symbol table
+          symtab <- getValueSymtab
+          return (IntMap.lookup n (bbSymtab symtab))
 
 -- | Lookup the name of a basic block.
-requireBbEntryName :: Int -> Finalize BlockLabel
-requireBbEntryName n = do
-  mb <- bbEntryName n
+requireBbEntryName :: Maybe Symbol -> Int -> Finalize BlockLabel
+requireBbEntryName mbSym n = do
+  mb <- bbEntryName mbSym n
   case mb of
     Just l  -> return l
-    Nothing -> fail ("basic block " ++ show n ++ " has no id")
+    Nothing -> fail ("basic block " ++ show n ++ " / " ++ show mbSym ++ " has no id")
 
 -- Type Symbol Tables ----------------------------------------------------------
 
@@ -772,10 +780,14 @@ resolveStrtabSymbol (Strtab bs) start len =
 
 -- Finalize Monad --------------------------------------------------------------
 
-data FinalizeEnv = FinalizeEnv { parsedEnv :: Env
-                               , parsedMdTable :: ValueTable
-                               , parsedValueTable :: ValueTable
-                               }
+data FinalizeEnv = FinalizeEnv
+                   { parsedEnv :: Env
+                   , parsedMdTable :: ValueTable
+                   , parsedValueTable :: ValueTable
+                   , parsedFuncSymtabs :: FuncSymTabs
+                   }
+
+type FuncSymTabs = Map.Map Symbol ValueSymtab
 
 newtype Finalize a = Finalize
   { unFinalize :: ReaderT FinalizeEnv (Except Error) a
@@ -833,14 +845,15 @@ failWithContext' msg =
        , errContext = envContext env
        }
 
-liftFinalize :: Finalize a -> Parse a
-liftFinalize (Finalize m) =
+liftFinalize :: FuncSymTabs -> Finalize a -> Parse a
+liftFinalize defs (Finalize m) =
   do env <- ask
      mdt <- getMdTable
      valt <- getValueTable
      let fenv = FinalizeEnv { parsedEnv = env
                             , parsedMdTable = mdt
                             , parsedValueTable = valt
+                            , parsedFuncSymtabs = defs
                             }
      case runExcept (runReaderT m fenv) of
        Left err -> throwError err

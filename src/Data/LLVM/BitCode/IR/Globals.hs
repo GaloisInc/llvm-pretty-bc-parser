@@ -82,11 +82,11 @@ finalizeGlobal pg = case pgValueIx pg of
   Nothing -> mkGlobal Nothing
   Just ix -> do
     tv <- getFnValueById (pgType pg) (fromIntegral ix)
-    val <- relabel (const requireBbEntryName) (typedValue tv)
+    val <- relabel requireBbEntryName (typedValue tv)
     mkGlobal (Just val)
   where
   mkGlobal mval =
-    do md <- mapM (relabel (const requireBbEntryName)) (pgMd pg)
+    do md <- mapM (relabel requireBbEntryName) (pgMd pg)
        return Global { globalSym   = pgSym pg
                      , globalAttrs = pgAttrs pg
                      , globalType  = pgType pg

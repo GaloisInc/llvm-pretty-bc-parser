@@ -105,7 +105,7 @@ finalizePartialAlias :: PartialAlias -> Finalize GlobalAlias
 finalizePartialAlias pa = do
   -- aliases refer to absolute offsets
   tv  <- getFnValueById (paType pa) (fromIntegral (paTarget pa))
-  tgt <- relabel (const requireBbEntryName) (typedValue tv)
+  tgt <- relabel requireBbEntryName (typedValue tv)
   return GlobalAlias
     { aliasLinkage    = paLinkage pa
     , aliasVisibility = paVisibility pa
@@ -196,7 +196,7 @@ setPartialBody blocks pd = pd { partialBody = blocks }
 
 initialPartialSymtab :: Parse ValueSymtab
 initialPartialSymtab  = do
-  mb <- liftFinalize $ bbEntryName 0
+  mb <- liftFinalize mempty $ bbEntryName Nothing 0
   case mb of
     Just{}  -> return emptyValueSymtab
     Nothing -> do
@@ -235,14 +235,14 @@ lookupBlockName dl = lkp
       Just sn -> return (mkBlockLabel sn)
 
 -- | Finalize a partial definition.
-finalizePartialDefine :: BlockLookup -> PartialDefine -> Parse Define
-finalizePartialDefine lkp pd =
+finalizePartialDefine :: BlockLookup -> FuncSymTabs -> PartialDefine -> Parse Define
+finalizePartialDefine lkp defs pd =
   label "finalizePartialDefine" $
   -- augment the symbol table with implicitly named anonymous blocks, and
   -- generate basic blocks.
   withValueSymtab (partialSymtab pd) $ do
-    body <- liftFinalize $ finalizeBody lkp (partialBody pd)
-    md <- finalizeMetadata (partialMetadata pd)
+    body <- liftFinalize defs $ finalizeBody lkp (partialBody pd)
+    md <- finalizeMetadata defs (partialMetadata pd)
     return Define
       { defLinkage    = partialLinkage pd
       , defVisibility = partialVisibility pd
@@ -258,14 +258,14 @@ finalizePartialDefine lkp pd =
       , defComdat     = partialComdatName pd
       }
 
-finalizeMetadata :: PFnMdAttachments -> Parse FnMdAttachments
-finalizeMetadata patt = Map.fromList <$> mapM f (Map.toList patt)
-  where f (k,md) = (,) <$> getKind k <*> liftFinalize (finalizePValMd md)
+finalizeMetadata :: FuncSymTabs -> PFnMdAttachments -> Parse FnMdAttachments
+finalizeMetadata defs patt = Map.fromList <$> mapM f (Map.toList patt)
+  where f (k,md) = (,) <$> getKind k <*> (liftFinalize defs $ finalizePValMd md)
 
 -- | Individual label resolution step.
 resolveBlockLabel :: BlockLookup -> Maybe Symbol -> Int -> Finalize BlockLabel
 resolveBlockLabel lkp mbSym = case mbSym of
-  Nothing  -> requireBbEntryName
+  Nothing  -> requireBbEntryName mbSym
   Just sym -> lkp sym
 
 -- | Name the next result with either its symbol, or the next available
@@ -298,7 +298,7 @@ addStmt s d
 terminateBlock :: PartialDefine -> Parse PartialDefine
 terminateBlock d = do
   let next = partialBlockId d + 1
-  mb <- liftFinalize $ bbEntryName next
+  mb <- liftFinalize mempty $ bbEntryName Nothing next
   d' <- case mb of
     Just _  -> return d
     Nothing -> do
@@ -332,7 +332,7 @@ setPartialStmts stmts pb = pb { partialStmts = stmts }
 -- | Process a partial basic block into a full basic block.
 finalizePartialBlock :: BlockLookup -> PartialBlock -> Finalize BasicBlock
 finalizePartialBlock lkp pb = BasicBlock
-                          <$> bbEntryName (partialLabel pb)
+                          <$> bbEntryName Nothing (partialLabel pb)
                           <*> finalizeStmts lkp (partialStmts pb)
 
 type PStmt = Stmt' Int
