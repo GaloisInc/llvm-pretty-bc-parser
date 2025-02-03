@@ -17,6 +17,7 @@ instance Arbitrary Global where arbitrary = genericArbitrary uniform
 instance Arbitrary GlobalAttrs where arbitrary = genericArbitrary uniform
 instance Arbitrary Linkage where arbitrary = genericArbitrary uniform
 instance Arbitrary Visibility where arbitrary = genericArbitrary uniform
+instance Arbitrary ThreadLocality where arbitrary = genericArbitrary uniform
 
 instance Arbitrary FunAttr where arbitrary = genericArbitrary uniform
 instance Arbitrary Define where arbitrary = genericArbitrary uniform

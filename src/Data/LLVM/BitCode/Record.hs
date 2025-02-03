@@ -182,5 +182,10 @@ oldOrStrtabName n r = do
           Just st -> do
             offset <- parseField r 0 numeric
             len <- parseField r 1 numeric
-            return (resolveStrtabSymbol st offset len, 2)
+            if len == 0
+            then do
+              n <- show <$> nextSymbolId
+              return (Symbol n, 2)
+            else
+              return (resolveStrtabSymbol st offset len, 2)
           Nothing -> fail "New-style name encountered with no string table."

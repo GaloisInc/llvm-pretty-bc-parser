@@ -45,3 +45,25 @@ visibility = choose <=< numeric
     1 -> return HiddenVisibility
     2 -> return ProtectedVisibility
     _ -> mzero
+
+threadLocal :: Match Field ThreadLocality
+threadLocal = choose <=< numeric
+  where
+  choose :: Match Int ThreadLocality
+  choose n = case n of
+    0 -> return NotThreadLocal
+    1 -> return ThreadLocal
+    2 -> return LocalDynamic
+    3 -> return InitialExec
+    4 -> return LocalExec
+    _ -> mzero
+
+unnamedAddr :: Match Field (Maybe UnnamedAddr)
+unnamedAddr = choose <=< numeric
+  where
+  choose :: Match Int (Maybe UnnamedAddr)
+  choose n = case n of
+    0 -> return Nothing
+    1 -> return $ Just GlobalUnnamedAddr
+    2 -> return $ Just LocalUnnamedAddr
+    _ -> mzero

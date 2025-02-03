@@ -116,11 +116,13 @@ parseTypeBlockEntry (fromEntry -> Just r) = case recordCode r of
   8 -> label "TYPE_CODE_POINTER" $ do
     let field = parseField r
     ty <- field 0 typeRef
-    when (length (recordFields r) == 2) $ do
-      -- We do not currently store address spaces in the @llvm-pretty@ AST.
-      _space <- field 1 keep
-      return ()
-    addType (PtrTo ty)
+    space <- AddrSpace <$> if length (recordFields r) == 2
+      then
+        field 1 numeric
+      else
+        return 0
+
+    addType (PtrTo space ty)
 
   -- [vararg, attrid, [retty, paramty x N]]
   9 -> label "TYPE_CODE_FUNCTION_OLD" $ do
@@ -203,9 +205,8 @@ parseTypeBlockEntry (fromEntry -> Just r) = case recordCode r of
     let field = parseField r
     when (length (recordFields r) /= 1) $
       fail "Invalid opaque pointer record"
-    -- We do not currently store address spaces in the @llvm-pretty@ AST.
-    _space <- field 0 keep
-    addType PtrOpaque
+    space <- AddrSpace <$> field 0 numeric
+    addType $ PtrOpaque space
 
   26 -> label "TYPE_CODE_TARGET_TYPE" $ do
     notImplemented
