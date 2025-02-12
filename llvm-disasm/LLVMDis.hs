@@ -1,9 +1,9 @@
-import Data.LLVM.BitCode (parseBitCode, formatError)
+import Data.LLVM.BitCode (parseBitCodeWithWarnings, formatError, ppParseWarnings)
 import Data.LLVM.CFG (buildCFG, CFG(..), blockId)
 import Text.LLVM.AST (defBody, modDefines,Module)
 import Text.LLVM.PP (ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP, llvmVlatest)
 
-import Control.Monad (when)
+import Control.Monad (unless, when)
 import Data.Graph.Inductive.Graph (nmap, emap)
 import Data.Graph.Inductive.Dot (fglToDotString, showDot)
 import Data.Monoid (Endo(..))
@@ -14,7 +14,7 @@ import System.Console.GetOpt
   (ArgOrder(..), ArgDescr(..), OptDescr(..), getOpt, usageInfo)
 import System.Environment (getArgs,getProgName)
 import System.Exit (exitFailure, exitSuccess)
-import System.IO (stderr,hPutStrLn)
+import System.IO (stderr,hPrint,hPutStrLn)
 import qualified Data.ByteString as S
 
 data Options = Options {
@@ -91,14 +91,16 @@ disasm :: Options -> [Char] -> IO ()
 disasm opts file = do
   putStrLn (replicate 80 ';' ++ "\n")
   putStrLn ("; " ++ file)
-  e <- parseBitCode =<< S.readFile file
+  e <- parseBitCodeWithWarnings =<< S.readFile file
   case e of
 
     Left err -> do
       hPutStrLn stderr (formatError err)
       exitFailure
 
-    Right m  -> do
+    Right (m, warnings) -> do
+        unless (null warnings) $
+          hPrint stderr $ ppParseWarnings warnings
         if optAST opts
           then pPrint m
           else renderLLVM opts m

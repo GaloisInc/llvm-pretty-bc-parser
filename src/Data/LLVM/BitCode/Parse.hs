@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE RecordWildCards #-}
 
@@ -35,6 +36,8 @@ import qualified Data.IntMap as IntMap
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import           GHC.Stack (HasCallStack, CallStack, callStack, prettyCallStack)
+import qualified Text.PrettyPrint.HughesPJ as PP
+import qualified Text.PrettyPrint.HughesPJClass as PP
 
 import           Prelude
 
@@ -51,8 +54,10 @@ formatError err
   | null (errContext err) = errMessage err
   | otherwise             = unlines
                           $ errMessage err
-                          : "from:"
-                          : map ('\t' :) (errContext err)
+                          : formatContext (errContext err)
+
+formatContext :: [String] -> [String]
+formatContext cxt = "from:" : map ('\t' :) cxt
 
 newtype Parse a = Parse
   { unParse :: ReaderT Env (StateT ParseState (Except Error)) a
@@ -94,11 +99,11 @@ instance MonadPlus Parse where
   {-# INLINE mplus #-}
   mplus = (<|>)
 
-runParse :: Parse a -> Either Error a
+runParse :: Parse a -> Either Error (a, ParseState)
 runParse (Parse m) =
   case runExcept (runStateT (runReaderT m emptyEnv) emptyParseState) of
-    Left err     -> Left err
-    Right (a, _) -> Right a
+    Left err  -> Left err
+    Right res -> Right res
 
 notImplemented :: Parse a
 notImplemented  = fail "not implemented"
@@ -119,6 +124,7 @@ data ParseState = ParseState
   , psLastLoc       :: Maybe PDebugLoc
   , psKinds         :: !KindTable
   , psModVersion    :: !Int
+  , psWarnings      :: Seq.Seq ParseWarning
   } deriving (Show)
 
 -- | The initial parsing state.
@@ -137,6 +143,7 @@ emptyParseState  = ParseState
   , psLastLoc       = Nothing
   , psKinds         = emptyKindTable
   , psModVersion    = 0
+  , psWarnings      = Seq.empty
   }
 
 -- | The next implicit result id.
@@ -783,6 +790,83 @@ mkStrtab = Strtab
 resolveStrtabSymbol :: StringTable -> Int -> Int -> Symbol
 resolveStrtabSymbol (Strtab bs) start len =
   Symbol $ UTF8.decode $ BS.unpack $ BS.take len $ BS.drop start bs
+
+-- Parser Warnings -------------------------------------------------------------
+
+-- | Warnings about non-fatal issues that arise during parsing.
+data ParseWarning
+  = -- | The parser encountered a metadata record with an unexpected size.
+    -- The 'Int' is the actual record size that was encountered, the
+    -- 'MetadataRecordSizeRange' is the expected range of possible sizes, and
+    -- the @[String]@ is the stack trace at the point where the warning was
+    -- emitted.
+    InvalidMetadataRecordSize !Int !MetadataRecordSizeRange ![String]
+  deriving Show
+
+-- | The expected size of a metadata record.
+data MetadataRecordSizeRange
+  = -- | The size is expected between a lower bound (the first 'Int') and an
+    -- upper bound (the second 'Int'), inclusive.
+    MetadataRecordSizeBetween !Int !Int
+
+  | -- | The size is expected to be within a certain list of possible values.
+    MetadataRecordSizeIn ![Int]
+
+  | -- The size is expected to be greater than or equal to a certain value.
+    MetadataRecordSizeAtLeast !Int
+  deriving Show
+
+-- | Append a 'ParseWarning' to the end of the currently accumulated warnings.
+addParseWarning :: ParseWarning -> Parse ()
+addParseWarning pw = Parse $ do
+  ps <- get
+  put $! ps { psWarnings = psWarnings ps Seq.|> pw }
+
+-- | Pretty-print a single 'ParseWarning' in a format suitable for user-facing
+-- messages. (See also 'ppParseWarnings', which pretty-prints several
+-- 'ParseWarnings's in a cohesive way.)
+ppParseWarning :: ParseWarning -> PP.Doc
+ppParseWarning (InvalidMetadataRecordSize len range cxt) =
+  PP.vcat $
+    [ "Invalid record size:" PP.<+> PP.pPrint len
+    , expectedSizeMsg
+    ] ++ map PP.text (formatContext cxt)
+  where
+    expectedSizeMsg :: PP.Doc
+    expectedSizeMsg =
+      case range of
+        MetadataRecordSizeBetween lb ub ->
+          "Expected size between" PP.<+> PP.pPrint lb
+            PP.<+> "and" PP.<+> PP.pPrint ub
+        MetadataRecordSizeIn ns ->
+          "Expected one of:" PP.<+> PP.pPrint ns
+        MetadataRecordSizeAtLeast lb ->
+          "Expected size of" PP.<+> PP.pPrint lb PP.<+> "or greater"
+
+-- | Pretty-print a group of 'ParseWarning's in a format suitable for
+-- user-facing messages.
+ppParseWarnings :: [ParseWarning] -> PP.Doc
+ppParseWarnings warnings
+  | null warnings
+  = PP.empty
+  | otherwise
+  = PP.vcat $
+      ["Encountered the following warnings during parsing:"] ++
+      map
+        (\warning ->
+          PP.nest 4 $ PP.vcat [ppParseWarning warning, ""])
+        warnings ++
+      [supportMsg | any isInvalidMetadataRecordSize warnings]
+  where
+    isInvalidMetadataRecordSize :: ParseWarning -> Bool
+    isInvalidMetadataRecordSize (InvalidMetadataRecordSize {}) = True
+
+    supportMsg :: PP.Doc
+    supportMsg =
+      PP.vcat
+        [ "Are you sure you're using a supported version of LLVM/Clang?"
+        , "Check here: https://github.com/GaloisInc/llvm-pretty-bc-parser"
+        ]
 
 -- Finalize Monad --------------------------------------------------------------
 

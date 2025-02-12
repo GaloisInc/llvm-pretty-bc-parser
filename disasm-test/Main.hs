@@ -6,7 +6,9 @@
 
 module Main where
 
-import           Data.LLVM.BitCode (parseBitCodeLazyFromFile,Error(..),formatError)
+import           Data.LLVM.BitCode (parseBitCodeLazyFromFileWithWarnings,
+                                    Error(..),formatError,
+                                    ParseWarning,ppParseWarnings)
 import qualified Text.LLVM.AST as AST
 import           Text.LLVM.PP ( ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP )
 
@@ -39,7 +41,8 @@ import           System.Directory ( doesFileExist, getTemporaryDirectory
                                   , removeFile )
 import           System.Exit (ExitCode(..), exitFailure, exitSuccess)
 import           System.FilePath ( (</>), (<.>) )
-import           System.IO (openBinaryTempFile,hClose,openTempFile,hPutStrLn)
+import           System.IO (openBinaryTempFile,hClose,openTempFile,hPrint,
+                            hPutStrLn,stderr)
 import qualified System.IO as IO (stderr)
 import qualified System.Process as Proc
 import           Test.Tasty
@@ -460,13 +463,13 @@ runAssemblyTest llvmVersion knownBugs sweet expct
 diffCmp :: FilePath -> FilePath -> TestM ()
 diffCmp file1 file2 = do
   let assertF = liftIO . assertFailure . unlines
-  (code, stdout, stderr) <- liftIO $
+  (code, stdOut, stdErr) <- liftIO $
     Proc.readCreateProcessWithExitCode (Proc.proc "diff" ["-u", file1, file2]) ""
   case code of
-    ExitFailure _ -> assertF ["diff failed", stdout, stderr]
+    ExitFailure _ -> assertF ["diff failed", stdOut, stdErr]
     ExitSuccess   ->
-      if stdout /= "" || stderr /= ""
-      then assertF ["non-empty diff", stdout, stderr]
+      if stdOut /= "" || stdErr /= ""
+      then assertF ["non-empty diff", stdOut, stdErr]
       else do Details det <- gets showDetails
               when det $ liftIO
                 $ mapM_ putStrLn ["success: empty diff: ", file1, file2]
@@ -723,7 +726,8 @@ normalizeModule = sorted . everywhere (mkT zeroValMdRef)
 -- fails.
 processBitCode :: FilePath -> FilePath -> TestM (FilePath, Maybe FilePath)
 processBitCode pfx file = do
-  let handler :: X.SomeException -> IO (Either Error AST.Module)
+  let handler ::
+        X.SomeException -> IO (Either Error (AST.Module, [ParseWarning]))
       handler se = return (Left (Error [] (show se)))
       printToTempFile sufx stuff = do
         tmp        <- getTemporaryDirectory
@@ -731,10 +735,12 @@ processBitCode pfx file = do
         hPutStrLn h stuff
         hClose h
         return parsed
-  e <- liftIO $ parseBitCodeLazyFromFile file `X.catch` handler
+  e <- liftIO $ parseBitCodeLazyFromFileWithWarnings file `X.catch` handler
   case e of
     Left err -> X.throwM (ParseError err)
-    Right m  -> do
+    Right (m, warnings) -> do
+      unless (null warnings) $
+        liftIO $ hPrint stderr $ ppParseWarnings warnings
       let m' = AST.fixupOpaquePtrs m
       postParseTests m'
       llvmVersion <- gets llvmVer
