@@ -27,6 +27,7 @@ import           Data.Map ( (!), (!?) )
 import qualified Data.Map as Map
 import           Data.Maybe ( fromMaybe )
 import           Data.Proxy ( Proxy(..) )
+import           Data.Sequence ( Seq )
 import           Data.String.Interpolate
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
@@ -727,7 +728,7 @@ normalizeModule = sorted . everywhere (mkT zeroValMdRef)
 processBitCode :: FilePath -> FilePath -> TestM (FilePath, Maybe FilePath)
 processBitCode pfx file = do
   let handler ::
-        X.SomeException -> IO (Either Error (AST.Module, [ParseWarning]))
+        X.SomeException -> IO (Either Error (AST.Module, Seq ParseWarning))
       handler se = return (Left (Error [] (show se)))
       printToTempFile sufx stuff = do
         tmp        <- getTemporaryDirectory

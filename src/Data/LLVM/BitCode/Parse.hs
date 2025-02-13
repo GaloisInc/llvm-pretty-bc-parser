@@ -24,6 +24,7 @@ import           Control.Monad.Except (MonadError(..), Except, runExcept)
 import           Control.Monad.Reader (MonadReader(..), ReaderT(..), asks)
 import           Control.Monad.State.Strict (MonadState(..), StateT(..)
                                             , gets, modify)
+import qualified Data.Foldable as F
 import           Data.Maybe (fromMaybe)
 import           Data.Semigroup
 import           Data.Typeable (Typeable)
@@ -845,7 +846,7 @@ ppParseWarning (InvalidMetadataRecordSize len range cxt) =
 
 -- | Pretty-print a group of 'ParseWarning's in a format suitable for
 -- user-facing messages.
-ppParseWarnings :: [ParseWarning] -> PP.Doc
+ppParseWarnings :: Seq.Seq ParseWarning -> PP.Doc
 ppParseWarnings warnings
   | null warnings
   = PP.empty
@@ -855,7 +856,7 @@ ppParseWarnings warnings
       map
         (\warning ->
           PP.nest 4 $ PP.vcat [ppParseWarning warning, ""])
-        warnings ++
+        (F.toList warnings) ++
       [supportMsg | any isInvalidMetadataRecordSize warnings]
   where
     isInvalidMetadataRecordSize :: ParseWarning -> Bool

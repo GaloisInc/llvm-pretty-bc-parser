@@ -6,6 +6,9 @@
   `*WithWarnings`) that return any parser-related warnings (`ParseWarning`s)
   alongside the parsed `Module`. Users can decide whether or not to display
   these warnings (e.g., by printing them to `stderr` using `ppParseWarnings`).
+
+  The existing functions which do not return warnings have been deprecated in
+  favor of the their `*WithWarnings` variants.
 * The functions in `Data.LLVM.BitCode` no longer produce a fatal error when
   encountering metadata records of unexpected sizes. Instead, these are now
   treated as warnings.
