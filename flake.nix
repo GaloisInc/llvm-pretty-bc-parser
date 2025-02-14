@@ -11,6 +11,7 @@
 
   inputs = {
     nixpkgs-ghc8 = { url = "github:nixos/nixpkgs/23.05"; };
+    nixpkgs-ghc9 = { url = "github:nixos/nixpkgs/24.05"; };
     nixpkgs = { url = "github:nixos/nixpkgs/nixpkgs-unstable"; };
     levers = {
       url = "github:kquick/nix-levers";
@@ -49,7 +50,7 @@
     };
   };
 
-  outputs = { self, levers, nixpkgs, nixpkgs-ghc8
+  outputs = { self, levers, nixpkgs, nixpkgs-ghc8, nixpkgs-ghc9
             , llvm-pretty-src
             , fgl-src
             , fgl-visualize-src
@@ -98,7 +99,8 @@
       packages = levers.eachSystem (system:
         let
           mkHaskellGhc9 = levers.mkHaskellPkg {
-            inherit nixpkgs system;
+            inherit system;
+            nixpkgs = nixpkgs-ghc9;
             };
           mkHaskellGhc8 = levers.mkHaskellPkg {
             inherit system;
@@ -108,7 +110,7 @@
             let blds8 = mkHaskellGhc8 name src ovrDrvOrArgs;
                 blds9 = mkHaskellGhc9 name src ovrDrvOrArgs;
             in (blds8 // blds9);
-          pkgs = import nixpkgs-ghc8 { inherit system; };
+          pkgs = import nixpkgs-ghc9 { inherit system; };
           wrap = levers.pkg_wrapper system pkgs;
           haskellAdj = drv:
             with (pkgs.haskell).lib;
