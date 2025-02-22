@@ -1,5 +1,18 @@
 # Revision history for llvm-pretty-bc-parser
 
+## next (TBA)
+
+* `Data.LLVM.BitCode` now defines funtions (whose names all end with
+  `*WithWarnings`) that return any parser-related warnings (`ParseWarning`s)
+  alongside the parsed `Module`. Users can decide whether or not to display
+  these warnings (e.g., by printing them to `stderr` using `ppParseWarnings`).
+
+  The existing functions which do not return warnings have been deprecated in
+  favor of the their `*WithWarnings` variants.
+* The functions in `Data.LLVM.BitCode` no longer produce a fatal error when
+  encountering metadata records of unexpected sizes. Instead, these are now
+  treated as warnings.
+
 ## 0.4.2.0 (August 2024)
 
 * Add support for GHC 9.8 and drop official support of 9.2.

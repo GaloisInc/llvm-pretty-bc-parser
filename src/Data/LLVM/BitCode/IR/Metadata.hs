@@ -402,28 +402,35 @@ parseMetadataBlock globals vt es = label "METADATA_BLOCK" $ do
 parseMetadataEntry :: ValueTable -> MetadataTable -> PartialMetadata -> Entry
                    -> Parse PartialMetadata
 parseMetadataEntry vt mt pm (fromEntry -> Just r) =
-  let msg = [ "Are you sure you're using a supported version of LLVM/Clang?"
-            , "Check here: https://github.com/GaloisInc/llvm-pretty-bc-parser"
-            ]
-      assertRecordSizeBetween lb ub =
+  let -- The assert* functions below check if a metadata record size matches
+      -- what is expected, and if not, emit a warning.
+      --
+      -- In the past, we made these fatal errors instead of warnings, but we
+      -- downgraded them to a warning due to how frequently LLVM adds new
+      -- metadata record fields. Moreover, it is usually not a serious problem
+      -- for downstream users that llvm-pretty-bc-parser lacks newer metadata
+      -- fields, since they usually do not affect the semantics of the overall
+      -- LLVM bitcode.
+      assertRecordSizeBetween lb ub = do
+        cxt <- getContext
         let len = length (recordFields r)
-        in when (len < lb || ub < len) $
-             fail $ unlines $ [ "Invalid record size: " ++ show len
-                              , "Expected size between " ++ show lb ++ " and " ++ show ub
-                              ] ++ msg
-      assertRecordSizeIn ns =
-        let len = length (recordFields r)
-        in when (not (len `elem` ns)) $
-             fail $ unlines $ [ "Invalid record size: " ++ show len
-                              , "Expected one of: " ++ show ns
-                              ] ++ msg
+        when (len < lb || ub < len) $
+          addParseWarning $
+          InvalidMetadataRecordSize len (MetadataRecordSizeBetween lb ub) cxt
 
-      assertRecordSizeAtLeast lb =
+      assertRecordSizeIn ns = do
+        cxt <- getContext
         let len = length (recordFields r)
-        in when (len < lb) $
-             fail $ unlines $ [ "Invalid record size: " ++ show len
-                              , "Expected size of " ++ show lb ++ " or greater"
-                              ] ++ msg
+        when (not (len `elem` ns)) $
+          addParseWarning $
+          InvalidMetadataRecordSize len (MetadataRecordSizeIn ns) cxt
+
+      assertRecordSizeAtLeast lb = do
+        cxt <- getContext
+        let len = length (recordFields r)
+        when (len < lb) $
+          addParseWarning $
+          InvalidMetadataRecordSize len (MetadataRecordSizeAtLeast lb) cxt
 
       -- Helper for a common pattern which appears below in the parsing
       ron n = do ctx <- getContext
@@ -897,11 +904,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
     24 -> label "METADATA_NAMESPACE" $ do
       assertRecordSizeIn [3, 5]
-      let isNew =
-            case length (recordFields r) of
-              3 -> True
-              5 -> False
-              _ -> error "Impossible (METADATA_NAMESPACE)" -- see assertion
+      let isNew = length (recordFields r) == 3
       let nameIdx = if isNew then 2 else 3
 
       cxt        <- getContext
@@ -918,10 +921,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
     25 -> label "METADATA_TEMPLATE_TYPE" $ do
       assertRecordSizeIn [3, 4]
-      let recordLength = length (recordFields r)
-      let hasIsDefault | recordLength == 3 = False
-                       | recordLength == 4 = True
-                       | otherwise = error "Impossible (METADATA_TEMPLATE_TYPE)" -- see assertion
+      let hasIsDefault = length (recordFields r) == 4
       cxt <- getContext
       isDistinct <- parseField r 0 nonzero
       dittpName <- mdStringOrNull cxt pm <$> parseField r 1 numeric
@@ -935,10 +935,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
     26 -> label "METADATA_TEMPLATE_VALUE" $ do
       assertRecordSizeIn [5, 6]
-      let recordLength = length (recordFields r)
-      let hasIsDefault | recordLength == 5 = False
-                       | recordLength == 6 = True
-                       | otherwise = error "Impossible (METADATA_TEMPLATE_TYPE)" -- see assertion
+      let hasIsDefault = length (recordFields r) == 6
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
       ditvpTag <- parseField r 1 numeric
