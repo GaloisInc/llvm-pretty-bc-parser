@@ -23,7 +23,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04]
         # See doc/developing.md
-        ghc: ["9.4.5", "9.6.2", "9.8.1"]
+        ghc: ["9.6.6", "9.8.4", "9.10.1"]
     name: build - ${{ matrix.ghc }} - ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
@@ -44,7 +44,7 @@ jobs:
           # List the installed version as a sanity check
           update-alternatives --list llvm-config
 
-      - uses: haskell/actions/setup@v1
+      - uses: haskell-actions/setup@v2
         id: setup-haskell
         with:
           ghc-version: ${{ matrix.ghc }}
