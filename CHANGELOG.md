@@ -1,5 +1,9 @@
 # Revision history for llvm-pretty-bc-parser
 
+## next (TBA)
+
+Nothing yet.
+
 ## 0.5.0.0 (March 2025)
 
 * `Data.LLVM.BitCode` now defines funtions (whose names all end with
