@@ -1,6 +1,6 @@
 # Revision history for llvm-pretty-bc-parser
 
-## next (TBA)
+## 0.5.0.0 (March 2025)
 
 * `Data.LLVM.BitCode` now defines funtions (whose names all end with
   `*WithWarnings`) that return any parser-related warnings (`ParseWarning`s)
