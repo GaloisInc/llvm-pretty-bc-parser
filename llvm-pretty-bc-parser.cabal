@@ -18,7 +18,7 @@ Description:
 
 Extra-source-files:  disasm-test/tests/*.ll
 
-extra-doc-files: CHANGELOG.md, README.md
+extra-doc-files: CHANGELOG.md, README.md, doc/developing.md
 
 Flag fuzz
   Description:         Enable fuzzing harness
