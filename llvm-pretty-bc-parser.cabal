@@ -71,7 +71,6 @@ Library
 
   Build-depends:       array       >= 0.3,
                        base        >= 4.8 && < 5,
-                       binary      >= 0.8,
                        bytestring  >= 0.10,
                        containers  >= 0.4,
                        fgl         >= 5.5,
@@ -89,16 +88,12 @@ Executable llvm-disasm
                        -O2
                        -funbox-strict-fields
   Hs-source-dirs:      llvm-disasm
-  Build-depends:       array                 >= 0.3,
-                       base,
-                       binary                >= 0.8,
+  Build-depends:       base,
                        bytestring,
-                       containers            >= 0.4,
                        fgl                   >= 5.5,
                        fgl-visualize         >= 0.1,
                        llvm-pretty-bc-parser,
                        llvm-pretty,
-                       monadLib              >= 3.7.2,
                        pretty                >= 1.0.1,
                        pretty-show           >= 1.6
 
