@@ -29,6 +29,7 @@ instance Arbitrary NamedMd where arbitrary = genericArbitrary uniform
 instance Arbitrary UnnamedMd where arbitrary = genericArbitrary uniform
 instance Arbitrary GlobalAlias where arbitrary = genericArbitrary uniform
 instance Arbitrary LayoutSpec where arbitrary = genericArbitrary uniform
+instance Arbitrary FunctionPointerAlignType where arbitrary = genericArbitrary uniform
 instance Arbitrary Mangling where arbitrary = genericArbitrary uniform
 instance Arbitrary SelectionKind where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (NullResult lab) where arbitrary = genericArbitrary uniform
