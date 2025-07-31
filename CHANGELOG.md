@@ -2,7 +2,7 @@
 
 ## next (TBA)
 
-Nothing yet.
+* Support parsing data layout strings that specify function pointer alignment.
 
 ## 0.5.0.0 (March 2025)
 
