@@ -10,7 +10,7 @@ Maintainer:          Ryan Scott <rscott@galois.com>
 Category:            Text
 Build-type:          Simple
 Synopsis:            LLVM bitcode parsing library
-Tested-with:         GHC==9.6, GHC==9.8, GHC==9.10
+Tested-with:         GHC==9.8, GHC==9.10, GHC==9.12
 
 Description:
   A parser for the LLVM bitcode file format, yielding a Module from the

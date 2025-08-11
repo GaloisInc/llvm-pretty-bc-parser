@@ -34,7 +34,6 @@ import           Control.Exception (throw)
 import           Control.Monad (foldM, guard, mplus, when)
 import           Data.Bits (shiftR, testBit, shiftL, (.&.), (.|.), bit, complement)
 import           Data.Data (Data)
-import           Data.Typeable (Typeable)
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as Char8 (unpack)
 import           Data.Either (partitionEithers)
@@ -316,7 +315,7 @@ data PartialUnnamedMd = PartialUnnamedMd
   { pumIndex    :: Int
   , pumValues   :: PValMd
   , pumDistinct :: Bool
-  } deriving (Data, Eq, Ord, Generic, Show, Typeable)
+  } deriving (Data, Eq, Ord, Generic, Show)
 
 finalizePartialUnnamedMd :: PartialUnnamedMd -> Finalize UnnamedMd
 finalizePartialUnnamedMd pum = mkUnnamedMd `fmap` finalizePValMd (pumValues pum)

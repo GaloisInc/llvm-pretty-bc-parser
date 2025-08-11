@@ -34,7 +34,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04]
         # See doc/developing.md
-        ghc: ["9.10.1"]
+        ghc: ["9.12.2"]
         llvm: [ "https://github.com/llvm/llvm-project/releases/download/llvmorg-16.0.2/clang+llvm-16.0.2-x86_64-linux-gnu-ubuntu-22.04.tar.xz"
               , "https://github.com/llvm/llvm-project/releases/download/llvmorg-15.0.6/clang+llvm-15.0.6-x86_64-linux-gnu-ubuntu-18.04.tar.xz"
               , "https://github.com/llvm/llvm-project/releases/download/llvmorg-14.0.0/clang+llvm-14.0.0-x86_64-linux-gnu-ubuntu-18.04.tar.xz"
