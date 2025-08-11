@@ -23,7 +23,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04]
         # See doc/developing.md
-        ghc: ["9.6.6", "9.8.4", "9.10.1"]
+        ghc: ["9.8.4", "9.10.1", "9.12.2"]
     name: build - ${{ matrix.ghc }} - ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2

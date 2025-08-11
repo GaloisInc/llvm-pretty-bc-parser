@@ -1,3 +1,6 @@
 packages: .
 optional-packages: llvm-pretty
 constraints: directory >= 1.2.7
+
+-- See https://github.com/kquick/kvitable/issues/7
+allow-newer: kvitable:base
