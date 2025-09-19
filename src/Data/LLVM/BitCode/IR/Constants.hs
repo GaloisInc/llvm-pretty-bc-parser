@@ -6,6 +6,7 @@
 
 module Data.LLVM.BitCode.IR.Constants where
 
+import           Control.Applicative ( (<|>) )
 import qualified Data.LLVM.BitCode.Assert as Assert
 import           Data.LLVM.BitCode.Bitstream
 import           Data.LLVM.BitCode.Match
@@ -205,6 +206,9 @@ parseConstantEntry :: ValueTable -> (Parse Type,[Typed PValue]) -> Entry
                    -> Parse (Parse Type, [Typed PValue])
 
 parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
+ let parseCString = parseField r 0 (fieldArray (fieldChar6 ||| char))
+                    `mplus` parseFields r 0 (fieldChar6 ||| char)
+ in
  label "CONSTANTS_BLOCK" $ case recordCode r of
 
   1 -> label "CST_CODE_SETTYPE" $ do
@@ -280,13 +284,17 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     let field = parseField r
     ty     <- getTy
     values <- field 0 (fieldArray char)
+              <|>
+              -- CST_CODE_STRING changed to be identical to CST_CODE_CSTRING in
+              -- llvm commit bb8278a (4 Feb 2012, released in llvmorg-3.1.0-rc1
+              -- in 18 Apr 2012) with the exception of adding a trailing null.
+              parseCString
     return (getTy, Typed ty (ValString values):cs)
 
   -- [values]
   9 -> label "CST_CODE_CSTRING" $ do
     ty     <- getTy
-    values <- parseField r 0 (fieldArray (fieldChar6 ||| char))
-        `mplus` parseFields r 0 (fieldChar6 ||| char)
+    values <- parseCString
     return (getTy, Typed ty (ValString (values ++ [0])):cs)
 
   -- [opcode,opval,opval]
