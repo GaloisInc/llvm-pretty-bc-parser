@@ -1,5 +1,4 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -27,7 +26,6 @@ import           Control.Monad.State.Strict (MonadState(..), StateT(..)
 import qualified Data.Foldable as F
 import           Data.Maybe (fromMaybe)
 import           Data.Semigroup
-import           Data.Typeable (Typeable)
 import           Data.Word ( Word32 )
 
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
@@ -216,7 +214,7 @@ mkTypeTable  = IntMap.fromList . zip [0 ..]
 data BadForwardRef
   = BadTypeRef  CallStack [String] String Int
   | BadValueRef CallStack [String] String Int
-    deriving (Show,Typeable)
+    deriving (Show)
 
 instance X.Exception BadForwardRef
 

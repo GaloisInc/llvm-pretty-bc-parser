@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # TODO: GHC 9.10, see https://github.com/GaloisInc/llvm-pretty-bc-parser/pull/285#issuecomment-2659780270
+        # TODO: GHC 9.10, 9.12, see https://github.com/GaloisInc/llvm-pretty-bc-parser/pull/285#issuecomment-2659780270
         ghc-version: [ "ghc98", "ghc96", "ghc94" ]
     steps:
       - uses: cachix/install-nix-action@v20
