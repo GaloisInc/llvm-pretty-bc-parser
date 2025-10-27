@@ -51,19 +51,3 @@ jobs:
       - name: test
         shell: bash
         run: nix build -L github:${{ github.repository }}/${{ github.sha }}#TESTS
-
-  doc:
-    # This job builds the documentation (e.g. Hackage, etc.)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: cachix/install-nix-action@v20
-        with:
-          nix_path: nixpkgs=channel:nixos-23.05
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: cachix/cachix-action@v15
-        with:
-          name: galois
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - name: doc
-        shell: bash
-        run: nix build github:${{ github.repository }}/${{ github.sha }}#DOC

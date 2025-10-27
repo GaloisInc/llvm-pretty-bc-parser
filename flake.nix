@@ -10,8 +10,9 @@
   nixConfig.bash-prompt-suffix = "llvm-pretty-bc-parser.env} ";
 
   inputs = {
-    nixpkgs-ghc8 = { url = "github:nixos/nixpkgs/23.05"; };
-    nixpkgs = { url = "github:nixos/nixpkgs/nixpkgs-unstable"; };
+    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+    nixpkgs_oldllvm.url = "github:nixos/nixpkgs/23.05";
+    nixpkgs_midllvm.url = "github:nixos/nixpkgs/25.05";
     levers = {
       url = "github:kquick/nix-levers";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -20,102 +21,60 @@
       url = "github:GaloisInc/llvm-pretty";
       flake = false;
     };
-    fgl-src = {
-      url = "https://hackage.haskell.org/package/fgl-5.8.2.0/fgl-5.8.2.0.tar.gz";
-      flake = false;
-    };
-    fgl-visualize-src = {
-      url = "https://hackage.haskell.org/package/fgl-visualize-0.1.0.1/fgl-visualize-0.1.0.1.tar.gz";
-      flake = false;
-    };
-    optparse-applicative-src = {
-      url = "github:pcapriotti/optparse-applicative/0.18.1";
-      flake = false;
-    };
-    tasty-src = {
-      url = "github:UnkindPartition/tasty/core-1.4.3";
-      flake = false;
-    };
-    tasty-expected-failure-src = {
-      url = "github:nomeata/tasty-expected-failure";
-      flake = false;
-    };
     tasty-sugar = {
       url = "github:kquick/tasty-sugar";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.levers.follows = "levers";
-      inputs.optparse-applicative-src.follows = "optparse-applicative-src";
-      inputs.tasty-src.follows = "tasty-src";
     };
   };
 
-  outputs = { self, levers, nixpkgs, nixpkgs-ghc8
+  outputs = { self, levers, nixpkgs
+            , nixpkgs_oldllvm
+            , nixpkgs_midllvm
             , llvm-pretty-src
-            , fgl-src
-            , fgl-visualize-src
-            , optparse-applicative-src
-            , tasty-src
-            , tasty-expected-failure-src
             , tasty-sugar
             }:
-    let
-      shellWith = pkgs: adds: drv: drv.overrideAttrs(old:
-        { buildInputs = old.buildInputs ++ adds pkgs; });
-      # Add additional packages useful for a development shell, generally
-      # representing test packages or non-propagated build dependencies of
-      # various sub-packages.
-      shellPkgs = pkgs: [
-        # pkgs.haskell.compiler.integer-simple.ghc8107
-        # pkgs.haskell.packages.ghc8107.profiteur
-        pkgs.cabal-install
-        pkgs.llvm_11
-        pkgs.clang_11
-      ];
-    in rec {
-      devShells =
-        let oneshell = s: n:
-              let pkgs = import nixpkgs { system=s; };
-              in levers.variedTargets
-                { ghcver = levers.validGHCVersions pkgs.haskell.compiler; }
-                ( { ghcver, ... } @ vargs:
-                  shellWith pkgs shellPkgs
-                    (self.packages.${s}.${n}.${ghcver}.env.overrideAttrs (a:
-                      {
-                        # Set envvars here
-                      }
-                    )));
-        in levers.eachSystem
-          (s:
-            let pkgs = import nixpkgs { system=s; };
-                names = builtins.attrNames (self.packages.${s});
-                outs = builtins.removeAttrs
-                  (pkgs.lib.genAttrs names (oneshell s))
-                  [ "ghc" ];
-                shells = pkgs.lib.attrsets.mapAttrs (n: v: v.default) outs;
-            in shells // { default = devShells.${s}.llvm-pretty-bc-parser-test-build; }
-          ) ;
+    let pkg_ghcvers = pkgs:
+              # GHC 9.12 has an internal bug and fails when compiling
+              # llvm-pretty.  This bug is fixed in GHC 9.12.3; remove the
+              # following ghcver setting when GHC 9.12.3 is available in nixpkgs.
+              builtins.filter
+                (n: builtins.substring 0 6 n != "ghc912")
+                (levers.validGHCVersions pkgs.haskell.compiler);
+    in
+    rec {
+
+      devShells = levers.haskellShells
+        { inherit nixpkgs;
+          flake = self;
+          defaultPkg = "llvm-pretty-bc-parser";
+          additionalPackages = pkgs: [
+            nixpkgs_oldllvm.legacyPackages.x86_64-linux.clang_16
+            nixpkgs_oldllvm.legacyPackages.x86_64-linux.llvm_16
+            pkgs.cabal-install
+          ];
+          ghcvers = system: pkg_ghcvers (nixpkgs.legacyPackages.${system});
+        };
 
       packages = levers.eachSystem (system:
         let
-          mkHaskellGhc9 = levers.mkHaskellPkg {
-            inherit nixpkgs system;
+          mkHaskell = levers.mkHaskellPkg
+            { inherit nixpkgs system;
+              ghcver = pkg_ghcvers (nixpkgs.legacyPackages.${system});
             };
-          mkHaskellGhc8 = levers.mkHaskellPkg {
-            inherit system;
-            nixpkgs = nixpkgs-ghc8;
-            };
-          mkHaskell = name: src: ovrDrvOrArgs:
-            let blds8 = mkHaskellGhc8 name src ovrDrvOrArgs;
-                blds9 = mkHaskellGhc9 name src ovrDrvOrArgs;
-            in (blds8 // blds9);
-          pkgs = import nixpkgs-ghc8 { inherit system; };
+          pkgs = import nixpkgs { inherit system; };
           wrap = levers.pkg_wrapper system pkgs;
-          haskellAdj = drv:
-            with (pkgs.haskell).lib;
-            dontHaddock (dontCheck (dontBenchmark (drv)));
+
+          # Runs the tests that were previously 'built', using the specified
+          # version of LLVM and Clang.
           llvm-pretty-bc-parser-test = built: llvmver:
-            let llvm = pkgs."llvm_${llvmver}";
-                clang = pkgs."clang_${llvmver}";
+            let llvm = levers.get_pkg_at_ver system nixpkg_list "llvm_" llvmver;
+                clang = levers.get_pkg_at_ver system nixpkg_list "clang_" llvmver;
+                nixpkg_list = [
+                  nixpkgs_midllvm # llvm 12-19
+                  nixpkgs_oldllvm # llvm 5-16
+                  nixpkgs # 18 and above (2025-10-27)
+                ];
             in derivation {
               inherit system;
               name = "llvm-pretty-bc-parser-test-with-llvm${llvmver}";
@@ -136,15 +95,27 @@
               buildInputs = [ clang llvm pkgs.diffutils pkgs.coreutils ];
               hardeningDisable = [ "all" ];  # tests will build with -O0
             };
+
         in rec {
           default = llvm-pretty-bc-parser;
           TESTS = wrap "llvm-pretty-bc-parser-TESTS"
             (builtins.map
-              (llvm-pretty-bc-parser-test llvm-pretty-bc-parser-test-build)
+              (llvm-pretty-bc-parser-test llvm-pretty-bc-parser)
               [
                 # NOTE: this is the main location which determines what LLVM
                 # versions are tested.  The default is to run each of the listed
                 # LLVM versions here in parallel.
+                #
+                # When adding a new LLVM version, it must be found in a nixpkgs
+                # version.  The main nixpkgs used here is nixpkgs-unstable, so a
+                # "$ nix flake lock update nixpkgs" should be sufficient to get
+                # newer LLVM versions.  However, nixpkgs-unstable tends to drop
+                # older versions, so the above might result in an older version
+                # not being found.  To fix this, add a new nixpkgs input at the
+                # top of this file with a nixpkgs release tag that includes the
+                # desired version, and then add that nixpkgs to the 'nixpkg_list'
+                # above.
+
                 "10"
                 "11"
                 "12"
@@ -155,30 +126,18 @@
                 "17"
               ]
             );
-          TESTS_PREP = wrap "llvm-pretty-bc-parser-TESTS_PREP"
-            [ llvm-pretty-bc-parser-test-build ];
-          DOC = wrap "llvm-pretty-bc-parser-DOC"
-            [ llvm-pretty-bc-parser-doc ];
-          fgl = mkHaskell "fgl" fgl-src {
-            adjustDrv = args: haskellAdj;
-          };
-          fgl-visualize = mkHaskell "fgl-visualize" fgl-visualize-src {
-            inherit fgl;
-            adjustDrv = args: haskellAdj;
-          };
-          llvm-pretty = mkHaskell "llvm-pretty" llvm-pretty-src {
-            adjustDrv = args: haskellAdj;
-          };
+          llvm-pretty = mkHaskell "llvm-pretty" llvm-pretty-src {};
           llvm-pretty-bc-parser = mkHaskell "llvm-pretty-bc-parser" self {
-            inherit llvm-pretty fgl fgl-visualize;
-            adjustDrv = args: haskellAdj;
-          };
-          llvm-pretty-bc-parser-test-build = mkHaskell "llvm-pretty-bc-parser-test-build" self {
-            inherit llvm-pretty optparse-applicative tasty-sugar
-              tasty tasty-quickcheck tasty-expected-failure tasty-hunit;
+            inherit llvm-pretty tasty-sugar;
+
+            # Build the tests, but do not run them.  The tests (specifically the
+            # disasm-test) require the presence of llvm and optionally clang.
+            # There are multiple versions of llvm and clang that will be used for
+            # testing elsewhere, so here just ensure that the tests are saved in
+            # an accessible location for the subsequent testing.
             adjustDrv = args: drv:
               with pkgs.haskell.lib;
-              (doCheck (haskellAdj drv)).overrideAttrs (a:
+              drv.overrideAttrs (a:
                 { checkPhase = "echo skipping checks";
                   postInstall = ''
                     mkdir $out/test-build
@@ -189,30 +148,6 @@
                     cp -r dist $out/test-build/
                     '';
                 });
-          };
-          llvm-pretty-bc-parser-doc = mkHaskell "llvm-pretty-bc-parser-doc" self {
-            inherit llvm-pretty;
-            adjustDrv = args: drv:
-              pkgs.haskell.lib.dontCheck (pkgs.haskell.lib.dontBenchmark drv);
-          };
-          optparse-applicative = mkHaskell "optparse-applicative" optparse-applicative-src {
-            adjustDrv = args: haskellAdj;
-          };
-          tasty = mkHaskell "tasty" "${tasty-src}/core" {
-            inherit optparse-applicative;
-            adjustDrv = args: haskellAdj;
-          };
-          tasty-expected-failure = mkHaskell "tasty-expected-failure" "${tasty-expected-failure-src}" {
-            inherit tasty;
-            adjustDrv = args: haskellAdj;
-          };
-          tasty-hunit = mkHaskell "tasty-hunit" "${tasty-src}/hunit" {
-            inherit tasty;
-            adjustDrv = args: haskellAdj;
-          };
-          tasty-quickcheck = mkHaskell "tasty-quickcheck" "${tasty-src}/quickcheck" {
-            inherit optparse-applicative tasty;
-            adjustDrv = args: haskellAdj;
           };
         });
     };
