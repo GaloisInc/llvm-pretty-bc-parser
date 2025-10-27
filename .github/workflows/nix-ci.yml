@@ -36,9 +36,11 @@ jobs:
         run: nix build -L github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }}
 
   build_oldGHC:
-    # This job builds the main package, via a number of GHC versions.  This is
-    # the build that would be used by downstream packages using this as a
-    # dependency; this does not build documentation or tests.
+    # This job runs the builds on older versions of GHC, verifying legacy GHC
+    # support/compatibility.
+    #
+    #  * ["legacy" v.s. "main" is primarily driven by the selection of an older
+    #    version of nixpkgs that contains the older GHC compilers.]
     #
     # Note that GHC 9.0 is not tested.  There are some build problems with
     # llvm-pretty under GHC 9.0, but 9.0 was also known to produce invalid code,
@@ -65,9 +67,14 @@ jobs:
         run: nix build -L github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }} --override-input nixpkgs github:nixos/nixpkgs/25.05
 
   tests:
-    # This job runs the LLVM tests.  This uses the top level flake.nix file to
-    # run the tests.  That flake file will specify a range of LLVM versions to
-    # test this llvm parser and the underlying llvm-pretty library against.
+    # This job runs the LLVM tests.  The builds above verify that the code can be
+    # built with different versions of GHC.  However, the resulting code should
+    # be able to parse and represent a the bitcode from a wide range of LLVM
+    # versions.
+    #
+    # This job uses the top level flake.nix file to run the tests.  That flake
+    # file will specify a range of LLVM versions to test this llvm parser and the
+    # underlying llvm-pretty library against.
     runs-on: ubuntu-latest
     steps:
       - uses: cachix/install-nix-action@v20
