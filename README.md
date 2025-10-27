@@ -34,6 +34,7 @@ compilers.
 |           | v14.0   | ✓                             |              | See [issues][llvm14] |
 |           | v15.0   | ✓                             |              | See [issues][llvm15] |
 |           | v16.0   | ✓                             |              | See [issues][llvm16] |
+|           | v17.0   | ✓                             |              | See [issues][llvm17] |
 | `clang++` | v3.4    |                               |              |                      |
 |           | v3.5    |                               |              |                      |
 |           | v3.6    |                               |              |                      |
@@ -68,3 +69,4 @@ the developers' documentation for more details and a rationale:
 [llvm14]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F14.0
 [llvm15]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F15.0
 [llvm16]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F16.0
+[llvm17]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F17.0

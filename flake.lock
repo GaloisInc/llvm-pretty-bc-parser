@@ -1,81 +1,28 @@
 {
   "nodes": {
-    "fgl-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1000000000,
-        "narHash": "sha256-2sJ1uyziIe2ZwAHLQCoYTo+35nMSof30XeU/2ZcjLOM=",
-        "type": "tarball",
-        "url": "https://hackage.haskell.org/package/fgl-5.8.2.0/fgl-5.8.2.0.tar.gz"
-      },
-      "original": {
-        "type": "tarball",
-        "url": "https://hackage.haskell.org/package/fgl-5.8.2.0/fgl-5.8.2.0.tar.gz"
-      }
-    },
-    "fgl-visualize-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1368739575,
-        "narHash": "sha256-2EC57Y+B5ryWjWeLqzHeSNkb4RjUtvj8+8vebz86dnQ=",
-        "type": "tarball",
-        "url": "https://hackage.haskell.org/package/fgl-visualize-0.1.0.1/fgl-visualize-0.1.0.1.tar.gz"
-      },
-      "original": {
-        "type": "tarball",
-        "url": "https://hackage.haskell.org/package/fgl-visualize-0.1.0.1/fgl-visualize-0.1.0.1.tar.gz"
-      }
-    },
-    "hedgehog-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1687611978,
-        "narHash": "sha256-anNGVIrZ+xqgXS2oHqu32V2l6UKUkvXf/xjUcg/2zto=",
-        "owner": "hedgehogqa",
-        "repo": "haskell-hedgehog",
-        "rev": "114c1e52b479dc2795c42b655f73a15fd26d747d",
-        "type": "github"
-      },
-      "original": {
-        "owner": "hedgehogqa",
-        "repo": "haskell-hedgehog",
-        "type": "github"
-      }
-    },
-    "html-parse-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1661791516,
-        "narHash": "sha256-XJ1Y2Dx52cnu2jPiIjo/hZvH9wGvR/bLHkWVdErtAgs=",
-        "owner": "bgamari",
-        "repo": "html-parse",
-        "rev": "d340bc6bee6c9be8b564493fd72b14dbd446a36a",
-        "type": "github"
-      },
-      "original": {
-        "owner": "bgamari",
-        "repo": "html-parse",
-        "type": "github"
-      }
-    },
     "kvitable": {
       "inputs": {
-        "html-parse-src": "html-parse-src",
         "levers": [
           "tasty-sugar",
           "levers"
         ],
+        "named-text": "named-text",
         "nixpkgs": [
           "tasty-sugar",
           "nixpkgs"
-        ]
+        ],
+        "parameterized-utils-src": [
+          "tasty-sugar",
+          "parameterized-utils-src"
+        ],
+        "sayable": "sayable"
       },
       "locked": {
-        "lastModified": 1688014254,
-        "narHash": "sha256-H1kxX3JagFR58xSIvlO/C3jJXwL1CPWkTg5gJ8qc05w=",
+        "lastModified": 1761569163,
+        "narHash": "sha256-YIolR0eUu9OBVDgz2ApjK+lyxqt9p4IRb3i2IoeQ/y0=",
         "owner": "kquick",
         "repo": "kvitable",
-        "rev": "5635b827fc705dc58b771a3112892e88889aaa0b",
+        "rev": "06e005e28c725cd0eb042978c3a541e32a6d503b",
         "type": "github"
       },
       "original": {
@@ -91,11 +38,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1687557470,
-        "narHash": "sha256-T0TAGZPiI5cwWR2OMLVYW7aj3Aco7v8qIVF7JoEgO9Y=",
+        "lastModified": 1761565563,
+        "narHash": "sha256-zDY31Ux4MTtPT2DrnAybo3SUhMjvlYbB74Diy5mi6J8=",
         "owner": "kquick",
         "repo": "nix-levers",
-        "rev": "0e31d80978a9fb6a96df0722aa298d008a57c53e",
+        "rev": "7917e3da83956b8b525957f9c4ff643903880c61",
         "type": "github"
       },
       "original": {
@@ -107,11 +54,11 @@
     "llvm-pretty-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1753885550,
+        "lastModified": 1753971543,
         "narHash": "sha256-T7HxirAkLviW863x4Ip/UrCjOVDsW2eOBPh8zUr4yGA=",
         "owner": "GaloisInc",
         "repo": "llvm-pretty",
-        "rev": "15120e39a983c79062d4c1d15f6c2f10b28e4d7b",
+        "rev": "c2539fa98940af25cfe2784634fa31ba12a3711c",
         "type": "github"
       },
       "original": {
@@ -120,13 +67,51 @@
         "type": "github"
       }
     },
+    "named-text": {
+      "inputs": {
+        "levers": [
+          "tasty-sugar",
+          "kvitable",
+          "levers"
+        ],
+        "nixpkgs": [
+          "tasty-sugar",
+          "kvitable",
+          "nixpkgs"
+        ],
+        "parameterized-utils-src": [
+          "tasty-sugar",
+          "kvitable",
+          "parameterized-utils-src"
+        ],
+        "sayable": [
+          "tasty-sugar",
+          "kvitable",
+          "sayable"
+        ],
+        "tasty-checklist": "tasty-checklist"
+      },
+      "locked": {
+        "lastModified": 1761568612,
+        "narHash": "sha256-P+RiNpGtLJWHi71eG0JKDe51NW7xVniYw2m3QQlzZbg=",
+        "owner": "kquick",
+        "repo": "named-text",
+        "rev": "b81ae5d33fcba3282ddc1e82d95ce300bb7e6215",
+        "type": "github"
+      },
+      "original": {
+        "owner": "kquick",
+        "repo": "named-text",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1709038661,
-        "narHash": "sha256-Ys611iT6pChGv954aa4f8oKoDKJG3IXjJjPhnj6uaLY=",
+        "lastModified": 1761440988,
+        "narHash": "sha256-2qsow3cQIgZB2g8Cy8cW+L9eXDHP6a1PsvOschk5y+E=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "8520c158aee718c6e87b56881105fc4223c3c723",
+        "rev": "de69d2ba6c70e747320df9c096523b623d3a4c35",
         "type": "github"
       },
       "original": {
@@ -136,7 +121,23 @@
         "type": "github"
       }
     },
-    "nixpkgs-ghc8": {
+    "nixpkgs_midllvm": {
+      "locked": {
+        "lastModified": 1748026580,
+        "narHash": "sha256-rWtXrcIzU5wm/C8F9LWvUfBGu5U5E7cFzPYT1pHIJaQ=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "11cb3517b3af6af300dd6c055aeda73c9bf52c48",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "25.05",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_oldllvm": {
       "locked": {
         "lastModified": 1685566663,
         "narHash": "sha256-btHN1czJ6rzteeCuE/PNrdssqYD2nIA4w48miQAFloM=",
@@ -152,89 +153,96 @@
         "type": "github"
       }
     },
-    "optparse-applicative-src": {
+    "parameterized-utils-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1685356808,
-        "narHash": "sha256-64KLKHpIyEg+jLfpj2PI0iFIS/e67IRZKAwHSZSwVYI=",
-        "owner": "pcapriotti",
-        "repo": "optparse-applicative",
-        "rev": "270a626f7a7225cdce9b025b427eb0c4378c39c7",
+        "lastModified": 1757597308,
+        "narHash": "sha256-fwZLglQthgfdd/MvCU1b6zpGHTpYPVVxnd85Yvd6gH4=",
+        "owner": "GaloisInc",
+        "repo": "parameterized-utils",
+        "rev": "ebd59241828a97e06af6f8eeead0968a90108256",
         "type": "github"
       },
       "original": {
-        "owner": "pcapriotti",
-        "ref": "0.18.1",
-        "repo": "optparse-applicative",
+        "owner": "GaloisInc",
+        "repo": "parameterized-utils",
         "type": "github"
       }
     },
     "root": {
       "inputs": {
-        "fgl-src": "fgl-src",
-        "fgl-visualize-src": "fgl-visualize-src",
         "levers": "levers",
         "llvm-pretty-src": "llvm-pretty-src",
         "nixpkgs": "nixpkgs",
-        "nixpkgs-ghc8": "nixpkgs-ghc8",
-        "optparse-applicative-src": "optparse-applicative-src",
-        "tasty-expected-failure-src": "tasty-expected-failure-src",
-        "tasty-src": "tasty-src",
+        "nixpkgs_midllvm": "nixpkgs_midllvm",
+        "nixpkgs_oldllvm": "nixpkgs_oldllvm",
         "tasty-sugar": "tasty-sugar"
       }
     },
-    "tasty-expected-failure-src": {
-      "flake": false,
+    "sayable": {
+      "inputs": {
+        "levers": [
+          "tasty-sugar",
+          "kvitable",
+          "levers"
+        ],
+        "nixpkgs": [
+          "tasty-sugar",
+          "kvitable",
+          "nixpkgs"
+        ]
+      },
       "locked": {
-        "lastModified": 1613494231,
-        "narHash": "sha256-C/IWktTILklfPEAht/RE4IC8to6MrvrLmmbqgWsJlIM=",
-        "owner": "nomeata",
-        "repo": "tasty-expected-failure",
-        "rev": "33b71e694b954e35c05859fff3ca886d8cfe5bfe",
+        "lastModified": 1761567940,
+        "narHash": "sha256-hXMp9WDETIUjlMiIj6m4cL1PFCK4MzJ/R5iKFw7w/SY=",
+        "owner": "kquick",
+        "repo": "sayable",
+        "rev": "959a2ab74378c5c5da932164eb46726be7ca531d",
         "type": "github"
       },
       "original": {
-        "owner": "nomeata",
-        "repo": "tasty-expected-failure",
+        "owner": "kquick",
+        "repo": "sayable",
         "type": "github"
       }
     },
-    "tasty-hedgehog-src": {
-      "flake": false,
+    "tasty-checklist": {
+      "inputs": {
+        "levers": [
+          "tasty-sugar",
+          "kvitable",
+          "named-text",
+          "levers"
+        ],
+        "nixpkgs": [
+          "tasty-sugar",
+          "kvitable",
+          "named-text",
+          "nixpkgs"
+        ],
+        "parameterized-utils-src": [
+          "tasty-sugar",
+          "kvitable",
+          "named-text",
+          "parameterized-utils-src"
+        ]
+      },
       "locked": {
-        "lastModified": 1687663907,
-        "narHash": "sha256-VSvnstMmykapHIN+fY12sxolCe4G6jpPtmEB1fGax+8=",
-        "owner": "qfpl",
-        "repo": "tasty-hedgehog",
-        "rev": "b210409d0aa68c2c4f6a61f0007c3f129c43977e",
+        "lastModified": 1761568218,
+        "narHash": "sha256-9Qgmzeq25XeysQs/7U9nTfmRO4H3cuAueR9TWv40viw=",
+        "owner": "kquick",
+        "repo": "tasty-checklist",
+        "rev": "1022211d94f9713c4c87327a1a008d19955d03b9",
         "type": "github"
       },
       "original": {
-        "owner": "qfpl",
-        "repo": "tasty-hedgehog",
-        "type": "github"
-      }
-    },
-    "tasty-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1671396688,
-        "narHash": "sha256-W+cPhWeDf92TxD31c7WOioZOEOtcKYhVHjkwjUF8Oi0=",
-        "owner": "UnkindPartition",
-        "repo": "tasty",
-        "rev": "97f314c3bc66059f912543b7cc0094abb8f35502",
-        "type": "github"
-      },
-      "original": {
-        "owner": "UnkindPartition",
-        "ref": "core-1.4.3",
-        "repo": "tasty",
+        "owner": "kquick",
+        "repo": "tasty-checklist",
         "type": "github"
       }
     },
     "tasty-sugar": {
       "inputs": {
-        "hedgehog-src": "hedgehog-src",
         "kvitable": "kvitable",
         "levers": [
           "levers"
@@ -242,20 +250,14 @@
         "nixpkgs": [
           "nixpkgs"
         ],
-        "optparse-applicative-src": [
-          "optparse-applicative-src"
-        ],
-        "tasty-hedgehog-src": "tasty-hedgehog-src",
-        "tasty-src": [
-          "tasty-src"
-        ]
+        "parameterized-utils-src": "parameterized-utils-src"
       },
       "locked": {
-        "lastModified": 1688015673,
-        "narHash": "sha256-Ljk2ZrcyMA5BOBdHyVRaODFgbSw/DLQTQeyjw0ZpA74=",
+        "lastModified": 1761569657,
+        "narHash": "sha256-U7iKjGvdhvsWrUgmoLaJMRgPm+mcnhipN0yVICx/5DY=",
         "owner": "kquick",
         "repo": "tasty-sugar",
-        "rev": "69c424e8638b6479c352af028e06ce81ec3171ce",
+        "rev": "8f582e247b6df6eef91260b30c18711c26678b29",
         "type": "github"
       },
       "original": {

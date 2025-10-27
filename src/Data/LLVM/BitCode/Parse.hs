@@ -439,21 +439,27 @@ setMdTable md = modify $ \ps -> ps { psMdTable = md }
 getMetadata :: Int -> Parse (Typed PValMd)
 getMetadata ix = do
   ps <- Parse get
-  case resolveMd ix ps of
+  case resolveMd ix (psMdTable ps) (psMdRefs ps) of
     Just tv -> case typedValue tv of
       ValMd val -> return tv { typedValue = val }
       _         -> fail "unexpected non-metadata value in metadata table"
     Nothing -> fail ("metadata index " ++ show ix ++ " is not defined")
 
-resolveMd :: Int -> ParseState -> Maybe (Typed PValue)
-resolveMd ix ps = nodeRef `mplus` mdValue
+resolveMd :: Int -> MdTable -> MdRefTable -> Maybe (Typed PValue)
+resolveMd ix mdTable mdRefs = nodeRef `mplus` mdValue
   where
   reference = Typed (PrimType Metadata) . ValMd . ValMdRef
-  nodeRef   = reference `fmap` IntMap.lookup ix (psMdRefs ps)
-  mdValue   = lookupValueTableAbs ix (psMdTable ps)
+  nodeRef   = reference `fmap` IntMap.lookup ix mdRefs
+  mdValue   = lookupValueTableAbs ix mdTable
 
 
 type MdRefTable = IntMap.IntMap Int
+
+class Monad m => HasMdRefTable m where
+  getMdRefTable :: m MdRefTable
+
+instance HasMdRefTable Parse where
+  getMdRefTable = gets psMdRefs
 
 setMdRefs :: MdRefTable -> Parse ()
 setMdRefs refs = Parse $ do
@@ -880,6 +886,7 @@ ppParseWarnings warnings
 data FinalizeEnv = FinalizeEnv
                    { parsedEnv :: Env
                    , parsedMdTable :: ValueTable
+                   , parsedMdRefs :: MdRefTable
                    , parsedValueTable :: ValueTable
                    , parsedFuncSymtabs :: FuncSymTabs
                    }
@@ -929,6 +936,9 @@ instance HasParseEnv Finalize where
 instance HasMdTable Finalize where
   getMdTable = asks parsedMdTable
 
+instance HasMdRefTable Finalize where
+  getMdRefTable = asks parsedMdRefs
+
 instance HasValueTable Finalize where
   getValueTable = asks parsedValueTable
 
@@ -951,9 +961,11 @@ liftFinalize :: FuncSymTabs -> Finalize a -> Parse a
 liftFinalize defs (Finalize m) =
   do env <- ask
      mdt <- getMdTable
+     mdr <- getMdRefTable
      valt <- getValueTable
      let fenv = FinalizeEnv { parsedEnv = env
                             , parsedMdTable = mdt
+                            , parsedMdRefs = mdr
                             , parsedValueTable = valt
                             , parsedFuncSymtabs = defs
                             }

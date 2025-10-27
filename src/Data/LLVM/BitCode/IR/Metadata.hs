@@ -31,7 +31,7 @@ import           Text.LLVM.Labels
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import           Control.Applicative ((<|>))
 import           Control.Exception (throw)
-import           Control.Monad (foldM, guard, mplus, when)
+import           Control.Monad (foldM, guard, mplus, unless, when)
 import           Data.Bits (shiftR, testBit, shiftL, (.&.), (.|.), bit, complement)
 import           Data.Data (Data)
 import           Data.Typeable (Typeable)
@@ -1166,6 +1166,15 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return $! updateMetadataTable
         (addInlineDebugInfo (DebugInfoArgList dial)) pm
 
+    47 -> label "METADATA_ASSIGN_ID" $ do
+      assertRecordSizeIn [1]
+      isDistinct <- parseField r 0 nonzero
+      -- Inspirted by a similar check in
+      -- https://github.com/llvm/llvm-project/blob/7a0b9daac9edde4293d2e9fdf30d8b35c04d16a6/llvm/lib/Bitcode/Reader/MetadataLoader.cpp#L2071-L2072
+      unless isDistinct $
+        fail "Invalid DIAssignID record. Must be distinct"
+      return $! updateMetadataTable
+        (addDebugInfo isDistinct DebugInfoAssignID) pm
 
     code -> fail ("unknown record code: " ++ show code)
 

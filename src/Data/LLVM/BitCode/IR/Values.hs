@@ -13,7 +13,9 @@ import Data.LLVM.BitCode.Parse
 import Data.LLVM.BitCode.Record
 import Text.LLVM.AST
 
+import qualified Control.Exception as X
 import Control.Monad ((<=<),foldM)
+import GHC.Stack (callStack)
 
 
 -- Value Table -----------------------------------------------------------------
@@ -44,7 +46,7 @@ getValueTypePair t r ix = do
 --getValueNoFwdRef :: Type -> Int -> Parse (Typed PValue)
 --getValueNoFwdRef ty n = label "getValueNoFwdRef" (getFnValueById ty =<< adjustId n)
 
-getFnValueById :: (HasMdTable m, HasParseEnv m, HasValueTable m, MonadFail m)
+getFnValueById :: (HasMdTable m, HasMdRefTable m, HasParseEnv m, HasValueTable m, MonadFail m)
                => Type -> Int -> m (Typed PValue)
 getFnValueById  = getFnValueById' Nothing
 
@@ -52,14 +54,19 @@ getValue :: ValueTable -> Type -> Int -> Parse (Typed PValue)
 getValue vt ty n = label "getValue" (getFnValueById' (Just vt) ty =<< adjustId n)
 
 -- | Lookup a value by its absolute id, or perhaps some metadata.
-getFnValueById' :: (HasMdTable m, HasParseEnv m, HasValueTable m, MonadFail m)
+getFnValueById' :: (HasMdTable m, HasMdRefTable m, HasParseEnv m, HasValueTable m, MonadFail m)
                 => Maybe ValueTable -> Type -> Int -> m (Typed PValue)
 getFnValueById' mbVt ty n = case ty of
 
   PrimType Metadata -> do
     cxt <- getContext
     md  <- getMdTable
-    return (forwardRef cxt n md)
+    mdr <- getMdRefTable
+    case resolveMd n md mdr of
+      Just tv -> return tv
+      Nothing ->
+        let explanation = "Illegal forward reference into metadata"
+        in X.throw $ BadValueRef callStack cxt explanation n
 
   _ -> do
     mb <- lookupValueAbs n
