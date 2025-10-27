@@ -8,6 +8,9 @@ import Text.LLVM.AST
 import Tests.PrimInstances ()
 
 
+instance Arbitrary Alignment where arbitrary = genericArbitrary uniform
+instance Arbitrary PointerSize where arbitrary = genericArbitrary uniform
+instance Arbitrary Storage where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (Type' lab)                       where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (Typed lab)                       where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (ValMd' lab)                      where arbitrary = genericArbitrary uniform
