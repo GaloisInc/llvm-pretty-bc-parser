@@ -11,12 +11,17 @@ jobs:
   build:
     # This job builds the main package, via a number of GHC versions.  This is
     # the build that would be used by downstream packages using this as a
-    # dependency; this does not build documentation or tests.
+    # dependency.
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # TODO: GHC 9.10, see https://github.com/GaloisInc/llvm-pretty-bc-parser/pull/285#issuecomment-2659780270
-        ghc-version: [ "ghc98", "ghc96", "ghc94" ]
+        # TODO: Add "ghc912" when version 9.12.3 is released in nixpkgs.  Earlier
+        # versions are not supported due to a GHC bug
+        # (https://gitlab.haskell.org/ghc/ghc/-/issues/25771).
+        ghc-version: [ "ghc910", "ghc98", "ghc96", "ghc94" ]
+        # When adding a new GHC version here, check the flake.nix at the top
+        # level.  There is information there on what is needed to be done
+        # to supported added new GHC versions.
     steps:
       - uses: cachix/install-nix-action@v20
         with:
@@ -30,11 +35,39 @@ jobs:
         shell: bash
         run: nix build -L github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }}
 
+  build_oldGHC:
+    # This job builds the main package, via a number of GHC versions.  This is
+    # the build that would be used by downstream packages using this as a
+    # dependency; this does not build documentation or tests.
+    #
+    # Note that GHC 9.0 is not tested.  There are some build problems with
+    # llvm-pretty under GHC 9.0, but 9.0 was also known to produce invalid code,
+    # so it's best avoided entirely.
+    #
+    # The only difference between this job and the job above is that this job
+    # overrides the nixpkgs input on the last line below to a nixpkgs version
+    # that supports the older GHC versions.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ghc-version: [ "ghc92", "ghc810" ]
+    steps:
+      - uses: cachix/install-nix-action@v20
+        with:
+          nix_path: nixpkgs=channel:nixos-23.05
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: cachix/cachix-action@v15
+        with:
+          name: galois
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+      - name: build ${{ matrix.ghc-version }}
+        shell: bash
+        run: nix build -L github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }} --override-input nixpkgs github:nixos/nixpkgs/25.05
+
   tests:
-    # This job builds the tests, and then runs the tests (in two different
-    # steps).  Note that for llvm-pretty-bc-parser, multiple LLVM versions will
-    # be tested; the actual list of versions is specified in the `flake.nix` file
-    # used (see the NOTE comment in that file).
+    # This job runs the LLVM tests.  This uses the top level flake.nix file to
+    # run the tests.  That flake file will specify a range of LLVM versions to
+    # test this llvm parser and the underlying llvm-pretty library against.
     runs-on: ubuntu-latest
     steps:
       - uses: cachix/install-nix-action@v20

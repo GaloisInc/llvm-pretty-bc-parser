@@ -1,4 +1,6 @@
 {
+  # SEE NOTE when needing to change the set of GHC supported versions.
+
   # nix build .
   # nix develop
   # nix run .  [runs llvm-disasm]
@@ -35,12 +37,13 @@
             , tasty-sugar
             }:
     let pkg_ghcvers = pkgs:
-              # GHC 9.12 has an internal bug and fails when compiling
-              # llvm-pretty.  This bug is fixed in GHC 9.12.3; remove the
-              # following ghcver setting when GHC 9.12.3 is available in nixpkgs.
-              builtins.filter
-                (n: builtins.substring 0 6 n != "ghc912")
-                (levers.validGHCVersions pkgs.haskell.compiler);
+          # GHC 9.12 has an internal bug and fails when compiling llvm-pretty
+          # (https://gitlab.haskell.org/ghc/ghc/-/issues/25771).  This bug is
+          # fixed in GHC 9.12.3; remove the following ghcver setting when GHC
+          # 9.12.3 is available in nixpkgs.
+          builtins.filter
+            (n: builtins.substring 0 6 n != "ghc912")
+            (levers.validGHCVersions pkgs.haskell.compiler);
     in
     rec {
 
@@ -49,8 +52,12 @@
           flake = self;
           defaultPkg = "llvm-pretty-bc-parser";
           additionalPackages = pkgs: [
-            nixpkgs_oldllvm.legacyPackages.x86_64-linux.clang_16
-            nixpkgs_oldllvm.legacyPackages.x86_64-linux.llvm_16
+            # pkgs.clang_17
+            # pkgs.llvm_17
+            # nixpkgs_oldllvm.legacyPackages.x86_64-linux.clang_16
+            # nixpkgs_oldllvm.legacyPackages.x86_64-linux.llvm_16
+            nixpkgs_midllvm.legacyPackages.x86_64-linux.clang_19
+            nixpkgs_midllvm.legacyPackages.x86_64-linux.llvm_19
             pkgs.cabal-install
           ];
           ghcvers = system: pkg_ghcvers (nixpkgs.legacyPackages.${system});
