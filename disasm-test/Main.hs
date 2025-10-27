@@ -921,8 +921,8 @@ isKnownBug knownBugs sweet _expct llvmver =
                         Nothing -> const False
         _ -> const True
       found = find matchOf $ Map.assocs knownBugs
-      getSummary (f,_) = (f
-                         , head (fromMaybe [] (knownBugs ! f !? "summary:")
-                                 <> ["this is a known bug"])
-                         )
+      msg f = case fromMaybe [] (knownBugs ! f !? "summary:") of
+                [] -> "this is a known bug"
+                (h:_) -> h
+      getSummary (f,_) = (f, msg f)
   in getSummary <$> found
