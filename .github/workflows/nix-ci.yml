@@ -45,9 +45,6 @@ jobs:
         with:
           name: galois
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - name: test build
-        shell: bash
-        run: nix build github:${{ github.repository }}/${{ github.sha }}#TESTS_PREP
       - name: test
         shell: bash
         run: nix build -L github:${{ github.repository }}/${{ github.sha }}#TESTS
