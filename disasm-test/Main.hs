@@ -421,11 +421,16 @@ rangeMatch llvmver cb swts = do
   -- llvm (reported by llvm-as) to filter the tasty-sugar expectations.  Note
   -- that there is a built-in expectation here that there is only one llvm
   -- version available to the test.
-  TS.rangedParamAdjuster "llvm-range"
+  ts1 <- TS.rangedParamAdjuster "llvm-range"
     (readMaybe . drop (length ("pre-llvm" :: String)))
     (<)
     (vcVersioning llvmver ^? (_Right . major))
     cb swts
+  TS.rangedParamAdjuster "llvm-range"
+    (readMaybe . drop (length ("post-llvm" :: String)))
+    (>)
+    (vcVersioning llvmver ^? (_Right . major))
+    cb ts1
 
 
 -- | Returns true if this particular test should be skipped, which is signalled
