@@ -40,6 +40,7 @@ import qualified System.Console.Terminal.Size as Term
 import           System.Directory ( doesFileExist, getTemporaryDirectory
                                   , listDirectory
                                   , removeFile )
+import           System.Environment ( lookupEnv )
 import           System.Exit (ExitCode(..), exitFailure, exitSuccess)
 import           System.FilePath ( (</>), (<.>) )
 import           System.IO (openBinaryTempFile,hClose,openTempFile,hPrint,
@@ -136,6 +137,13 @@ descr = PP.vcat $
            This mode ensures that the llvm-disasm will not fail, but
            it does not validate the results.
         |]
+  , ""
+  , block
+    [iii|The DISASM_TEST_DIR can be set to the location of the
+         disasm-test directory; this defaults to "disasm-test",
+         but is not useful if the test is not run from the top-level
+         of the llvm-pretty-bc-parser repository.
+        |]
   ]
 
 -- Option Parsing --------------------------------------------------------------
@@ -209,8 +217,8 @@ instance TO.IsOption Details where
   optionCLParser = TO.mkOptionCLParser $
     OA.short 'd'
 
-disasmTestIngredients :: VersionCheck -> [TR.Ingredient]
-disasmTestIngredients llvmver =
+disasmTestIngredients :: FilePath -> VersionCheck -> [TR.Ingredient]
+disasmTestIngredients rootPath llvmver =
   includingOptions [ TO.Option (Proxy @LLVMAs)
                    , TO.Option (Proxy @LLVMDis)
                    , TO.Option (Proxy @Clang)
@@ -218,19 +226,20 @@ disasmTestIngredients llvmver =
                    , TO.Option (Proxy @Keep)
                    , TO.Option (Proxy @Details)
                    ] :
-  TS.sugarIngredients [ assemblyCube llvmver
-                      , cCompilerCube llvmver
-                      , ccCompilerCube llvmver ]
+  TS.sugarIngredients [ assemblyCube rootPath llvmver
+                      , cCompilerCube rootPath llvmver
+                      , ccCompilerCube rootPath llvmver ]
   <> defaultIngredients
 
 parseCmdLine :: IO TO.OptionSet
 parseCmdLine = do
   TR.installSignalHandlers
   llvmver <- getLLVMAsVersion defaultLLVMAs
+  rootPth <- getRootPath
   let disasmOptDescrs = TO.uniqueOptionDescriptions $
         TR.coreOptions ++
         TS.sugarOptions ++
-        TR.ingredientsOptions (disasmTestIngredients llvmver)
+        TR.ingredientsOptions (disasmTestIngredients rootPth llvmver)
       (disasmOptWarns, disasmOptParser) = TR.optionParser disasmOptDescrs
   mapM_ (hPutStrLn IO.stderr) disasmOptWarns
   ts <- maybe 80 Term.width <$> Term.size
@@ -308,6 +317,7 @@ readProcessVersion forTool =
 -- | Run all provided tests.
 main :: IO ()
 main =  do
+  rootPth <- getRootPath
   -- This is a bit more involved than a typical tasty `main` function. The
   -- problem is that the number of tests that we generate (via
   -- `withSugarGroups`) depends on the version of the --llvm-as argument,
@@ -334,11 +344,11 @@ main =  do
       , "* clang    version: " ++ showVC clangVC
       ]
 
-  knownBugs <- getKnownBugs
-  sweets1 <- TS.findSugar $ assemblyCube llvmAsVC
-  sweets2 <- TS.findSugar $ cCompilerCube llvmAsVC
-  sweets3 <- TS.findSugar $ ccCompilerCube llvmAsVC
-  sweets4 <- TS.findSugar $ bitcodeCube llvmAsVC
+  knownBugs <- getKnownBugs rootPth
+  sweets1 <- TS.findSugar $ assemblyCube rootPth llvmAsVC
+  sweets2 <- TS.findSugar $ cCompilerCube rootPth llvmAsVC
+  sweets3 <- TS.findSugar $ ccCompilerCube rootPth llvmAsVC
+  sweets4 <- TS.findSugar $ bitcodeCube rootPth llvmAsVC
   atests <- TS.withSugarGroups sweets1 testGroup
             $ \s _ e -> runAssemblyTest llvmAsVC knownBugs s e
   ctests <- TS.withSugarGroups sweets2 testGroup
@@ -349,7 +359,7 @@ main =  do
              $ \s _ e -> runRawBCTest llvmAsVC knownBugs s e
   let tests = atests <> ctests
   case TR.tryIngredients
-         (disasmTestIngredients llvmAsVC)
+         (disasmTestIngredients rootPth llvmAsVC)
          disasmOpts
          (testGroup "Disassembly tests"
           [ testGroup ("llvm-as " <> showVC llvmAsVC) atests
@@ -364,15 +374,18 @@ main =  do
       ok <- act
       if ok then exitSuccess else exitFailure
 
-  defaultMainWithIngredients (disasmTestIngredients llvmAsVC) $
+  defaultMainWithIngredients (disasmTestIngredients rootPth llvmAsVC) $
     testGroup "Disassembly tests" tests
 
 ----------------------------------------------------------------------
 -- Assembly/disassembly tests
 
-assemblyCube :: VersionCheck -> TS.CUBE
-assemblyCube llvmver = TS.mkCUBE
-  { TS.inputDirs = ["disasm-test/tests"]
+getRootPath :: IO FilePath
+getRootPath = maybe "disasm-test" id <$> lookupEnv "DISASM_TEST_DIR"
+
+assemblyCube :: FilePath -> VersionCheck -> TS.CUBE
+assemblyCube rootPath llvmver = TS.mkCUBE
+  { TS.inputDirs = [rootPath </> "tests"]
   , TS.rootName = "*.ll"
   , TS.separators = "."
   , TS.validParams = [ ("llvm-range", Just [ "recent-llvm"
@@ -537,14 +550,16 @@ parseBC pfx bc = do
 -- assemblyCube always generates a superset of the compilerCube tests (i.e. when
 -- no .c or .cc file is present).
 
-cCompilerCube :: VersionCheck -> TS.CUBE
-cCompilerCube llvmver = (assemblyCube llvmver)
-                        { TS.rootName = "*.(c|cc|cpp)"
-                        , TS.sweetAdjuster = rangeMatch llvmver
-                        }
+cCompilerCube :: FilePath -> VersionCheck -> TS.CUBE
+cCompilerCube rootPath llvmver =
+  (assemblyCube rootPath llvmver)
+  { TS.rootName = "*.(c|cc|cpp)"
+  , TS.sweetAdjuster = rangeMatch llvmver
+  }
 
-ccCompilerCube :: VersionCheck -> TS.CUBE
-ccCompilerCube llvmver = (cCompilerCube llvmver) { TS.rootName = "*.cc"}
+ccCompilerCube :: FilePath -> VersionCheck -> TS.CUBE
+ccCompilerCube rootPath llvmver =
+  (cCompilerCube rootPath llvmver) { TS.rootName = "*.cc"}
 
 
 runCompileTest :: VersionCheck -> KnownBugs -> TS.Sweets -> TS.Expectation
@@ -583,12 +598,13 @@ runCompileTest llvmVersion knownBugs sweet expct = do
 ----------------------------------------------------------------------
 -- Pre-existing bitcode tests tests
 
-bitcodeCube :: VersionCheck -> TS.CUBE
-bitcodeCube llvmver = (assemblyCube llvmver)
-                        { TS.rootName = "*.bc"
-                        , TS.inputDirs = ["disasm-test/bc_src_tests"]
-                        , TS.sweetAdjuster = rangeMatch llvmver
-                        }
+bitcodeCube :: FilePath -> VersionCheck -> TS.CUBE
+bitcodeCube rootPath llvmver =
+  (assemblyCube rootPath llvmver)
+  { TS.rootName = "*.bc"
+  , TS.inputDirs = [rootPath </> "bc_src_tests"]
+  , TS.sweetAdjuster = rangeMatch llvmver
+  }
 
 runRawBCTest :: VersionCheck -> KnownBugs -> TS.Sweets -> TS.Expectation
                -> IO [TestTree]
@@ -883,9 +899,9 @@ type KnownBugs = Map.Map FilePath (Map.Map String [String])
 -- markers and values in that file.  This returned value should be passed to the
 -- isKnownBug function, along with the test information to determine if the test
 -- is associated with a known bug.
-getKnownBugs :: IO KnownBugs
-getKnownBugs = do
-  let kbdir = "disasm-test/known_bugs"
+getKnownBugs :: FilePath -> IO KnownBugs
+getKnownBugs rootPath = do
+  let kbdir = rootPath </> "known_bugs"
   known <- listDirectory kbdir
   let interestingLine = ("##> " `isPrefixOf`)
   let addInterestingLine l = case words l of
