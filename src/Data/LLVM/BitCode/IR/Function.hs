@@ -1190,13 +1190,24 @@ parseGEP t mbInBound r d = do
         Just ib -> do
           (tv,ix') <- getValueTypePair t r 0
           ty <- Assert.elimPtrTo "GEP not headed by pointer" (typedType tv)
-          return (ib, ty, tv, r, ix')
+          return (if ib then [GEP_Inbounds] else [], ty, tv, r, ix')
 
-        -- FUNC_CODE_INST_GEP
+        -- FUNC_CODE_INST_GEP.
+        --
+        --  Originally had an "inbounds" boolean, followed by arguments, but in
+        --  LLVM 19 this was changed to be a Word64 of bits specifying the gep
+        --  inlining status, followed by the actual arguments.  The record count
+        --  doesn't change as a discriminator, so this tries parsing the older
+        --  boolean and on failure assume the newer format.
         Nothing -> do
           let r' = flattenRecord r
           let field = parseField r'
-          ib <- field 0 boolean
+          ib <- (field 0 boolean >>= \case
+                    True -> return [GEP_Inbounds]
+                    False -> return []
+                )
+                `mplus`
+                (flagsFromBits orderedGEPOptionalFlags <$> field 0 numeric)
           ty <- getType =<< field 1 numeric
           (tv,ix') <- getValueTypePair t r' 2
           return (ib, ty, tv, r', ix')

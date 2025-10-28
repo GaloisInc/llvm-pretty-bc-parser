@@ -14,17 +14,18 @@ module Data.LLVM.BitCode.Bitstream (
   , getBitstream, parseBitstream
   , getBitCodeBitstream, parseBitCodeBitstream, parseBitCodeBitstreamLazy
   , parseMetadataStringLengths
+  , flagsFromBits
   ) where
 
 import           Data.LLVM.BitCode.BitString as BS
 import           Data.LLVM.BitCode.GetBits
 
 import           Control.Monad ( unless, replicateM, guard )
-import           Data.Bits ( Bits )
+import           Data.Bits ( Bits, testBit )
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Lazy as L
 import qualified Data.Map as Map
-import           Data.Word ( Word8, Word16, Word32 )
+import           Data.Word ( Word8, Word16, Word32, Word64 )
 
 
 -- Primitive Reads -------------------------------------------------------------
@@ -67,6 +68,13 @@ char6  = do
     62                     -> return (fromIntegral (fromEnum '.'))
     63                     -> return (fromIntegral (fromEnum '_'))
     _                      -> fail "invalid char6"
+
+
+-- | Test the Word64 for bits set, and return the set of input flags whose
+-- indices correspond to the set bits.
+flagsFromBits :: [flag] -> Word64 -> [flag]
+flagsFromBits flgs bf =
+  foldl (\a (n,f) -> if testBit bf n then f:a else a) [] $ zip [0..] flgs
 
 
 -- Bitstream Parsing -----------------------------------------------------------
