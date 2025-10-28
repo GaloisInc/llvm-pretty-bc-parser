@@ -139,10 +139,11 @@ descr = PP.vcat $
         |]
   , ""
   , block
-    [iii|The DISASM_TEST_DIR can be set to the location of the
-         disasm-test directory; this defaults to "disasm-test",
-         but is not useful if the test is not run from the top-level
-         of the llvm-pretty-bc-parser repository.
+    [iii|The DISASM_TEST_DIR environment variable can be set to the
+         location of the disasm-test directory; this defaults to
+         "disasm-test", but that is not useful unless the test is
+         run from the top level of the llvm-pretty-bc-parser
+         repository.
         |]
   ]
 
