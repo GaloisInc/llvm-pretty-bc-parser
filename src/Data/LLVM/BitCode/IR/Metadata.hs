@@ -432,9 +432,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
           addParseWarning $
           InvalidMetadataRecordSize len (MetadataRecordSizeAtLeast lb) cxt
 
-      -- Helper for a common pattern which appears below in the parsing
+      -- Helpers for common patterns which appear below in the parsing
       ron n = do ctx <- getContext
                  mdForwardRefOrNull ctx mt <$> parseField r n numeric
+      ronl n = if length (recordFields r) <= n then pure Nothing else ron n
 
   -- Note: the parsing cases below use a Monadic coding style, as opposed to an
   -- Applicative style (as was originally used) for performance reasons:
@@ -657,7 +658,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoDerivedType didt)) pm
 
     18 -> label "METADATA_COMPOSITE_TYPE" $ do
-      assertRecordSizeBetween 16 22
+      assertRecordSizeBetween 16 26
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       dictTag <- parseField r 1 numeric
@@ -675,24 +676,23 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       dictVTableHolder <- ron 13
       dictTemplateParams <- ron 14
       dictIdentifier <- mdStringOrNull ctx pm <$> parseField r 15 numeric
-      dictDiscriminator <- if length (recordFields r) <= 16
-                           then pure Nothing
-                           else ron 16
-      dictDataLocation <- if length (recordFields r) <= 17
-                          then pure Nothing
-                          else ron 17
-      dictAssociated <- if length (recordFields r) <= 18
-                        then pure Nothing
-                        else ron 18
-      dictAllocated <- if length (recordFields r) <= 19
-                       then pure Nothing
-                       else ron 19
-      dictRank <- if length (recordFields r) <= 20
-                  then pure Nothing
-                  else ron 20
-      dictAnnotations <- if length (recordFields r) <= 21
-                         then pure Nothing
-                         else ron 21
+      dictDiscriminator <- ronl 16
+      dictDataLocation <- ronl 17
+      dictAssociated <- ronl 18
+      dictAllocated <- ronl 19
+      dictRank <- ronl 20
+      dictAnnotations <- ronl 21
+      dictNumExtraInhabitants <- if length (recordFields r) <= 22
+                                 then pure 0
+                                 else parseField r 22 numeric
+      dictSpecification <- ronl 23
+      dictEnumKind <- if length (recordFields r) <= 24
+                      then pure Nothing
+                      else do f <- parseField r 24 numeric
+                              if f == dwarf_DW_APPLE_ENUM_KIND_invalid
+                                then pure Nothing
+                                else pure $ Just f
+      dictBitStride <- ronl 25
       let dict = DICompositeType {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoCompositeType dict)) pm
