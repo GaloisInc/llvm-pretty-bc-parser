@@ -369,12 +369,14 @@ parseFunctionBlockEntry ::
   ValueTable -> PartialDefine -> Entry ->
   Parse PartialDefine
 
-parseFunctionBlockEntry _ _ d (constantsBlockId -> Just es) = do
-  -- CONSTANTS_BLOCK
+parseFunctionBlockEntry _ _ d (constantsBlockId -> Just es) =
+ label "CONSTANTS_BLOCK" $ do
   parseConstantsBlock es
   return d
 
-parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
+parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
+ let lookupMetadata v = if v > 0 then Just <$> getMetadata (v-1) else return Nothing in
+ case recordCode r of
 
   -- [n]
   1 -> label "FUNC_CODE_DECLARE_BLOCKS"
@@ -735,9 +737,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
                 then getMetadata (scopeId - 1)
                 else fail "No scope provided"
 
-    ia <- if iaId > 0
-             then Just `fmap` getMetadata (iaId - 1)
-             else return Nothing
+    ia <- lookupMetadata iaId
 
     let loc = DebugLoc
           { dlLine  = line
@@ -1001,6 +1001,93 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
   59 -> label "FUNC_CODE_INST_ATOMICRMW" $
     parseAtomicRMW False t r d
 
+  60 -> label "FUNC_CODE_BLOCKADDR_USERS" $
+    -- BLOCKADDR_USERS: [value..]
+    notImplemented
+
+  61 -> label "FUNC_CODE_DEBUG_RECORD_VALUE" $ do
+    -- [DILocation, DILocalVariable, DIExpression, ValueAsMetadata]
+    Assert.recordSizeIn r [4]
+    let field = parseField r
+    dil <- field 0 numeric >>= getMetadata
+    var <- field 1 numeric >>= getMetadata
+    expr <- field 2 numeric >>= getMetadata
+    rawloc <- field 3 numeric >>= getMetadata
+    let drv = DbgRecValue
+              { drvLocation = typedValue dil
+              , drvLocalVariable = typedValue var
+              , drvExpression = typedValue expr
+              , drvValAsMetadata = typedValue rawloc
+              }
+    updateLastStmt (addDebugRecord (DebugRecordValue drv)) d
+
+  62 -> label "FUNC_CODE_DEBUG_RECORD_DECLARE" $ do
+    -- [DILocation, DILocalVariable, DIExpression, ValueAsMetadata]
+    Assert.recordSizeIn r [4]
+    let field = parseField r
+    dil <- field 0 numeric >>= getMetadata
+    var <- field 1 numeric >>= getMetadata
+    expr <- field 2 numeric >>= getMetadata
+    rawloc <- field 3 numeric >>= getMetadata
+    let drd = DbgRecDeclare
+              { drdLocation = typedValue dil
+              , drdLocalVariable = typedValue var
+              , drdExpression = typedValue expr
+              , drdValAsMetadata = typedValue rawloc
+              }
+    updateLastStmt (addDebugRecord (DebugRecordDeclare drd)) d
+
+  63 -> label "FUNC_CODE_DEBUG_RECORD_ASSIGN" $ do
+    -- [DILocation, DILocalVariable, DIExpression, ValueAsMetadata,
+    --  DIAssignID, DIExpression (addr), ValueAsMetadata (addr)]
+    Assert.recordSizeIn r [7]
+    let field = parseField r
+    dil <- field 0 numeric >>= getMetadata
+    var <- field 1 numeric >>= getMetadata
+    expr <- field 2 numeric >>= getMetadata
+    rawloc <- field 3 numeric >>= getMetadata
+    assgnid <- field 4 numeric >>= getMetadata
+    expraddr <- field 5 numeric >>= getMetadata
+    valaddr <- field 6 numeric >>= getMetadata
+    let dra = DbgRecAssign
+              { draLocation = typedValue dil
+              , draLocalVariable = typedValue var
+              , draExpression = typedValue expr
+              , draValAsMetadata = typedValue rawloc
+              , draAssignID = typedValue assgnid
+              , draExpressionAddr = typedValue expraddr
+              , draValAsMetadataAddr = typedValue valaddr
+              }
+    updateLastStmt (addDebugRecord (DebugRecordAssign dra)) d
+
+  64 -> label "FUNC_CODE_DEBUG_RECORD_VALUE_SIMPLE" $ do
+    -- [DILocation, DILocalVariable, DIExpression, Value]
+    -- notImplemented
+    Assert.recordSizeIn r [4]
+    let field = parseField r
+    dil <- field 0 numeric >>= getMetadata
+    var <- field 1 numeric >>= getMetadata
+    expr <- field 2 numeric >>= getMetadata
+    (val, _) <- getValueTypePair t r 3
+    let drd = DbgRecValueSimple
+              { drvsLocation = typedValue dil
+              , drvsLocalVariable = typedValue var
+              , drvsExpression = typedValue expr
+              , drvsValue = val
+              }
+    updateLastStmt (addDebugRecord (DebugRecordValueSimple drd)) d
+
+  65 -> label "FUNC_CODE_DEBUG_RECORD_LABEL" $ do
+    -- [DILocation, DILabel]
+    Assert.recordSizeIn r [2]
+    let field = parseField r
+    dil <- field 0 numeric >>= getMetadata
+    lbl <- field 1 numeric >>= getMetadata
+    let drl = DbgRecLabel
+              { drlLocation = typedValue dil
+              , drlLabel = typedValue lbl
+              }
+    updateLastStmt (addDebugRecord (DebugRecordLabel drl)) d
 
   -- [opty,opval,opval,pred]
   code
@@ -1084,8 +1171,11 @@ addInstrAttachments atts blocks = go 0 (Map.toList atts) (Seq.viewl blocks)
 
     addMd stmts (i,md') = Seq.adjust update (i-off) stmts
       where
-      update (Result n s md) = Result n s (md ++ md')
-      update (Effect   s md) = Effect   s (md ++ md')
+        -- addInstrAttachments is only called for metadata read at function block
+        -- entry, which (to date) is always an inline/intrinsic style metadata
+        -- element.
+      update (Result n s drs md) = Result n s drs (md ++ md')
+      update (Effect   s drs md) = Effect   s drs (md ++ md')
 
   go _ _ Seq.EmptyL = Seq.empty
 
@@ -1172,14 +1262,14 @@ parseAtomicRMW old t r d = do
 
 -- | Generate a statement that doesn't produce a result.
 effect :: Instr' Int -> PartialDefine -> Parse PartialDefine
-effect i d = addStmt (Effect i []) d
+effect i d = addStmt (Effect i mempty []) d
 
 -- | Try to name results, fall back on leaving them as effects.
 result :: Type -> Instr' Int -> PartialDefine -> Parse PartialDefine
 result (PrimType Void) i d = effect i d
 result ty              i d = do
   res <- nameNextValue ty
-  addStmt (Result res i []) d
+  addStmt (Result res i mempty []) d
 
 -- | Loop, parsing arguments out of a record in pairs, as the arguments to a phi
 -- instruction.
