@@ -8,6 +8,9 @@
     expression.
   * Parsing for new `DICompositeType` fields added in LLVM 19.
   * Parsing of `num_extra_inhabitants` in `DIBasicType`.
+* Updates for supporting new flags in cast-related instructions:
+  * Support parsing `zext` instructions that use the `nneg` flag, indicating
+    that the argument must be non-negative.
 
 ## 0.5.1.0 (October 2025)
 

@@ -419,10 +419,19 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
   3 -> label "FUNC_CODE_INST_CAST" $ do
     let field = parseField r
     (tv,ix) <- getValueTypePair t r 0
-    Assert.recordSizeIn r [ix + 2]
+    Assert.recordSizeIn r [ix + 2, ix + 3]
     resty   <- getType =<< field ix numeric
     cast'   <-             field (ix+1) castOp
-    result resty (cast' Nothing tv resty) d
+    -- If there's an extra field on the end of the record, it's for one of the
+    -- following:
+    --
+    -- - If the instruction is zext, the extra field designates the value of the
+    --   nneg flag.
+    --
+    -- The constructor returned from castOp will use that value when
+    -- constructing the cast-related operation.
+    let mbWord = numeric =<< fieldAt (ix+2) r
+    result resty (cast' mbWord tv resty) d
 
   4 -> label "FUNC_CODE_INST_GEP_OLD" (parseGEP t (Just False) r d)
 
