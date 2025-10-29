@@ -431,6 +431,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     -- - If the instruction is trunc, the extra field designates the value of
     --   the nuw and nsw flags.
     --
+    -- - If the instruction is fptrunc or fpext, the extra field designates the
+    --   value of the fast-math flags. TODO(#61): We currently ignore these.
+    --
     -- The constructor returned from castOp will use that value when
     -- constructing the cast-related operation.
     let mbWord = numeric =<< fieldAt (ix+2) r
