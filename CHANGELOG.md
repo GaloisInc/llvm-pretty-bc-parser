@@ -1,5 +1,7 @@
 # Revision history for llvm-pretty-bc-parser
 
+## next (TBA)
+
 ## 0.5.1.0 (October 2025)
 
 * Support parsing data layout strings that specify function pointer alignment.
