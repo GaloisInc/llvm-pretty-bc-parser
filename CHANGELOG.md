@@ -3,6 +3,9 @@
 ## next (TBA)
 
 * Support parsing data layout strings that specify function pointer alignment.
+* Changes to support LLVM 19
+  * Support parsing `zext` instructions that use the `nneg` flag, indicating
+    that the argument must be non-negative.
 
 ## 0.5.0.0 (March 2025)
 
