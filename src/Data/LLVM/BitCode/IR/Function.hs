@@ -410,7 +410,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     Assert.recordSizeIn r [ix + 2]
     resty   <- getType =<< field ix numeric
     cast'   <-             field (ix+1) castOp
-    result resty (cast' tv resty) d
+    result resty (cast' Nothing tv resty) d
 
   4 -> label "FUNC_CODE_INST_GEP_OLD" (parseGEP t (Just False) r d)
 
