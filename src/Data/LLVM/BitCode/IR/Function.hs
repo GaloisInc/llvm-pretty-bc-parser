@@ -1125,21 +1125,42 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     rhs <- getValue t (typedType lhs) =<< field ix numeric
 
     let ty = typedType lhs
+
+        samesign :: Maybe Int -> Bool
+        samesign mb =
+          case mb of
+            Nothing -> False
+            Just x -> testBit x 0
+
+        parseOp :: Match Field (Maybe Int -> Typed PValue -> PValue -> PInstr)
         parseOp | isPrimTypeOf isFloatingPoint ty ||
                   isVectorOf (isPrimTypeOf isFloatingPoint) ty =
-                  return . FCmp <=< fcmpOp
+                  \f -> do op <- fcmpOp f
+                           return $ \_mb x y -> FCmp op x y
 
                 | otherwise =
-                  return . ICmp <=< icmpOp
+                  \i -> do op <- icmpOp i
+                           return $ \mb x y -> ICmp (samesign mb) op x y
 
     op <- field (ix + 1) parseOp
-    -- TODO(#61): we're ignoring the fast-math flags
+    -- If there's an extra field on the end of the record, it's for one of the
+    -- following:
+    --
+    -- - If the instruction is icmp, the extra field designates the value of the
+    --   samesign flag.
+    --
+    -- - If the instruction is fcmp, the extra field designates the value of the
+    --   fast-math flags. TODO(#61): We currently ignore these.
+    --
+    -- The constructor returned from parseOp will use that value when
+    -- constructing the comparison operation.
+    let mbWord = numeric =<< fieldAt (ix + 2) r
 
     let boolTy = Integer 1
     let rty = case ty of
           Vector n _ -> Vector n (PrimType boolTy)
           _          -> PrimType boolTy
-    result rty (op lhs (typedValue rhs)) d
+    result rty (op mbWord lhs (typedValue rhs)) d
 
   -- unknown
    | otherwise -> fail ("instruction code " ++ show code ++ " is unknown")
