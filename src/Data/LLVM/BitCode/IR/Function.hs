@@ -396,7 +396,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     --   designates the value of the exact flag.
     --
     -- - If the instruction is floating-point, the extra field designates the
-    --   value of the fast-math flags. We currently ignore these.
+    --   value of the fast-math flags. TODO(#61): We currently ignore these.
     --
     -- The constructor returned from binop will use that value when
     -- constructing the binop.
@@ -561,7 +561,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     args      <- parsePhiArgs useRelIds t r
 
     when (even (length (recordFields r))) $ do
-      pure () -- TODO: fast math flags
+      pure () -- TODO(#61): fast math flags
 
     result ty (Phi ty args) d
 
@@ -671,7 +671,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     (tv,ix) <- getValueTypePair t r 0
     fv      <- getValue t (typedType tv) =<< field ix numeric
     (c,_)   <- getValueTypePair t r (ix+1)
-    -- XXX: we're ignoring the fast-math flags
+    -- TODO(#61): we're ignoring the fast-math flags
     result (typedType tv) (Select c tv (typedValue fv)) d
 
   30 -> label "FUNC_CODE_INST_INBOUNDS_GEP_OLD" (parseGEP t (Just True) r d)
@@ -696,7 +696,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
 
     -- pal <- field 0 numeric -- N.B. skipping param attributes
     ccinfo <- field 1 numeric
-    let ix0 = if testBit ccinfo 17 then 3 else 2 -- N.B. skipping fast-math flags
+    let ix0 = if testBit ccinfo 17 then 3 else 2 -- TODO(#61): skipping fast-math flags
     (mbFnTy, ix1) <- if testBit (ccinfo :: Word32) callExplicitTypeBit
                        then do fnTy <- getType =<< field ix0 numeric
                                return (Just fnTy, ix0+1)
@@ -952,7 +952,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     let field = parseField r
     (v,ix)  <- getValueTypePair t r 0
     mkInstr <- field ix unop
-    -- XXX: we're ignoring the fast-math flags
+    -- TODO(#61): we're ignoring the fast-math flags
     result (typedType v) (mkInstr v) d
 
   -- LLVM 9: [attr, cc, norm, transfs, fnty, fnid, args...]
@@ -1014,21 +1014,42 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) = case recordCode r of
     rhs <- getValue t (typedType lhs) =<< field ix numeric
 
     let ty = typedType lhs
+
+        samesign :: Maybe Int -> Bool
+        samesign mb =
+          case mb of
+            Nothing -> False
+            Just x -> testBit x 0
+
+        parseOp :: Match Field (Maybe Int -> Typed PValue -> PValue -> PInstr)
         parseOp | isPrimTypeOf isFloatingPoint ty ||
                   isVectorOf (isPrimTypeOf isFloatingPoint) ty =
-                  return . FCmp <=< fcmpOp
+                  \f -> do op <- fcmpOp f
+                           return $ \_mb x y -> FCmp op x y
 
                 | otherwise =
-                  return . ICmp <=< icmpOp
+                  \i -> do op <- icmpOp i
+                           return $ \mb x y -> ICmp (samesign mb) op x y
 
     op <- field (ix + 1) parseOp
-    -- XXX: we're ignoring the fast-math flags
+    -- If there's an extra field on the end of the record, it's for one of the
+    -- following:
+    --
+    -- - If the instruction is icmp, the extra field designates the value of the
+    --   samesign flag.
+    --
+    -- - If the instruction is fcmp, the extra field designates the value of the
+    --   fast-math flags. TODO(#61): We currently ignore these.
+    --
+    -- The constructor returned from parseOp will use that value when
+    -- constructing the comparison operation.
+    let mbWord = numeric =<< fieldAt (ix + 2) r
 
     let boolTy = Integer 1
     let rty = case ty of
           Vector n _ -> Vector n (PrimType boolTy)
           _          -> PrimType boolTy
-    result rty (op lhs (typedValue rhs)) d
+    result rty (op mbWord lhs (typedValue rhs)) d
 
   -- unknown
    | otherwise -> fail ("instruction code " ++ show code ++ " is unknown")
