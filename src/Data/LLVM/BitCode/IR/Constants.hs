@@ -174,7 +174,7 @@ castOpGeneric op = choose <=< numeric
   choose 2  = constant SExt
   choose 3  = constant FpToUi
   choose 4  = constant FpToSi
-  choose 5  = constant UiToFp
+  choose 5  = nnegFlag UiToFp
   choose 6  = constant SiToFp
   choose 7  = constant FpTrunc
   choose 8  = constant FpExt

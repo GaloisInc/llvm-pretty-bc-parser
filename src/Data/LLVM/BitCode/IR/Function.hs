@@ -425,8 +425,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     -- If there's an extra field on the end of the record, it's for one of the
     -- following:
     --
-    -- - If the instruction is zext, the extra field designates the value of the
-    --   nneg flag.
+    -- - If the instruction is zext or uitpfp, the extra field designates the
+    --   value of the nneg flag.
     --
     -- The constructor returned from castOp will use that value when
     -- constructing the cast-related operation.

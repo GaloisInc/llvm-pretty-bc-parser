@@ -11,6 +11,8 @@
 * Updates for supporting new flags in cast-related instructions:
   * Support parsing `zext` instructions that use the `nneg` flag, indicating
     that the argument must be non-negative.
+  * Support parsing `zext` and `uitofp` instructions that use the `nneg` flag,
+    indicating that the argument must be non-negative.
 
 ## 0.5.1.0 (October 2025)
 
