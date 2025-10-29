@@ -160,6 +160,15 @@ castOpGeneric op = choose <=< numeric
   where
   constant c = return $ \_mb tv t -> op c tv t
 
+  nuw x = testBit x 0
+  nsw x = testBit x 1
+
+  -- operations that accept the nuw and nsw flags
+  wrapFlags c = return $ \mb tv t ->
+    case mb of
+      Nothing -> op (c False False) tv t
+      Just w -> op (c (nuw w) (nsw w)) tv t
+
   nneg x = testBit x 0
 
   -- operations that accept the nneg flag
@@ -169,7 +178,7 @@ castOpGeneric op = choose <=< numeric
       Just w -> op (c (nneg w)) tv t
 
   choose :: Match Int (Maybe Int -> Typed PValue -> Type -> c)
-  choose 0  = constant Trunc
+  choose 0  = wrapFlags Trunc
   choose 1  = nnegFlag ZExt
   choose 2  = constant SExt
   choose 3  = constant FpToUi

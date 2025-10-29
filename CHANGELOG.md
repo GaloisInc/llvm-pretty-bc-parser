@@ -6,6 +6,9 @@
 * Changes to support LLVM 19
   * Support parsing `zext` and `uitofp` instructions that use the `nneg` flag,
     indicating that the argument must be non-negative.
+  * Support parsing `trunc` instructions that use the `nuw` or `nsw` flags,
+    indicating that the result should not result in unsigned or signed overflow,
+    respectively.
 
 ## 0.5.0.0 (March 2025)
 
