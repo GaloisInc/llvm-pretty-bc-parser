@@ -9,6 +9,8 @@
   * Support parsing `trunc` instructions that use the `nuw` or `nsw` flags,
     indicating that the result should not result in unsigned or signed overflow,
     respectively.
+* Support parsing `icmp` instructions that use the `samesign` flag (introduced
+  in LLVM 20), indicating that the arguments must have the same sign.
 
 ## 0.5.0.0 (March 2025)
 
