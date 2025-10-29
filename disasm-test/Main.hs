@@ -384,6 +384,7 @@ assemblyCube llvmver = TS.mkCUBE
                                            , "pre-llvm16"
                                            , "pre-llvm17"
                                            , "pre-llvm18"
+                                           , "pre-llvm19"
                                            ])
                      ]
     -- Somewhat unusually for tasty-sugar, we make the expectedSuffix the same
