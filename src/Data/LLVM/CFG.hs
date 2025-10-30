@@ -139,7 +139,7 @@ buildCFG bs = cfg
     -- Graph construction
     (exit, gr)    = stitchDummyExit lab (G.mkGraph nodes' edges')
                       where lab n = BasicBlock (Just (BBId n, Named $ Ident dummyExitName))
-                                      [Effect Unreachable []]
+                                      [Effect Unreachable mempty []]
     nodes'        = map (nodeId &&& id) bs'
     edges'        = concatMap bbOutEdges bs'
 
