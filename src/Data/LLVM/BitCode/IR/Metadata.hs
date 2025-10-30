@@ -593,7 +593,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return $! updateMetadataTable (addDebugInfo isDistinct diEnum) pm
 
     15 -> label "METADATA_BASIC_TYPE" $ do
-      assertRecordSizeIn [6, 8]
+      assertRecordSizeBetween 6 8
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       dibtTag <- parseField r 1 numeric
