@@ -527,11 +527,11 @@ parseCeGep code t r = do
                      else []
         pure (flgArr, Just (RangeIndex inrangeIdx), ix0 + 1)
       CeGepCode31 -> do
-        flagArr <- flagsFromBits orderedGEPOptionalFlags <$> parseField r ix0 numeric
+        flagArr <- flagsFromBits orderedGEPAttrs <$> parseField r ix0 numeric
         (range, newidx) <- getConstantRange r (ix0 + 1)
         pure (flagArr, Just range, newidx)
       CeGepCode32 -> do
-        flagArr <- flagsFromBits orderedGEPOptionalFlags <$> parseField r ix0 numeric
+        flagArr <- flagsFromBits orderedGEPAttrs <$> parseField r ix0 numeric
         pure (flagArr, Nothing, ix0 + 1)
 
   let loop n = do

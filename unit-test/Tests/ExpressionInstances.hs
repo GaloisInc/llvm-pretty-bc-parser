@@ -23,7 +23,7 @@ instance Arbitrary ICmpOp                                             where arbi
 instance Arbitrary FCmpOp                                             where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DebugLoc' lab)                   where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (ConstExpr' lab)                  where arbitrary = genericArbitrary uniform
-instance Arbitrary GEPOptionalFlag where arbitrary = genericArbitrary uniform
+instance Arbitrary GEPAttr where arbitrary = genericArbitrary uniform
 instance Arbitrary RangeSpec where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DebugInfo' lab)                  where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DIImportedEntity' lab)           where arbitrary = genericArbitrary uniform

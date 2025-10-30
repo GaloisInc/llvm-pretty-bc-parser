@@ -1207,7 +1207,7 @@ parseGEP t mbInBound r d = do
                     False -> return []
                 )
                 `mplus`
-                (flagsFromBits orderedGEPOptionalFlags <$> field 0 numeric)
+                (flagsFromBits orderedGEPAttrs <$> field 0 numeric)
           ty <- getType =<< field 1 numeric
           (tv,ix') <- getValueTypePair t r' 2
           return (ib, ty, tv, r', ix')
