@@ -35,7 +35,7 @@ jobs:
         shell: bash
         run: nix build -L github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }}
 
-  build_oldGHC:
+  build_old_GHC:
     # This job runs the builds on older versions of GHC, verifying legacy GHC
     # support/compatibility.
     #
@@ -64,7 +64,9 @@ jobs:
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
       - name: build ${{ matrix.ghc-version }}
         shell: bash
-        run: nix build -L github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }} --override-input nixpkgs github:nixos/nixpkgs/25.05
+        run: nix build -L \
+             github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }} \
+             --override-input nixpkgs github:nixos/nixpkgs/25.05
 
   tests:
     # This job runs the LLVM tests.  The builds above verify that the code can be

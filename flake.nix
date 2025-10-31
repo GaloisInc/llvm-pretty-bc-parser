@@ -1,5 +1,5 @@
 {
-  # SEE NOTE when needing to change the set of GHC supported versions.
+  # SEE NOTE when needing to change the set of LLVM tested versions.
 
   # nix build .
   # nix develop
@@ -13,8 +13,8 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
-    nixpkgs_oldllvm.url = "github:nixos/nixpkgs/23.05";
-    nixpkgs_midllvm.url = "github:nixos/nixpkgs/25.05";
+    nixpkgs_old_llvm.url = "github:nixos/nixpkgs/23.05";
+    nixpkgs_mid_llvm.url = "github:nixos/nixpkgs/25.05";
     levers = {
       url = "github:kquick/nix-levers";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -31,8 +31,8 @@
   };
 
   outputs = { self, levers, nixpkgs
-            , nixpkgs_oldllvm
-            , nixpkgs_midllvm
+            , nixpkgs_old_llvm
+            , nixpkgs_mid_llvm
             , llvm-pretty-src
             , tasty-sugar
             }:
@@ -54,10 +54,10 @@
           additionalPackages = pkgs: [
             # pkgs.clang_17
             # pkgs.llvm_17
-            # nixpkgs_oldllvm.legacyPackages.x86_64-linux.clang_16
-            # nixpkgs_oldllvm.legacyPackages.x86_64-linux.llvm_16
-            nixpkgs_midllvm.legacyPackages.x86_64-linux.clang_19
-            nixpkgs_midllvm.legacyPackages.x86_64-linux.llvm_19
+            # nixpkgs_old_llvm.legacyPackages.x86_64-linux.clang_16
+            # nixpkgs_old_llvm.legacyPackages.x86_64-linux.llvm_16
+            nixpkgs_mid_llvm.legacyPackages.x86_64-linux.clang_19
+            nixpkgs_mid_llvm.legacyPackages.x86_64-linux.llvm_19
             pkgs.cabal-install
           ];
           ghcvers = system: pkg_ghcvers (nixpkgs.legacyPackages.${system});
@@ -78,8 +78,8 @@
             let llvm = levers.get_pkg_at_ver system nixpkg_list "llvm_" llvmver;
                 clang = levers.get_pkg_at_ver system nixpkg_list "clang_" llvmver;
                 nixpkg_list = [
-                  nixpkgs_midllvm # llvm 12-19
-                  nixpkgs_oldllvm # llvm 5-16
+                  nixpkgs_mid_llvm # llvm 12-19
+                  nixpkgs_old_llvm # llvm 5-16
                   nixpkgs # 18 and above (2025-10-27)
                 ];
             in derivation {
