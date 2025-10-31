@@ -52,12 +52,20 @@
           flake = self;
           defaultPkg = "llvm-pretty-bc-parser";
           additionalPackages = pkgs: [
+            # Choose one of the sets below to choose which version of Clang/LLVM
+            # you would like available in your development shell (or specify your
+            # own version following these as a model):
+
             # pkgs.clang_17
             # pkgs.llvm_17
+
             # nixpkgs_old_llvm.legacyPackages.x86_64-linux.clang_16
             # nixpkgs_old_llvm.legacyPackages.x86_64-linux.llvm_16
+
             nixpkgs_mid_llvm.legacyPackages.x86_64-linux.clang_19
             nixpkgs_mid_llvm.legacyPackages.x86_64-linux.llvm_19
+
+            # Other packages to add to the development shell:
             pkgs.cabal-install
           ];
           ghcvers = system: pkg_ghcvers (nixpkgs.legacyPackages.${system});
