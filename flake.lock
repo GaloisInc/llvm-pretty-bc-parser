@@ -121,7 +121,7 @@
         "type": "github"
       }
     },
-    "nixpkgs_midllvm": {
+    "nixpkgs_mid_llvm": {
       "locked": {
         "lastModified": 1748026580,
         "narHash": "sha256-rWtXrcIzU5wm/C8F9LWvUfBGu5U5E7cFzPYT1pHIJaQ=",
@@ -137,7 +137,7 @@
         "type": "github"
       }
     },
-    "nixpkgs_oldllvm": {
+    "nixpkgs_old_llvm": {
       "locked": {
         "lastModified": 1685566663,
         "narHash": "sha256-btHN1czJ6rzteeCuE/PNrdssqYD2nIA4w48miQAFloM=",
@@ -174,8 +174,8 @@
         "levers": "levers",
         "llvm-pretty-src": "llvm-pretty-src",
         "nixpkgs": "nixpkgs",
-        "nixpkgs_midllvm": "nixpkgs_midllvm",
-        "nixpkgs_oldllvm": "nixpkgs_oldllvm",
+        "nixpkgs_mid_llvm": "nixpkgs_mid_llvm",
+        "nixpkgs_old_llvm": "nixpkgs_old_llvm",
         "tasty-sugar": "tasty-sugar"
       }
     },
