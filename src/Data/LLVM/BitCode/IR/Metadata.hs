@@ -432,7 +432,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
           addParseWarning $
           InvalidMetadataRecordSize len (MetadataRecordSizeAtLeast lb) cxt
 
-      -- Helpers for common patterns which appear below in the parsing
+      -- Helpers for common patterns which appear below in parsing metadata
       ron n = do ctx <- getContext
                  mdForwardRefOrNull ctx mt <$> parseField r n numeric
       ronl n = if length (recordFields r) <= n then pure Nothing else ron n

@@ -457,7 +457,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     v <- parseCeGep CeGepCode31 t r
     return (getTy,Typed ty v:cs)
 
-  -- [opty, flags, n x operands ... see commit 8cdecd4]
+  -- [opty, flags, n x operands ] see https://github.com/llvm/llvm-project/commit/8cdecd4
   32 -> label "CST_CODE_CE_GEP" $ do
     ty <- getTy
     v <- parseCeGep CeGepCode32 t r
@@ -494,9 +494,10 @@ data CeGepCode
   -- flags (like CeGepCode32) and then encodes the range explicitly as a bitwidth
   -- followed by the lower and upper range values.
   | CeGepCode32
-  -- ^ @CST_CODE_CE_GEP = 32@.  This changes @inbounds@ to a set of flags where
-  -- each flag has a set of rules that will result in poison if they are
-  -- violated.  Initial set of flags: inbounds, nusw, nuw
+  -- ^ @CST_CODE_CE_GEP = 32@.  This changes @inbounds@ to a set of flags 9like
+  -- CeGepCode31 but without a range) where each flag has a set of rules that
+  -- will result in poison if they are violated.  Initial set of flags: inbounds,
+  -- nusw, nuw.
   deriving Eq
 
 -- | Parse a 'ConstGEP' value. There are several variations on this theme that
