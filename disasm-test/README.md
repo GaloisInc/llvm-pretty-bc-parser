@@ -17,10 +17,10 @@ in the metadata list.
 Some of the test cases have slightly different bitcode depending on which LLVM
 version is used. These test cases will have accompanying
 `<test-case>.pre-llvm<version>.ll` files, where `pre-llvm<version>` indicates
-that this test output is used for all LLVM versions up to (but not including)
-`<version>`. Note that if a test case has multiple `pre-llvm<version>.ll`
-files, then the `<version>` that is closest to the current LLVM version
-(without going over) is picked.
+that this test output is used for all LLVM major versions up to (but not
+including) `<version>`. Note that if a test case has multiple
+`pre-llvm<version>.ll` files, then the `<version>` that is closest to the current
+LLVM version (without going over) is picked.
 
 To illustrate this with a concrete example, consider suppose we have a test
 case `foo` with the following `.ll` files
@@ -43,3 +43,19 @@ use of `SKIP_TEST` signals that this test should be skipped when using LLVMs
 older than `<version>`. Note that the test suite will not read anything past
 `SKIP_TEST`, so the rest of the file can be used to document why the test is
 skipped on that particular configuration.
+
+There are also circumstances where the LLVM syntax undergoes a significant change
+in a specific release (e.g. in LLVM 19, certain LLVM intrinsic functions were
+dropped in favor of DebugRecords, which are represented with completely new
+syntax).  To facilitate support for this, it is also possible to use the
+`post-llvm<version>` test qualifier to indicate that the associated file contains
+results that should only apply to LLVM versions *after* the specified
+`<version>`.  The selection process for `post-llvm<version>` files is similar to
+the `pre-llvm<version>` selection described above but with a lower threshold
+rather than an upper threshould.  It is also possible to use `pre-llvm<version>`
+ahd `post-llvm<version>` specifications together to be very selective about which
+files are selected for testing in association with specific LLVM versions.
+
+There are only a limited set of `pre-llvm<version>` and `post-llvm<version>`
+specifications recognized: see the `validParams` field of the `assemblyCube`
+defined in `disasm-test/Main.hs`.
