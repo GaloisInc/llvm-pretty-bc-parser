@@ -44,16 +44,6 @@ older than `<version>`. Note that the test suite will not read anything past
 `SKIP_TEST`, so the rest of the file can be used to document why the test is
 skipped on that particular configuration.
 
-There are only a limited set of `pre-llvm<version>` specifications recognized:
-
-* `pre-llvm9`
-* `pre-llvm12`
-* `pre-llvm13`
-* `pre-llvm14`
-* `pre-llvm15`
-* `pre-llvm16`
-* `pre-llvm17`
-
 There are also circumstances where the LLVM syntax undergoes a significant change
 in a specific release (e.g. in LLVM 19, certain LLVM intrinsic functions were
 dropped in favor of DebugRecords, which are represented with completely new
@@ -66,5 +56,6 @@ rather than an upper threshould.  It is also possible to use `pre-llvm<version>`
 ahd `post-llvm<version>` specifications together to be very selective about which
 files are selected for testing in association with specific LLVM versions.
 
-The following `post-llvm<version>` specifications are recognized:
-* `post-llvm18`
+There are only a limited set of `pre-llvm<version>` and `post-llvm<version>`
+specifications recognized: see the `validParams` field of the `assemblyCube`
+defined in `disasm-test/Main.hs`.
