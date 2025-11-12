@@ -408,7 +408,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     --   designates the value of the exact flag.
     --
     -- - If the instruction is floating-point, the extra field designates the
-    --   value of the fast-math flags. We currently ignore these.
+    --   value of the fast-math flags. TODO(#61): We currently ignore these.
     --
     -- The constructor returned from binop will use that value when
     -- constructing the binop.
@@ -419,10 +419,25 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
   3 -> label "FUNC_CODE_INST_CAST" $ do
     let field = parseField r
     (tv,ix) <- getValueTypePair t r 0
-    Assert.recordSizeIn r [ix + 2]
+    Assert.recordSizeIn r [ix + 2, ix + 3]
     resty   <- getType =<< field ix numeric
     cast'   <-             field (ix+1) castOp
-    result resty (cast' tv resty) d
+    -- If there's an extra field on the end of the record, it's for one of the
+    -- following:
+    --
+    -- - If the instruction is zext or uitpfp, the extra field designates the
+    --   value of the nneg flag.
+    --
+    -- - If the instruction is trunc, the extra field designates the value of
+    --   the nuw and nsw flags.
+    --
+    -- - If the instruction is fptrunc or fpext, the extra field designates the
+    --   value of the fast-math flags. TODO(#61): We currently ignore these.
+    --
+    -- The constructor returned from castOp will use that value when
+    -- constructing the cast-related operation.
+    let mbWord = numeric =<< fieldAt (ix+2) r
+    result resty (cast' mbWord tv resty) d
 
   4 -> label "FUNC_CODE_INST_GEP_OLD" (parseGEP t (Just False) r d)
 
@@ -573,7 +588,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     args      <- parsePhiArgs useRelIds t r
 
     when (even (length (recordFields r))) $ do
-      pure () -- TODO: fast math flags
+      pure () -- TODO(#61): fast math flags
 
     result ty (Phi ty args) d
 
@@ -683,7 +698,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     (tv,ix) <- getValueTypePair t r 0
     fv      <- getValue t (typedType tv) =<< field ix numeric
     (c,_)   <- getValueTypePair t r (ix+1)
-    -- XXX: we're ignoring the fast-math flags
+    -- TODO(#61): we're ignoring the fast-math flags
     result (typedType tv) (Select c tv (typedValue fv)) d
 
   30 -> label "FUNC_CODE_INST_INBOUNDS_GEP_OLD" (parseGEP t (Just True) r d)
@@ -708,7 +723,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
 
     -- pal <- field 0 numeric -- N.B. skipping param attributes
     ccinfo <- field 1 numeric
-    let ix0 = if testBit ccinfo 17 then 3 else 2 -- N.B. skipping fast-math flags
+    let ix0 = if testBit ccinfo 17 then 3 else 2 -- TODO(#61): skipping fast-math flags
     (mbFnTy, ix1) <- if testBit (ccinfo :: Word32) callExplicitTypeBit
                        then do fnTy <- getType =<< field ix0 numeric
                                return (Just fnTy, ix0+1)
@@ -962,7 +977,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     let field = parseField r
     (v,ix)  <- getValueTypePair t r 0
     mkInstr <- field ix unop
-    -- XXX: we're ignoring the fast-math flags
+    -- TODO(#61): we're ignoring the fast-math flags
     result (typedType v) (mkInstr v) d
 
   -- LLVM 9: [attr, cc, norm, transfs, fnty, fnid, args...]
@@ -1118,7 +1133,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
                   return . ICmp <=< icmpOp
 
     op <- field (ix + 1) parseOp
-    -- XXX: we're ignoring the fast-math flags
+    -- TODO(#61): we're ignoring the fast-math flags
 
     let boolTy = Integer 1
     let rty = case ty of

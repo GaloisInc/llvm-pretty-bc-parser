@@ -152,31 +152,56 @@ unopCE = unopGeneric uaop
   where
   uaop op tv = ValConstExpr (ConstUnaryArith op tv)
 
-castOpGeneric :: forall c. (ConvOp -> Maybe c) -> Match Field c
+castOpGeneric ::
+  forall c.
+  (ConvOp -> Typed PValue -> Type -> c) ->
+  Match Field (Maybe Int -> Typed PValue -> Type -> c)
 castOpGeneric op = choose <=< numeric
   where
-  choose :: Match Int c
-  choose 0  = op Trunc
-  choose 1  = op ZExt
-  choose 2  = op SExt
-  choose 3  = op FpToUi
-  choose 4  = op FpToSi
-  choose 5  = op UiToFp
-  choose 6  = op SiToFp
-  choose 7  = op FpTrunc
-  choose 8  = op FpExt
-  choose 9  = op PtrToInt
-  choose 10 = op IntToPtr
-  choose 11 = op BitCast
+  constant c = return $ \_mb tv t -> op c tv t
+
+  nuw x = testBit x 0
+  nsw x = testBit x 1
+
+  -- operations that accept the nuw and nsw flags
+  wrapFlags c = return $ \mb tv t ->
+    case mb of
+      Nothing -> op (c False False) tv t
+      Just w -> op (c (nuw w) (nsw w)) tv t
+
+  nneg x = testBit x 0
+
+  -- operations that accept the nneg flag
+  nnegFlag c = return $ \mb tv t ->
+    case mb of
+      Nothing -> op (c False) tv t
+      Just w -> op (c (nneg w)) tv t
+
+  choose :: Match Int (Maybe Int -> Typed PValue -> Type -> c)
+  choose 0  = wrapFlags Trunc
+  choose 1  = nnegFlag ZExt
+  choose 2  = constant SExt
+  choose 3  = constant FpToUi
+  choose 4  = constant FpToSi
+  choose 5  = nnegFlag UiToFp
+  choose 6  = constant SiToFp
+  choose 7  = constant FpTrunc
+  choose 8  = constant FpExt
+  choose 9  = constant PtrToInt
+  choose 10 = constant IntToPtr
+  choose 11 = constant BitCast
   choose _  = mzero
 
-castOp :: Match Field (Typed PValue -> Type -> PInstr)
-castOp = castOpGeneric (return . Conv)
+castOp :: Match Field (Maybe Int -> Typed PValue -> Type -> PInstr)
+castOp = castOpGeneric Conv
 
+-- NB: Unlike the type of 'castOp', this does not offer a @Maybe Int@ argument
+-- in its callback. This is because at present, LLVM constant expressions do not
+-- accept flags like their expression counterparts do.
 castOpCE :: Match Field (Typed PValue -> Type -> PValue)
-castOpCE = castOpGeneric op
+castOpCE i = (\p -> p Nothing) <$> castOpGeneric op i
   where
-  op c = return (\ tv t -> ValConstExpr (ConstConv c tv t))
+  op c tv t = ValConstExpr (ConstConv c tv t)
 
 -- Constants Block -------------------------------------------------------------
 
