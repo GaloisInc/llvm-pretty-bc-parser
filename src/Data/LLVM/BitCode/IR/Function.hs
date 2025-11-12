@@ -381,7 +381,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
      -- throwing a fatal assertion.
      expectRecordSizeIn rcrd szs = do
        cxt <- getContext
-       let len = length $ recordFields r
+       let len = length $ recordFields rcrd
        unless (len `elem` szs)
          $ addParseWarning
          $ InvalidMetadataRecordSize len (MetadataRecordSizeIn szs) cxt
