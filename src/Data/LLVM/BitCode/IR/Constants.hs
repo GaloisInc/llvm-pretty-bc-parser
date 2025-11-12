@@ -18,7 +18,7 @@ import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import           Control.Monad (mplus,mzero,foldM,(<=<), when)
 import           Control.Monad.ST (runST,ST)
 import           Data.Array.ST (newArray,readArray,MArray,STUArray)
-import           Data.Bits (shiftL,shiftR,testBit, Bits)
+import           Data.Bits ( complement, shiftL, shiftR, testBit, (.&.), Bits )
 import           Data.LLVM.BitCode.BitString ( pattern Bits' )
 import qualified Data.LLVM.BitCode.BitString as BitS
 import qualified Data.Map as Map
@@ -322,7 +322,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     return (getTy,Typed ty (cast' (forwardRef cxt opval t) ty):cs)
 
   -- [n x operands]
-  12 -> label "CST_CODE_CE_GEP" $ do
+  12 -> label "CST_CODE_CE_GEP_OLD" $ do
     ty <- getTy
     v <- parseCeGep CeGepCode12 t r
     return (getTy,Typed ty v:cs)
@@ -452,6 +452,20 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     tv <- parseInlineAsm InlineAsmCode30 getTy r
     return (getTy, tv:cs)
 
+  31 -> label "CST_CODE_CE_GEP_WITH_INRANGE" $ do
+    ty <- getTy
+    v <- parseCeGep CeGepCode31 t r
+    return (getTy,Typed ty v:cs)
+
+  -- [opty, flags, n x operands ] see https://github.com/llvm/llvm-project/commit/8cdecd4
+  32 -> label "CST_CODE_CE_GEP" $ do
+    ty <- getTy
+    v <- parseCeGep CeGepCode32 t r
+    return (getTy,Typed ty v:cs)
+
+  33 -> label "CST_CODE_PTRAUTH (33)" $ do
+    notImplemented
+
   code -> Assert.unknownEntity "constant record code" code
 
 parseConstantEntry _ st (abbrevDef -> Just _) =
@@ -465,7 +479,7 @@ parseConstantEntry _ _ e =
 -- minor differences in how they are parsed.
 data CeGepCode
   = CeGepCode12
-  -- ^ @CST_CODE_CE_GEP = 12@. The original.
+  -- ^ @CST_CODE_CE_GEP_OLD = 12@. The original.
   | CeGepCode20
   -- ^ @CST_CODE_CE_INBOUNDS_GEP = 20@. This adds an @inbounds@ field that
   -- indicates that the result value should be poison if it performs an
@@ -475,6 +489,15 @@ data CeGepCode
   -- that indicates that loading or storing to the result pointer will have
   -- undefined behavior if the load or store would access memory outside of the
   -- bounds of the indices marked as @inrange@.
+  | CeGepCode31
+  -- ^ @CST_CODE_CE_GEP_WITH_INRANGE = 31@.  This changes @inbounds@ to a set of
+  -- flags (like CeGepCode32) and then encodes the range explicitly as a bitwidth
+  -- followed by the lower and upper range values.
+  | CeGepCode32
+  -- ^ @CST_CODE_CE_GEP = 32@.  This changes @inbounds@ to a set of flags 9like
+  -- CeGepCode31 but without a range) where each flag has a set of rules that
+  -- will result in poison if they are violated.  Initial set of flags: inbounds,
+  -- nusw, nuw.
   deriving Eq
 
 -- | Parse a 'ConstGEP' value. There are several variations on this theme that
@@ -484,20 +507,33 @@ parseCeGep code t r = do
   let field = parseField r
 
   (mbBaseTy, ix0) <-
-    if code == CeGepCode24 || odd (length (recordFields r))
+    if not (code `elem` [ CeGepCode12
+                        , CeGepCode20
+                        ])
+       || odd (length (recordFields r))
     then do baseTy <- getType =<< field 0 numeric
             pure (Just baseTy, 1)
     else pure (Nothing, 0)
 
-  (isInbounds, mInrangeIdx, ix1) <-
+  (optFlags, mInrangeIdx, ix1) <-
     case code of
-      CeGepCode12 -> pure (False, Nothing, ix0)
-      CeGepCode20 -> pure (True, Nothing, ix0)
+      CeGepCode12 -> pure ([], Nothing, ix0)
+      CeGepCode20 -> pure ([GEP_Inbounds, GEP_NUSW], Nothing, ix0)
       CeGepCode24 -> do
         (flags :: Word64) <- parseField r ix0 numeric
         let inbounds = testBit flags 0
             inrangeIdx = flags `shiftR` 1
-        pure (inbounds, Just inrangeIdx, ix0 + 1)
+            flgArr = if inbounds
+                     then [GEP_Inbounds, GEP_NUSW]
+                     else []
+        pure (flgArr, Just (RangeIndex inrangeIdx), ix0 + 1)
+      CeGepCode31 -> do
+        flagArr <- flagsFromBits orderedGEPAttrs <$> parseField r ix0 numeric
+        (range, newidx) <- getConstantRange r (ix0 + 1)
+        pure (flagArr, Just range, newidx)
+      CeGepCode32 -> do
+        flagArr <- flagsFromBits orderedGEPAttrs <$> parseField r ix0 numeric
+        pure (flagArr, Nothing, ix0 + 1)
 
   let loop n = do
         ty   <- getType =<< field  n    numeric
@@ -516,12 +552,33 @@ parseCeGep code t r = do
       Just baseTy -> pure baseTy
       Nothing -> Assert.elimPtrTo "constant GEP not headed by pointer" (typedType ptr)
 
-  return $! ValConstExpr (ConstGEP isInbounds mInrangeIdx baseTy ptr args')
+  return $! ValConstExpr (ConstGEP optFlags mInrangeIdx baseTy ptr args')
+
+-- see llvm/lib/Bitcode/Writer/BitcodeWriter.cpp: emitConstantRange
+getConstantRange :: Record -> Int -> Parse (RangeSpec, Int)
+getConstantRange r rix = do
+  rangeWidth <- fromIntegral <$> (parseField r rix numeric :: Parse Word64)  -- emitBitWidth true
+  if rangeWidth > 64
+    then do (sizes :: Word64) <- parseField r (rix+1) numeric
+            let mask32 = fromIntegral (complement 0 :: Word32)
+                lSize = fromIntegral $ sizes .&. mask32
+                uSize = fromIntegral $ sizes `shiftR` 32
+            l <- parseWideAPInt r (rix + 2) lSize
+            u <- parseWideAPInt r (rix + 2 + lSize) uSize
+            return (Range rangeWidth l u, rix + 2 + lSize + uSize)
+    else do l <- fromIntegral <$> parseField r (rix+1) signedWord64
+            u <- fromIntegral <$> parseField r (rix+2) signedWord64
+            return (Range rangeWidth l u, rix+3)
+
+-- | Parses an arbitrary precision integer value whose bit width is > 64.  Upper
+-- bits are typically 0, so this only parses the low n 64-bit words of the value.
+parseWideAPInt :: Record -> Int -> Int -> Parse Integer
+parseWideAPInt r ix n = do
+  limbs <- parseSlice r ix n signedWord64
+  return (foldr (\l acc -> acc `shiftL` 64 + (toInteger l)) 0 limbs)
 
 parseWideInteger :: Record -> Int -> Parse Integer
-parseWideInteger r idx = do
-  limbs <- parseSlice r idx (length (recordFields r) - idx) signedWord64
-  return (foldr (\l acc -> acc `shiftL` 64 + (toInteger l)) 0 limbs)
+parseWideInteger r idx = parseWideAPInt r idx (length (recordFields r) - idx)
 
 resolveNull :: Type -> Parse PValue
 resolveNull ty = case typeNull ty of

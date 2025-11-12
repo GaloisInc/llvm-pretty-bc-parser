@@ -23,6 +23,8 @@ instance Arbitrary ICmpOp                                             where arbi
 instance Arbitrary FCmpOp                                             where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DebugLoc' lab)                   where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (ConstExpr' lab)                  where arbitrary = genericArbitrary uniform
+instance Arbitrary GEPAttr where arbitrary = genericArbitrary uniform
+instance Arbitrary RangeSpec where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DebugInfo' lab)                  where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DIImportedEntity' lab)           where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DITemplateTypeParameter' lab)    where arbitrary = genericArbitrary uniform
@@ -44,3 +46,9 @@ instance Arbitrary lab => Arbitrary (DISubrange' lab)                 where arbi
 instance Arbitrary lab => Arbitrary (DISubroutineType' lab)           where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DILabel' lab)                    where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DIArgList' lab)                  where arbitrary = genericArbitrary uniform
+instance Arbitrary lab => Arbitrary (DebugRecord' lab) where arbitrary = genericArbitrary uniform
+instance Arbitrary lab => Arbitrary (DbgRecValue' lab) where arbitrary = genericArbitrary uniform
+instance Arbitrary lab => Arbitrary (DbgRecValueSimple' lab) where arbitrary = genericArbitrary uniform
+instance Arbitrary lab => Arbitrary (DbgRecDeclare' lab) where arbitrary = genericArbitrary uniform
+instance Arbitrary lab => Arbitrary (DbgRecAssign' lab) where arbitrary = genericArbitrary uniform
+instance Arbitrary lab => Arbitrary (DbgRecLabel' lab) where arbitrary = genericArbitrary uniform

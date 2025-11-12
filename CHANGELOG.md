@@ -2,6 +2,13 @@
 
 ## next (TBA)
 
+* Updates for supporting LLVM-19:
+  * Parsing of new `DebugRecord` values.
+  * Parsing of new `GEPAttrs` flags for `GEP` instruction and constant
+    expression.
+  * Parsing for new `DICompositeType` fields added in LLVM 19.
+  * Parsing of `num_extra_inhabitants` in `DIBasicType`.
+
 ## 0.5.1.0 (October 2025)
 
 * Support parsing data layout strings that specify function pointer alignment.
