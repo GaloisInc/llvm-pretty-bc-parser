@@ -139,6 +139,8 @@
                 "15"
                 "16"
                 "17"
+                "18"
+                "19"
               ]
             );
           llvm-pretty = mkHaskell "llvm-pretty" llvm-pretty-src {};
