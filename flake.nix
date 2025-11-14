@@ -117,29 +117,45 @@
         in rec {
           default = llvm-pretty-bc-parser;
           TESTS = wrap "llvm-pretty-bc-parser-TESTS"
+            [
+              # NOTE: this is the main location which determines what LLVM
+              # versions are tested.  The default is to run each of the listed
+              # LLVM versions here in parallel.
+              #
+              # When adding a new LLVM version, it must be found in a nixpkgs
+              # version.  The main nixpkgs used here is nixpkgs-unstable, so a
+              # "$ nix flake lock update nixpkgs" should be sufficient to get
+              # newer LLVM versions.  However, nixpkgs-unstable tends to drop
+              # older versions, so the above might result in an older version
+              # not being found.  To fix this, add a new nixpkgs input at the
+              # top of this file with a nixpkgs release tag that includes the
+              # desired version, and then add that nixpkgs to the 'nixpkg_list'
+              # above.
+              #
+              # Also note that this is split into multiple subranges here.  This
+              # is because testing over 8 LLVM versions at a time causes Github
+              # ubuntu runners (circa 2025) to run out of disk space, so there
+              # are multiple sub-ranges that can be explicitly invoked by the CI
+              # in separate jobs to avoid this.
+              TESTS_10-15
+              TESTS_16-19
+            ];
+          TESTS_10-15 = wrap "llvm-pretty-bc-parser-TESTS_10-15"
             (builtins.map
               (llvm-pretty-bc-parser-test llvm-pretty-bc-parser)
               [
-                # NOTE: this is the main location which determines what LLVM
-                # versions are tested.  The default is to run each of the listed
-                # LLVM versions here in parallel.
-                #
-                # When adding a new LLVM version, it must be found in a nixpkgs
-                # version.  The main nixpkgs used here is nixpkgs-unstable, so a
-                # "$ nix flake lock update nixpkgs" should be sufficient to get
-                # newer LLVM versions.  However, nixpkgs-unstable tends to drop
-                # older versions, so the above might result in an older version
-                # not being found.  To fix this, add a new nixpkgs input at the
-                # top of this file with a nixpkgs release tag that includes the
-                # desired version, and then add that nixpkgs to the 'nixpkg_list'
-                # above.
-
                 "10"
                 "11"
                 "12"
                 "13"
                 "14"
                 "15"
+              ]
+            );
+          TESTS_16-19 = wrap "llvm-pretty-bc-parser-TESTS_16-19"
+            (builtins.map
+              (llvm-pretty-bc-parser-test llvm-pretty-bc-parser)
+              [
                 "16"
                 "17"
                 "18"
