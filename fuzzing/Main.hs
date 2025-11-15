@@ -242,14 +242,16 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   let allResults' = Map.unions (concat resultMaps)
       allResults | optCollapse opts = collapseResults allResults'
                  | otherwise        = allResults'
-  forM_ (Map.toList allResults) $ \((clangExe, _, flags), results) -> do
-    let (_passes, fails) = partition isPass results
-    when (not (null fails)) $ do
-      putStrLn $ "[" ++ clangExe ++ " " ++ flags ++ "] " ++
-        show (length fails) ++ " failing cases identified:"
-      forM_ fails $ \case
-        TestFail st s _ _ -> putStrLn ("[" ++ show st ++ "] " ++ show s)
-        _ -> error "non-fail cases in fails"
+  hadFails <- fmap or
+    $ forM (Map.toList allResults) $ \((clangExe, _, flags), results) ->
+        let (_passes, fails) = partition isPass results
+        in do unless (null fails)
+                $ do putStrLn $ "[" ++ clangExe ++ " " ++ flags ++ "] " ++
+                       show (length fails) ++ " failing cases identified:"
+                     forM_ fails $ \case
+                       TestFail st s _ _ -> putStrLn ("[" ++ show st ++ "] " ++ show s)
+                       _ -> error "non-fail cases in fails"
+              return $ not (null fails)
   case optSaveTests opts of
     Nothing -> return ()
     Just root -> do
@@ -279,6 +281,8 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
     Just f -> do
       xml <- mkJUnitXml allResults
       writeFile f (ppTopElement xml)
+  when hadFails exitFailure
+  exitSuccess
 
 reduce :: TestResult -> Clang -> Options -> FilePath -> IO ()
 reduce (TestFail st _ TestSrc{..} err) (clangExe, includeDirs, flags) opts clangRoot = do
