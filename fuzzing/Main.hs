@@ -49,6 +49,14 @@ data Options = Options {
     -- ^ Specific seeds to use in fuzzing; overrides 'optNumTests'
   , optSaveTests :: Maybe FilePath
     -- ^ Location to save failed tests
+  , optDisasm :: FilePath
+    -- ^ Command to run llvm-disasm.  Default is "llvm-disasm" but can contain
+    -- multiple words (e.g. "cabal run llvm-disasm").
+    --
+    -- Note that using "cabal run" is not recommended as it is slower and
+    -- parallel invocations of "cabal run" can interfere with each other and
+    -- cause spurious errors. Instead, do a "cabal build llvm-disasm" and then
+    -- run $fuzz-llvm-disasm --disasm=$(cabal list-bin llvm-disasm) ...$
   , optClangs :: [FilePath]
     -- ^ Clangs to use with the fuzzer
   , optClangFlags :: [String]
@@ -80,6 +88,7 @@ defaultOptions  = Options {
     optNumTests     = 100
   , optSeeds        = Nothing
   , optSaveTests    = Nothing
+  , optDisasm       = "llvm-disasm"
   , optClangs       = ["clang"]
   , optClangFlags   = ["-O -g -w"]
   , optIncludeDirs  = []
@@ -102,6 +111,8 @@ options  =
     "specific Csmith seed to use; overrides -n"
   , Option "o" ["output"] (ReqArg setSaveTests "DIRECTORY")
     "directory to save failed tests"
+  , Option "d" ["disasm"] (ReqArg setDisasm "STRING/FILEPATH")
+    "specify the filepath or command words to run llvm-disasm"
   , Option "c" ["clang"] (ReqArg addClang "CLANG")
     "specify clang executables to use, e.g., `-c clang-3.8 -c clang-3.9'"
   , Option ""  ["clang-flags"] (ReqArg addClangFlags "ARGS") $
@@ -149,6 +160,9 @@ addSeed str = Endo $ \opt ->
 
 setSaveTests :: String -> Endo Options
 setSaveTests str = Endo (\opt -> opt { optSaveTests = Just str })
+
+setDisasm :: String -> Endo Options
+setDisasm str = Endo $ \opt -> opt { optDisasm = str }
 
 addClang :: String -> Endo Options
 addClang str = Endo $ \opt ->
@@ -333,20 +347,17 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, includeDirs, flags) opts clang
           clangExe, "-I", csmithPath, flags, "-c"
         , "-emit-llvm", baseName ++ "-reduced.c", "-o", bcFile
         ] ++ includeOpts
-      buildLl = unwords $
-          [ "llvm-disasm" ] ++
-          llvmVersionFlags ++
-          [ bcFile, ">", llFile ]
+      buildLl = optDisasm opts
+                <> (unwords $ llvmVersionFlags ++ [ bcFile, ">", llFile ])
       copyBc = unwords [
           "cp", bcFile, absClangRoot </> bcFile
         ]
       script DisasmStage = unlines $ scriptHeader ++ [
           buildBc
         , copyBc
-        , unwords $
-            [ "llvm-disasm" ] ++
-            llvmVersionFlags ++
-            [ bcFile, "2>&1 |" , "grep", show (fromMaybe "" (grepPat st)) ]
+        , optDisasm opts
+          <> (unwords $ llvmVersionFlags ++
+              [ bcFile, "2>&1 |" , "grep", show (fromMaybe "" (grepPat st)) ])
         ]
       script AsStage = unlines $ scriptHeader ++ [
           buildBc
@@ -472,7 +483,11 @@ runTest tmpDir (clangExe, includeDirs, flags) seed opts = X.handle return $ do
   ---- Disassemble ----
   let disasmArgs = llvmVersionFlags ++ [ tmpDir </> bcFile ]
   (ec, out, err) <-
-    readProcessWithExitCode "llvm-disasm" disasmArgs ""
+    let args = words $ optDisasm opts
+        cmd = case args of
+                [] -> "llvm-disasm"
+                (c:_) -> c
+    in readProcessWithExitCode cmd (drop 1 args <> disasmArgs) ""
   case ec of
     ExitFailure c -> do
       putStrLn "[DISASM ERROR]"
