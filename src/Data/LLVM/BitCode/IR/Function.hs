@@ -757,6 +757,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     col     <- field 1 numeric
     scopeId <- field 2 numeric
     iaId    <- field 3 numeric
+    implicit <- if length (recordFields r) <= 4
+                then pure False
+                else field 4 nonzero
 
     scope <- if scopeId > 0
                 then getMetadata (scopeId - 1)
@@ -769,7 +772,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
           , dlCol   = col
           , dlScope = typedValue scope
           , dlIA    = typedValue `fmap` ia
-          , dlImplicit = False
+          , dlImplicit = implicit
           }
     setLastLoc loc
     updateLastStmt (extendMetadata ("dbg", ValMdLoc loc)) d
