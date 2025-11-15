@@ -14,8 +14,8 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid (mconcat, Endo(..))
-import Data.Time
-  (defaultTimeLocale, formatTime, getZonedTime, iso8601DateFormat)
+import Data.Time ( getZonedTime )
+import Data.Time.Format.ISO8601 ( iso8601Show )
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
 import GHC.Generics (Generic)
@@ -537,10 +537,7 @@ mkJUnitXml :: Map Clang [TestResult] -> IO Element
 mkJUnitXml allResults = do
   hostname <- readProcess "hostname" [] ""
   now <- getZonedTime
-  let nowFmt = formatTime
-                 defaultTimeLocale
-                 (iso8601DateFormat (Just "%H:%M:%S"))
-                 now
+  let nowFmt = iso8601Show now
       testsuites = map (testsuite hostname nowFmt) (Map.toList allResults)
   return $ unode "testsuites" testsuites
   where
