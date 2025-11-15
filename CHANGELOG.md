@@ -18,6 +18,8 @@
     respectively.
 * Support parsing `icmp` instructions that use the `samesign` flag (introduced
   in LLVM 20), indicating that the arguments must have the same sign.
+* Support parsing `atomGroup` and `atomRank` fields in `DebugLoc` values
+  (introduced in LLVM 21).
 
 ## 0.5.1.0 (October 2025)
 

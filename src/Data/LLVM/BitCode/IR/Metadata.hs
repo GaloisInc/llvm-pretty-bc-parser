@@ -502,6 +502,12 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       dlImplicit <- if length (recordFields r) <= 5
                     then pure False
                     else parseField r 5 nonzero
+      dlAtomGroup <- if length (recordFields r) <= 6
+                     then pure 0
+                     else field 6 numeric
+      dlAtomRank <- if length (recordFields r) <= 7
+                    then pure 0
+                    else field 7 numeric
       let loc = DebugLoc {..}
       return $! updateMetadataTable (addLoc isDistinct loc) pm
 

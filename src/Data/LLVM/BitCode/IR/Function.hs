@@ -760,6 +760,12 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     implicit <- if length (recordFields r) <= 4
                 then pure False
                 else field 4 nonzero
+    atomGroup <- if length (recordFields r) <= 5
+                 then pure 0
+                 else field 5 numeric
+    atomRank <- if length (recordFields r) <= 6
+                then pure 0
+                else field 6 numeric
 
     scope <- if scopeId > 0
                 then getMetadata (scopeId - 1)
@@ -773,6 +779,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
           , dlScope = typedValue scope
           , dlIA    = typedValue `fmap` ia
           , dlImplicit = implicit
+          , dlAtomGroup = atomGroup
+          , dlAtomRank = atomRank
           }
     setLastLoc loc
     updateLastStmt (extendMetadata ("dbg", ValMdLoc loc)) d
