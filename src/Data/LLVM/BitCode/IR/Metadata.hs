@@ -1231,6 +1231,8 @@ parseDebugLoc idx resolveScope resolveIA r = do
   dlScope <- resolveScope =<< field 2 numeric
   dlIA <- resolveIA =<< field 3 numeric
   dlImplicit <- fieldDef False 4 nonzero
+  dlAtomGroup <- fieldDef 0 5 numeric
+  dlAtomRank <- fieldDef 0 6 numeric
   return DebugLoc {..}
 
 
