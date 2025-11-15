@@ -21,8 +21,9 @@ import           Control.Monad.Trans.State
 import           Data.Bifunctor (first)
 import qualified Data.ByteString.Lazy as L
 import           Data.Char (ord,isLetter,isSpace,chr)
+import           Data.Function ( on )
 import           Data.Generics (everywhere, mkT) -- SYB
-import           Data.List ( find, isInfixOf, isPrefixOf, isSuffixOf, nub, sort )
+import           Data.List ( find, isInfixOf, isPrefixOf, isSuffixOf, nub, sort , groupBy, sortBy )
 import           Data.Map ( (!), (!?) )
 import qualified Data.Map as Map
 import           Data.Maybe ( fromMaybe )
@@ -416,26 +417,72 @@ assemblyCube rootPath llvmver = TS.mkCUBE
       -- (e.g. remove: root=poison.ll with exp=poison.pre-llvm12.ll).
       let rootExpSame s e = TS.rootFile s == TS.expectedFile e
           addExpFilter s = s { TS.expected = filter (rootExpSame s) $ TS.expected s }
-      in fmap (fmap addExpFilter) . rangeMatch llvmver cb
+      in rangeMatch llvmver cb . fmap addExpFilter
   }
 
 
+-- | This function is used to ensure that the ranges of the various Sweet
+-- Expected files (e.g. pre-llvmX, post-llvmX) match the current LLVM tooling
+-- version, filtering out all Sweets and Expecteds that do not match.
 rangeMatch :: MonadIO m => VersionCheck -> TS.CUBE -> [TS.Sweets] -> m [TS.Sweets]
 rangeMatch llvmver cb swts = do
   -- Perform ranged-matching of the llvm-range parameter against the version of
   -- llvm (reported by llvm-as) to filter the tasty-sugar expectations.  Note
   -- that there is a built-in expectation here that there is only one llvm
   -- version available to the test.
-  ts1 <- TS.rangedParamAdjuster "llvm-range"
-    (readMaybe . drop (length ("pre-llvm" :: String)))
-    (<)
-    (vcVersioning llvmver ^? (_Right . major))
-    cb swts
-  TS.rangedParamAdjuster "llvm-range"
-    (readMaybe . drop (length ("post-llvm" :: String)))
-    (>)
-    (vcVersioning llvmver ^? (_Right . major))
-    cb ts1
+  let llvmMajorVer = vcVersioning llvmver ^? (_Right . major)
+  let getPreVer = readMaybe . drop (length ("pre-llvm" :: String))
+  let getPostVer = readMaybe . drop (length ("post-llvm" :: String))
+  -- Filter any expected entries for each sweet where the expected needs an
+  -- /earlier/ version of LLVM than the available version of the LLVM tools.
+  ts1 <- TS.rangedParamAdjuster "llvm-range" getPreVer (<) llvmMajorVer cb swts
+  -- Filter any expected entries for each sweet where the expected needs a
+  -- /later/ version of LLVM than the available version of the LLVM tools.
+  ts2 <- TS.rangedParamAdjuster "llvm-range" getPostVer (>) llvmMajorVer cb ts1
+  -- Only expect a single expected file for a particular LLVM range.  For
+  -- example, given two files: foo.pre-llvm18.ll and foo.pre-llvm15.ll, then if
+  -- the available LLVM tool is version 16, use the former, and if the available
+  -- LLVM tool is version 10, then use the latter.  In other words, ranges
+  -- occlude each other and use the strictest range match.
+  let tightestLLVMMatch :: TS.Sweets -> TS.Sweets -> Ordering
+      tightestLLVMMatch a b =
+        let getLLVMRange s = case TS.expected s of
+                               -- Just expect one, and empties should be
+                               -- filtered, but make this total.
+                               (e:_) -> lookup "llvm-range" $ TS.expParamsMatch e
+                               [] -> Nothing
+            invert = \case
+              LT -> GT
+              EQ -> EQ
+              GT -> LT
+            better s1 s2 =
+              -- if both pre-llvm, lower is better (sort is lowest-to-highest),
+              -- and if both post-llvm, higher is better; if both match, either
+              -- should work, so arbitrarily just compare the strings for a bias.
+              if "pre-llvm" `isPrefixOf` s1
+              then if "pre-llvm" `isPrefixOf` s2
+                   then (compare `on` getPreVer) s1 s2
+                   else compare s1 s2 -- arbitrary preference with consistent bias
+              else if "post-llvm" `isPrefixOf` s1
+                   then if "post-llvm" `isPrefixOf` s2
+                        then invert $ (compare `on` getPostVer) s1 s2
+                        else compare s1 s2 -- arbitrary preference with consistent bias
+                   else compare s1 s2 -- arbitrary preference with consistent bias
+        in case (getLLVMRange a, getLLVMRange b) of
+             (Just (TS.Explicit as), Just (TS.Explicit bs)) -> better as bs
+             (Just (TS.Assumed as), Just (TS.Assumed bs)) -> better as bs
+             (Just (TS.Explicit _), _) -> LT
+             (_, Just (TS.Explicit _)) -> GT
+             (al, bl) -> compare al bl
+  let selectFromGroup :: [TS.Sweets] -> [TS.Sweets]
+      selectFromGroup = take 1 -- only the first element of each group
+                        . sortBy tightestLLVMMatch -- preferred ordering
+                        -- remove any group member with no targets
+                        . filter (not . null . TS.expected)
+  let ts3 = concat
+            $ fmap selectFromGroup
+            $ groupBy ((==) `on` TS.rootBaseName) ts2 -- group by base name
+  return ts3
 
 
 -- | Returns true if this particular test should be skipped, which is signalled
