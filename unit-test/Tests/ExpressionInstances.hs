@@ -30,7 +30,7 @@ instance Arbitrary lab => Arbitrary (DIImportedEntity' lab)           where arbi
 instance Arbitrary lab => Arbitrary (DITemplateTypeParameter' lab)    where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DITemplateValueParameter' lab)   where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DINameSpace' lab)                where arbitrary = genericArbitrary uniform
-instance Arbitrary DIBasicType                                        where arbitrary = genericArbitrary uniform
+instance Arbitrary lab => Arbitrary (DIBasicType' lab)                where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DICompileUnit' lab)              where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DICompositeType' lab)            where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DIDerivedType' lab)              where arbitrary = genericArbitrary uniform

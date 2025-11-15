@@ -54,11 +54,11 @@
     "llvm-pretty-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1763576665,
-        "narHash": "sha256-YcoMudjwpjvgYNFutRWUDo03AyUaF5e2av4j3BKdJaA=",
+        "lastModified": 1763578621,
+        "narHash": "sha256-/BVqtHGvuIs0lQF6T3B4L0SYGt/bpY4rB3soCPtbuEw=",
         "owner": "GaloisInc",
         "repo": "llvm-pretty",
-        "rev": "50cfd7a0b28be77b1363083d708444fe0ef4cdb3",
+        "rev": "b4975b00375acb3f047ca176d4381508fd4594fc",
         "type": "github"
       },
       "original": {

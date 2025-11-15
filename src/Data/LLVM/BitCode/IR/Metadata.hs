@@ -413,6 +413,20 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
                  mdForwardRefOrNull ctx mt <$> parseField r n numeric
       ronl n = if length (recordFields r) <= n then pure Nothing else ron n
 
+      -- If the @isMetadata@ argument is 'True', then parse a metadata value
+      -- (which may be null). Otherwise, parse a 64-bit integer and return it as
+      -- a 'ValMdValue'. This is used for parsing size and offset fields in
+      -- type-related debug nodes, which can be non-constant expressions in
+      -- LLVM 21 or later.
+      mdOrConstant :: Bool -> Int -> Parse (Maybe PValMd)
+      mdOrConstant isMetadata n
+        | isMetadata
+        = ron n
+        | otherwise
+        = fmap
+            (Just . ValMdValue . Typed (PrimType (Integer 64)) . ValInteger)
+            (parseField r n numeric)
+
   -- Note: the parsing cases below use a Monadic coding style, as opposed to an
   -- Applicative style (as was originally used) for performance reasons:
   -- Applicative record construction has quadratic size and corresponding
@@ -560,10 +574,12 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     15 -> label "METADATA_BASIC_TYPE" $ do
       assertRecordSizeBetween r 6 8
       ctx        <- getContext
-      isDistinct <- parseField r 0 nonzero
+      flags      <- parseField r 0 numeric
+      let isDistinct     = testBit (flags :: Int) 0
+          sizeIsMetadata = testBit (flags :: Int) 1
       dibtTag <- parseField r 1 numeric
       dibtName <- mdString ctx pm <$> parseField r 2 numeric
-      dibtSize <- parseField r 3 numeric
+      dibtSize <- mdOrConstant sizeIsMetadata 3
       dibtAlign <- parseField r 4 numeric
       dibtEncoding <- parseField r 5 numeric
       dibtFlags <- if length (recordFields r) <= 6
@@ -594,16 +610,18 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       -- See Note [Apple LLVM].
       assertRecordSizeBetween r 12 15
       ctx        <- getContext
-      isDistinct <- parseField r 0 nonzero
+      flags      <- parseField r 0 numeric
+      let isDistinct     = testBit (flags :: Int) 0
+          sizeIsMetadata = testBit (flags :: Int) 1
       didtTag <- parseField r 1 numeric
       didtName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
       didtFile <- ron 3
       didtLine <- parseField r 4 numeric
       didtScope <- ron 5
       didtBaseType <- ron 6
-      didtSize <- parseField r 7 numeric
+      didtSize <- mdOrConstant sizeIsMetadata 7
       didtAlign <- parseField r 8 numeric
-      didtOffset <- parseField r 9 numeric
+      didtOffset <- mdOrConstant sizeIsMetadata 9
       didtFlags <- parseField r 10 numeric
       didtExtraData <- ron 11
       didtDwarfAddressSpace <-
@@ -629,16 +647,19 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     18 -> label "METADATA_COMPOSITE_TYPE" $ do
       assertRecordSizeBetween r 16 26
       ctx        <- getContext
-      isDistinct <- parseField r 0 nonzero
+      flags      <- parseField r 0 numeric
+      let isDistinct = testBit (flags :: Int) 0
+          -- isNotUsedInTypeRef = testBit (flags :: Int) 1
+          sizeIsMetadata = testBit (flags :: Int) 2
       dictTag <- parseField r 1 numeric
       dictName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
       dictFile <- ron 3
       dictLine <- parseField r 4 numeric
       dictScope <- ron 5
       dictBaseType <- ron 6
-      dictSize <- parseField r 7 numeric
+      dictSize <- mdOrConstant sizeIsMetadata 7
       dictAlign <- parseField r 8 numeric
-      dictOffset <- parseField r 9 numeric
+      dictOffset <- mdOrConstant sizeIsMetadata 9
       dictFlags <- parseField r 10 numeric
       dictElements <- ron 11
       dictRuntimeLang <- parseField r 12 numeric
