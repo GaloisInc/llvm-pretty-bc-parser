@@ -436,12 +436,21 @@ runTest tmpDir (clangExe, includeDirs, flags) seed opts = X.handle return $ do
       srcFile  = baseFile <.> "c"
       bcFile   = baseFile <.> "bc"
       llFile   = baseFile <.> "ll"
-      llvmVersionFlags =
-        case stripPrefix "clang-" clangExe of
-          Nothing -> []
-          Just ver -> [ "--llvm-version=" ++ ver ]
       includeOpts = concatMap (\dir -> ["-I", dir]) includeDirs
-  putStrLn $ "Testing bitcode file " ++ bcFile
+  llvmVersionFlags <-
+    case stripPrefix "clang-" clangExe of
+      Nothing ->
+        do o <- readProcess "clang" [ "--version" ] ""
+           case lines o of
+             (vline:_) -> case reverse $ words vline of
+                            (ver:_) -> let v = takeWhile (/= '.') ver
+                                       in return [ "--llvm-version=" <> v ]
+                            [] -> do putStrLn $ "Warning: clang --version output line has no words"
+                                     return []
+             _ -> do putStrLn $ "Warning: clang --version output blank"
+                     return []
+      Just ver -> return [ "--llvm-version=" ++ ver ]
+  putStr $ "Testing bitcode file " ++ bcFile ++ " with " ++ show llvmVersionFlags ++ " ... "
   ---- Run csmith ----
   csmithPath <- getCsmithPath opts
   callProcess "csmith" [
