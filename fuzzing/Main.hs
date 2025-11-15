@@ -228,6 +228,17 @@ printUsage errs =
      let banner = "Usage: " ++ prog ++ " [OPTIONS]"
      putStrLn (usageInfo (unlines (errs ++ [banner])) options)
 
+-- | The overall process for testing here is to run a number of tests
+--
+--     1. Uses csmith to generate a random C program from a seed
+--     2. Compile the program with clang into a bitcode file
+--     3. Run our llvm-disasm to disassemble the bitcode file to a .ll file
+--     4. Run clang on the .ll file to create an "ours" executable
+--     5. Run clang on the .bc file to create a "golden" executable
+--     6. Run both executables with a timeout on each of 10 seconds
+--     7. Compare the stdout, stderr, and exit codes to ensure both
+--        executables behave identically.
+--
 main :: IO ()
 main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   opts <- getOptions
