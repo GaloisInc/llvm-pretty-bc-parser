@@ -13,7 +13,7 @@ import Data.List (isPrefixOf, partition, stripPrefix)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
-import Data.Monoid (mconcat, Endo(..))
+import Data.Monoid (Endo(..))
 import Data.Time ( getZonedTime )
 import Data.Time.Format.ISO8601 ( iso8601Show )
 import Data.Typeable (Typeable)
@@ -307,7 +307,7 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, includeDirs, flags) opts clang
           -- waste our time
           [] -> Nothing
           -- drop the tab for the pattern
-          first:_ -> Just (tail first)
+          first:_ -> Just (drop 1 first)
       grepPat AsStage =
         -- check the first line of the clang error for "error:"
         case (lines err) of
