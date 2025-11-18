@@ -98,19 +98,21 @@ When updating the supported GHC versions, remember to update:
 - [The Cabal file](../llvm-pretty-bc-parser.cabal)'s `Tested-with` field
 - [The Nix flake](../flake.nix)
 
-  Run `nix flake update` (installing [`nix`](https://nixos.org) first if
-  necessary) which will update the `flake.lock` file in the top level directory.
+  Run `nix flake update [input-pkg ...]` (installing [`nix`](https://nixos.org)
+  first if necessary) which will update the `flake.lock` file in the top level
+  directory.  If no `input-pkg` is specified, *all* inputs are updated.
   Optionally run `nix build ./#TESTS` to run the nix-based tests locally.  Then
   commit the updated `flake.lock` file.
 
   Newer GHC versions are automatically available to the nix build, but may
-  require updating the flake lockfile as described above to become visible.  To
-  add new GHC versions to the `nix` builds, see the `ghc-version` list in the
-  `nix-ci.yml` file.
+  require updating the flake lockfile as described above to become visible.
 
-  Sometimes GHC versions are deprecated and removed from the latest `nix` builds.
-  When this occurs, add a `nixpkgs` override in the `nix-ci.yml` file for the
-  `build_old_GHC` job.
+    1. To add new GHC versions to the `nix` builds, see the `ghc-version` list in
+       the `nix-ci.yml` file.
+
+    2. Sometimes GHC versions are deprecated and removed from the latest `nix`
+       builds.  When this occurs, add a `nixpkgs` override in the `nix-ci.yml`
+       file for the `build_old_GHC` job.
 
   The `flake.nix` file also specifies the range of LLVM versions that will be
   tested.  See the comments in that file for updating this version range,
