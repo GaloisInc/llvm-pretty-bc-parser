@@ -451,10 +451,6 @@ rangeMatch llvmver cb swts = do
                                -- filtered, but make this total.
                                (e:_) -> lookup "llvm-range" $ TS.expParamsMatch e
                                [] -> Nothing
-            invert = \case
-              LT -> GT
-              EQ -> EQ
-              GT -> LT
             better s1 s2 =
               -- if both pre-llvm, lower is better (sort is lowest-to-highest),
               -- and if both post-llvm, higher is better; if both match, either
@@ -465,7 +461,7 @@ rangeMatch llvmver cb swts = do
                    else compare s1 s2 -- arbitrary preference with consistent bias
               else if "post-llvm" `isPrefixOf` s1
                    then if "post-llvm" `isPrefixOf` s2
-                        then invert $ (compare `on` getPostVer) s1 s2
+                        then (compare `on` getPostVer) s2 s1
                         else compare s1 s2 -- arbitrary preference with consistent bias
                    else compare s1 s2 -- arbitrary preference with consistent bias
         in case (getLLVMRange a, getLLVMRange b) of
@@ -479,10 +475,10 @@ rangeMatch llvmver cb swts = do
                         . sortBy tightestLLVMMatch -- preferred ordering
                         -- remove any group member with no targets
                         . filter (not . null . TS.expected)
-  let ts3 = concat
-            $ fmap selectFromGroup
-            $ groupBy ((==) `on` TS.rootBaseName) ts2 -- group by base name
-  return ts3
+  return
+    $ concat
+    $ fmap selectFromGroup
+    $ groupBy ((==) `on` TS.rootBaseName) ts2 -- group by base name
 
 
 -- | Returns true if this particular test should be skipped, which is signalled
