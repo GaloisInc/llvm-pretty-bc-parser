@@ -466,11 +466,25 @@ runTest tmpDir (clangExe, includeDirs, flags) seed opts = X.handle return $ do
         do (ec,o,_err) <- readProcessWithExitCode "clang" [ "--version" ] ""
            if ec == ExitSuccess
              then case lines o of
-                    (vline:_) -> case reverse $ words vline of
-                                   (ver:_) -> let v = takeWhile (/= '.') ver
-                                              in return [ "--llvm-version=" <> v ]
-                                   [] -> do putStrLn $ "Warning: clang --version output line has no words"
-                                            return []
+                    -- Expecting something like:
+                    --
+                    --   clang version 11.1.0 (....)
+                    --   Target: x86_64-unknown-linux-gnu
+                    --   Thread model: posix
+                    --   InstalledDir: ...
+                    --
+                    -- where the (....) on the first line may or may not be
+                    -- present and frequently specifies tag information or github
+                    -- commit info.
+                    (vline:_) ->   -- First line
+                      case drop 2 $ words vline of
+                        (ver:_) ->  -- Third word
+                          do let v = takeWhile (/= '.') ver
+                             -- putStrLn $ "Determined LLVM version " <> v <> " from clang --version output:"
+                             -- putStrLn o
+                             return [ "--llvm-version=" <> v ]
+                        [] -> do putStrLn $ "Warning: clang --version output line has no words"
+                                 return []
                     _ -> do putStrLn $ "Warning: clang --version output blank"
                             return []
              else do putStrLn $ "Warning: no clang found to determine LLVM version"
