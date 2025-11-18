@@ -19,6 +19,9 @@ module Data.LLVM.BitCode.IR.Metadata (
   , PFnMdAttachments
   , PKindMd
   , PGlobalAttachments
+  , assertRecordSizeAtLeast
+  , assertRecordSizeBetween
+  , assertRecordSizeIn
   ) where
 
 import           Data.LLVM.BitCode.Bitstream
@@ -403,37 +406,7 @@ parseMetadataBlock globals vt es = label "METADATA_BLOCK" $ do
 parseMetadataEntry :: ValueTable -> MetadataTable -> PartialMetadata -> Entry
                    -> Parse PartialMetadata
 parseMetadataEntry vt mt pm (fromEntry -> Just r) =
-  let -- The assert* functions below check if a metadata record size matches
-      -- what is expected, and if not, emit a warning.
-      --
-      -- In the past, we made these fatal errors instead of warnings, but we
-      -- downgraded them to a warning due to how frequently LLVM adds new
-      -- metadata record fields. Moreover, it is usually not a serious problem
-      -- for downstream users that llvm-pretty-bc-parser lacks newer metadata
-      -- fields, since they usually do not affect the semantics of the overall
-      -- LLVM bitcode.
-      assertRecordSizeBetween lb ub = do
-        cxt <- getContext
-        let len = length (recordFields r)
-        when (len < lb || ub < len) $
-          addParseWarning $
-          InvalidMetadataRecordSize len (MetadataRecordSizeBetween lb ub) cxt
-
-      assertRecordSizeIn ns = do
-        cxt <- getContext
-        let len = length (recordFields r)
-        when (not (len `elem` ns)) $
-          addParseWarning $
-          InvalidMetadataRecordSize len (MetadataRecordSizeIn ns) cxt
-
-      assertRecordSizeAtLeast lb = do
-        cxt <- getContext
-        let len = length (recordFields r)
-        when (len < lb) $
-          addParseWarning $
-          InvalidMetadataRecordSize len (MetadataRecordSizeAtLeast lb) cxt
-
-      -- Helpers for common patterns which appear below in parsing metadata
+  let -- Helpers for common patterns which appear below in parsing metadata
       ron n = do ctx <- getContext
                  mdForwardRefOrNull ctx mt <$> parseField r n numeric
       ronl n = if length (recordFields r) <= n then pure Nothing else ron n
@@ -456,7 +429,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
     -- [type num, value num]
     2 -> label "METADATA_VALUE" $ do
-      assertRecordSizeIn [2]
+      assertRecordSizeIn r [2]
       let field = parseField r
       ty  <- getType =<< field 0 numeric
       when (ty == PrimType Metadata || ty == PrimType Void)
@@ -533,7 +506,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       fail "not yet implemented"
 
     13 -> label "METADATA_SUBRANGE" $ do
-      assertRecordSizeIn [3, 5]
+      assertRecordSizeIn r [3, 5]
       field0 <- parseField r 0 unsigned
       let isDistinct = field0 .&. 0 == 1
       -- The format field determines what set of fields are contained in this
@@ -566,7 +539,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
     -- [isBigInt|isUnsigned|distinct, value, name]
     14 -> label "METADATA_ENUMERATOR" $ do
-      assertRecordSizeAtLeast 3
+      assertRecordSizeAtLeast r 3
       ctx   <- getContext
       flags <- parseField r 0 numeric
       let isDistinct = testBit (flags :: Int) 0
@@ -583,7 +556,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return $! updateMetadataTable (addDebugInfo isDistinct diEnum) pm
 
     15 -> label "METADATA_BASIC_TYPE" $ do
-      assertRecordSizeBetween 6 8
+      assertRecordSizeBetween r 6 8
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       dibtTag <- parseField r 1 numeric
@@ -604,7 +577,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
     -- [distinct, filename, directory]
     16 -> label "METADATA_FILE" $ do
-      assertRecordSizeIn [3, 5]
+      assertRecordSizeIn r [3, 5]
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       difFilename <- mdStringOrEmpty ctx pm <$> parseField r 1 numeric
@@ -617,7 +590,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       -- While upstream LLVM currently imposes a maximum of 14 records per
       -- entry, we raise this to 15 for the sake of parsing Apple LLVM.
       -- See Note [Apple LLVM].
-      assertRecordSizeBetween 12 15
+      assertRecordSizeBetween r 12 15
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       didtTag <- parseField r 1 numeric
@@ -652,7 +625,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoDerivedType didt)) pm
 
     18 -> label "METADATA_COMPOSITE_TYPE" $ do
-      assertRecordSizeBetween 16 26
+      assertRecordSizeBetween r 16 26
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
       dictTag <- parseField r 1 numeric
@@ -692,7 +665,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoCompositeType dict)) pm
 
     19 -> label "METADATA_SUBROUTINE_TYPE" $ do
-      assertRecordSizeBetween 3 4
+      assertRecordSizeBetween r 3 4
       isDistinct <- parseField r 0 nonzero
       distFlags <- parseField r 1 numeric
       distTypeArray <- ron 2
@@ -701,7 +674,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoSubroutineType dist)) pm
 
     20 -> label "METADATA_COMPILE_UNIT" $ do
-      assertRecordSizeBetween 14 22
+      assertRecordSizeBetween r 14 22
       let recordSize = length (recordFields r)
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
@@ -751,8 +724,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       -- this one is a bit funky:
       -- https://github.com/llvm/llvm-project/blob/release/10.x/llvm/lib/Bitcode/Reader/MetadataLoader.cpp#L1486
 
-      assertRecordSizeBetween 18 21
-
+      assertRecordSizeBetween r 18 21
       -- A "version" is encoded in the high-order bits of the isDistinct field.
       version <- parseField r 0 numeric
 
@@ -834,7 +806,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
       -- Some additional sanity checking
       when (not hasSPFlags && hasUnit)
-           (assertRecordSizeBetween 19 21)
+           (assertRecordSizeBetween r 19 21)
 
       when (hasSPFlags && not hasUnit)
            (fail "DISubprogram record has subprogram flags, but does not have unit.  Invalid record.")
@@ -875,7 +847,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoSubprogram disp)) pm
 
     22 -> label "METADATA_LEXICAL_BLOCK" $ do
-      assertRecordSizeIn [5]
+      assertRecordSizeIn r [5]
       isDistinct <- parseField r 0 nonzero
       dilbScope <- ron 1
       dilbFile <- ron 2
@@ -886,7 +858,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoLexicalBlock dilb)) pm
 
     23 -> label "METADATA_LEXICAL_BLOCK_FILE" $ do
-      assertRecordSizeIn [4]
+      assertRecordSizeIn r [4]
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
       dilbfScope <- mdForwardRef cxt mt <$> parseField r 1 numeric
@@ -897,7 +869,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoLexicalBlockFile dilbf)) pm
 
     24 -> label "METADATA_NAMESPACE" $ do
-      assertRecordSizeIn [3, 5]
+      assertRecordSizeIn r [3, 5]
       let isNew = length (recordFields r) == 3
       let nameIdx = if isNew then 2 else 3
 
@@ -914,7 +886,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoNameSpace dins)) pm
 
     25 -> label "METADATA_TEMPLATE_TYPE" $ do
-      assertRecordSizeIn [3, 4]
+      assertRecordSizeIn r [3, 4]
       let hasIsDefault = length (recordFields r) == 4
       cxt <- getContext
       isDistinct <- parseField r 0 nonzero
@@ -928,7 +900,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoTemplateTypeParameter dittp)) pm
 
     26 -> label "METADATA_TEMPLATE_VALUE" $ do
-      assertRecordSizeIn [5, 6]
+      assertRecordSizeIn r [5, 6]
       let hasIsDefault = length (recordFields r) == 6
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
@@ -944,7 +916,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoTemplateValueParameter ditvp)) pm
 
     27 -> label "METADATA_GLOBAL_VAR" $ do
-      assertRecordSizeBetween 11 13
+      assertRecordSizeBetween r 11 13
       ctx        <- getContext
       field0     <- parseField r 0 numeric
       let isDistinct = testBit field0 0
@@ -973,7 +945,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     28 -> label "METADATA_LOCAL_VAR" $ do
       -- this one is a bit funky:
       -- https://github.com/llvm-mirror/llvm/blob/release_38/lib/Bitcode/Reader/BitcodeReader.cpp#L2308
-      assertRecordSizeBetween 8 10
+      assertRecordSizeBetween r 8 10
       ctx    <- getContext
       field0 <- parseField r 0 numeric
       let isDistinct   = testBit (field0 :: Word32) 0
@@ -1027,7 +999,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       fail "not yet implemented"
 
     31 -> label "METADATA_IMPORTED_ENTITY" $ do
-      assertRecordSizeIn [6, 7]
+      assertRecordSizeIn r [6, 7]
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
       diieTag <- parseField r 1 numeric
@@ -1071,7 +1043,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       fail "not yet implemented"
 
     35 -> label "METADATA_STRINGS" $ do
-      assertRecordSizeIn [3]
+      assertRecordSizeIn r [3]
       count  <- parseField r 0 numeric
       offset <- parseField r 1 numeric
       bs     <- parseField r 2 fieldBlob
@@ -1105,7 +1077,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return $! addGlobalAttachments sym refs pm
 
     37 -> label "METADATA_GLOBAL_VAR_EXPR" $ do
-      assertRecordSizeIn [3]
+      assertRecordSizeIn r [3]
       isDistinct <- parseField r 0 nonzero
       digveVariable <- ron 1
       digveExpression <- ron 2
@@ -1114,7 +1086,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoGlobalVariableExpression digve)) pm
 
     38 -> label "METADATA_INDEX_OFFSET" $ do
-      assertRecordSizeIn [2]
+      assertRecordSizeIn r [2]
       a <- parseField r 0 numeric
       b <- parseField r 1 numeric
       let _offset = a + (b `shiftL` 32) :: Word64
@@ -1130,7 +1102,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return pm
 
     40 -> label "METADATA_LABEL" $ do
-      assertRecordSizeIn [5]
+      assertRecordSizeIn r [5]
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
       dilScope <- ron 1
@@ -1161,7 +1133,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addInlineDebugInfo (DebugInfoArgList dial)) pm
 
     47 -> label "METADATA_ASSIGN_ID" $ do
-      assertRecordSizeIn [1]
+      assertRecordSizeIn r [1]
       isDistinct <- parseField r 0 nonzero
       -- Inspirted by a similar check in
       -- https://github.com/llvm/llvm-project/blob/7a0b9daac9edde4293d2e9fdf30d8b35c04d16a6/llvm/lib/Bitcode/Reader/MetadataLoader.cpp#L2071-L2072
@@ -1266,6 +1238,45 @@ parseMetadataKindEntry r = do
   kind <- parseField  r 0 numeric
   name <- parseFields r 1 char
   addKind kind (UTF8.decode name)
+
+----------------------------------------------------------------------
+
+-- The assert* functions below check if a metadata record size matches
+-- what is expected, and if not, emit a warning.
+--
+-- In the past, we made these fatal errors instead of warnings, but we
+-- downgraded them to a warning due to how frequently LLVM adds new
+-- metadata record fields. Moreover, it is usually not a serious problem
+-- for downstream users that llvm-pretty-bc-parser lacks newer metadata
+-- fields, since they usually do not affect the semantics of the overall
+-- LLVM bitcode.
+
+assertRecordSizeBetween :: Record -> Int -> Int -> Parse ()
+assertRecordSizeBetween r lb ub = do
+  cxt <- getContext
+  let len = length (recordFields r)
+  when (len < lb || ub < len) $
+    addParseWarning $
+    InvalidMetadataRecordSize len (MetadataRecordSizeBetween lb ub) cxt
+
+assertRecordSizeIn :: Record -> [Int] -> Parse ()
+assertRecordSizeIn r ns = do
+  cxt <- getContext
+  let len = length (recordFields r)
+  when (not (len `elem` ns)) $
+    addParseWarning $
+    InvalidMetadataRecordSize len (MetadataRecordSizeIn ns) cxt
+
+assertRecordSizeAtLeast :: Record -> Int -> Parse ()
+assertRecordSizeAtLeast r lb = do
+  cxt <- getContext
+  let len = length (recordFields r)
+  when (len < lb) $
+    addParseWarning $
+    InvalidMetadataRecordSize len (MetadataRecordSizeAtLeast lb) cxt
+
+
+----------------------------------------------------------------------
 
 {-
 Note [Apple LLVM]
