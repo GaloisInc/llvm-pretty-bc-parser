@@ -67,6 +67,7 @@
 
             # Other packages to add to the development shell:
             pkgs.cabal-install
+            pkgs.csmith
           ];
           ghcvers = system: pkg_ghcvers (nixpkgs.legacyPackages.${system});
         };
@@ -97,12 +98,14 @@
               args = [ "-c"
                        ''
                        ${pkgs.coreutils}/bin/cp -r ${built}/test-build/* .
-                       export PATH=${llvm}/bin:${clang}/bin:${pkgs.diffutils}/bin:$PATH
+                       export PATH=${pkgs.csmith}/bin:${llvm}/bin:${clang}/bin:${pkgs.diffutils}/bin:$PATH
                        set -e
                        echo Running unit-test
                        ./dist/build/unit-test/unit-test
                        echo Running disasm-test
                        ./dist/build/disasm-test/disasm-test
+                       echo Running fuzzing
+                       ./dist/build/fuzz-llvm-disasm/fuzz-llvm-disasm --csmith-path ${pkgs.csmith}/include/csmith* --disasm ./dist/build/llvm-disasm/llvm-disasm
                        echo Finished testing
                        echo OK > $out
                        ''
@@ -144,7 +147,7 @@
           llvm-pretty = mkHaskell "llvm-pretty" llvm-pretty-src {};
           llvm-pretty-bc-parser = mkHaskell "llvm-pretty-bc-parser" self {
             inherit llvm-pretty tasty-sugar;
-
+            configFlags = ["-ffuzz"];
             # Build the tests, but do not run them.  The tests (specifically the
             # disasm-test) require the presence of llvm and optionally clang.
             # There are multiple versions of llvm and clang that will be used for

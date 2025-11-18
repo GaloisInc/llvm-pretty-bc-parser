@@ -13,9 +13,9 @@ import Data.List (isPrefixOf, partition, stripPrefix)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
-import Data.Monoid (mconcat, Endo(..))
-import Data.Time
-  (defaultTimeLocale, formatTime, getZonedTime, iso8601DateFormat)
+import Data.Monoid (Endo(..))
+import Data.Time ( getZonedTime )
+import Data.Time.Format.ISO8601 ( iso8601Show )
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
 import GHC.Generics (Generic)
@@ -49,6 +49,14 @@ data Options = Options {
     -- ^ Specific seeds to use in fuzzing; overrides 'optNumTests'
   , optSaveTests :: Maybe FilePath
     -- ^ Location to save failed tests
+  , optDisasm :: FilePath
+    -- ^ Command to run llvm-disasm.  Default is "llvm-disasm" but can contain
+    -- multiple words (e.g. "cabal run llvm-disasm").
+    --
+    -- Note that using "cabal run" is not recommended as it is slower and
+    -- parallel invocations of "cabal run" can interfere with each other and
+    -- cause spurious errors. Instead, do a "cabal build llvm-disasm" and then
+    -- run $fuzz-llvm-disasm --disasm=$(cabal list-bin llvm-disasm) ...$
   , optClangs :: [FilePath]
     -- ^ Clangs to use with the fuzzer
   , optClangFlags :: [String]
@@ -80,6 +88,7 @@ defaultOptions  = Options {
     optNumTests     = 100
   , optSeeds        = Nothing
   , optSaveTests    = Nothing
+  , optDisasm       = "llvm-disasm"
   , optClangs       = ["clang"]
   , optClangFlags   = ["-O -g -w"]
   , optIncludeDirs  = []
@@ -102,6 +111,8 @@ options  =
     "specific Csmith seed to use; overrides -n"
   , Option "o" ["output"] (ReqArg setSaveTests "DIRECTORY")
     "directory to save failed tests"
+  , Option "d" ["disasm"] (ReqArg setDisasm "STRING/FILEPATH")
+    "specify the filepath or command words to run llvm-disasm"
   , Option "c" ["clang"] (ReqArg addClang "CLANG")
     "specify clang executables to use, e.g., `-c clang-3.8 -c clang-3.9'"
   , Option ""  ["clang-flags"] (ReqArg addClangFlags "ARGS") $
@@ -149,6 +160,9 @@ addSeed str = Endo $ \opt ->
 
 setSaveTests :: String -> Endo Options
 setSaveTests str = Endo (\opt -> opt { optSaveTests = Just str })
+
+setDisasm :: String -> Endo Options
+setDisasm str = Endo $ \opt -> opt { optDisasm = str }
 
 addClang :: String -> Endo Options
 addClang str = Endo $ \opt ->
@@ -214,6 +228,17 @@ printUsage errs =
      let banner = "Usage: " ++ prog ++ " [OPTIONS]"
      putStrLn (usageInfo (unlines (errs ++ [banner])) options)
 
+-- | The overall process for testing here is to run a number of tests
+--
+--     1. Uses csmith to generate a random C program from a seed
+--     2. Compile the program with clang into a bitcode file
+--     3. Run our llvm-disasm to disassemble the bitcode file to a .ll file
+--     4. Run clang on the .ll file to create an "ours" executable
+--     5. Run clang on the .bc file to create a "golden" executable
+--     6. Run both executables with a timeout on each of 10 seconds
+--     7. Compare the stdout, stderr, and exit codes to ensure both
+--        executables behave identically.
+--
 main :: IO ()
 main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   opts <- getOptions
@@ -242,14 +267,16 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
   let allResults' = Map.unions (concat resultMaps)
       allResults | optCollapse opts = collapseResults allResults'
                  | otherwise        = allResults'
-  forM_ (Map.toList allResults) $ \((clangExe, _, flags), results) -> do
-    let (_passes, fails) = partition isPass results
-    when (not (null fails)) $ do
-      putStrLn $ "[" ++ clangExe ++ " " ++ flags ++ "] " ++
-        show (length fails) ++ " failing cases identified:"
-      forM_ fails $ \case
-        TestFail st s _ _ -> putStrLn ("[" ++ show st ++ "] " ++ show s)
-        _ -> error "non-fail cases in fails"
+  hadFails <- fmap or
+    $ forM (Map.toList allResults) $ \((clangExe, _, flags), results) ->
+        let (_passes, fails) = partition isPass results
+        in do unless (null fails)
+                $ do putStrLn $ "[" ++ clangExe ++ " " ++ flags ++ "] " ++
+                       show (length fails) ++ " failing cases identified:"
+                     forM_ fails $ \case
+                       TestFail st s _ _ -> putStrLn ("[" ++ show st ++ "] " ++ show s)
+                       _ -> error "non-fail cases in fails"
+              return $ not (null fails)
   case optSaveTests opts of
     Nothing -> return ()
     Just root -> do
@@ -279,6 +306,8 @@ main = withTempDirectory "." ".fuzz." $ \tmpDir -> do
     Just f -> do
       xml <- mkJUnitXml allResults
       writeFile f (ppTopElement xml)
+  when hadFails exitFailure
+  exitSuccess
 
 reduce :: TestResult -> Clang -> Options -> FilePath -> IO ()
 reduce (TestFail st _ TestSrc{..} err) (clangExe, includeDirs, flags) opts clangRoot = do
@@ -303,7 +332,7 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, includeDirs, flags) opts clang
           -- waste our time
           [] -> Nothing
           -- drop the tab for the pattern
-          first:_ -> Just (tail first)
+          first:_ -> Just (drop 1 first)
       grepPat AsStage =
         -- check the first line of the clang error for "error:"
         case (lines err) of
@@ -329,20 +358,17 @@ reduce (TestFail st _ TestSrc{..} err) (clangExe, includeDirs, flags) opts clang
           clangExe, "-I", csmithPath, flags, "-c"
         , "-emit-llvm", baseName ++ "-reduced.c", "-o", bcFile
         ] ++ includeOpts
-      buildLl = unwords $
-          [ "llvm-disasm" ] ++
-          llvmVersionFlags ++
-          [ bcFile, ">", llFile ]
+      buildLl = optDisasm opts
+                <> (unwords $ llvmVersionFlags ++ [ bcFile, ">", llFile ])
       copyBc = unwords [
           "cp", bcFile, absClangRoot </> bcFile
         ]
       script DisasmStage = unlines $ scriptHeader ++ [
           buildBc
         , copyBc
-        , unwords $
-            [ "llvm-disasm" ] ++
-            llvmVersionFlags ++
-            [ bcFile, "2>&1 |" , "grep", show (fromMaybe "" (grepPat st)) ]
+        , optDisasm opts
+          <> (unwords $ llvmVersionFlags ++
+              [ bcFile, "2>&1 |" , "grep", show (fromMaybe "" (grepPat st)) ])
         ]
       script AsStage = unlines $ scriptHeader ++ [
           buildBc
@@ -432,12 +458,38 @@ runTest tmpDir (clangExe, includeDirs, flags) seed opts = X.handle return $ do
       srcFile  = baseFile <.> "c"
       bcFile   = baseFile <.> "bc"
       llFile   = baseFile <.> "ll"
-      llvmVersionFlags =
-        case stripPrefix "clang-" clangExe of
-          Nothing -> []
-          Just ver -> [ "--llvm-version=" ++ ver ]
       includeOpts = concatMap (\dir -> ["-I", dir]) includeDirs
-  putStrLn $ "Testing bitcode file " ++ bcFile
+  llvmVersionFlags <-
+    case stripPrefix "clang-" clangExe of
+      Just ver -> return [ "--llvm-version=" ++ ver ]
+      Nothing ->
+        do (ec,o,_err) <- readProcessWithExitCode "clang" [ "--version" ] ""
+           if ec == ExitSuccess
+             then case lines o of
+                    -- Expecting something like:
+                    --
+                    --   clang version 11.1.0 (....)
+                    --   Target: x86_64-unknown-linux-gnu
+                    --   Thread model: posix
+                    --   InstalledDir: ...
+                    --
+                    -- where the (....) on the first line may or may not be
+                    -- present and frequently specifies tag information or github
+                    -- commit info.
+                    (vline:_) ->   -- First line
+                      case drop 2 $ words vline of
+                        (ver:_) ->  -- Third word
+                          do let v = takeWhile (/= '.') ver
+                             -- putStrLn $ "Determined LLVM version " <> v <> " from clang --version output:"
+                             -- putStrLn o
+                             return [ "--llvm-version=" <> v ]
+                        [] -> do putStrLn $ "Warning: clang --version output line has no words"
+                                 return []
+                    _ -> do putStrLn $ "Warning: clang --version output blank"
+                            return []
+             else do putStrLn $ "Warning: no clang found to determine LLVM version"
+                     return []
+  putStr $ "Testing bitcode file " ++ bcFile ++ " with " ++ show llvmVersionFlags ++ " ... "
   ---- Run csmith ----
   csmithPath <- getCsmithPath opts
   callProcess "csmith" [
@@ -459,7 +511,11 @@ runTest tmpDir (clangExe, includeDirs, flags) seed opts = X.handle return $ do
   ---- Disassemble ----
   let disasmArgs = llvmVersionFlags ++ [ tmpDir </> bcFile ]
   (ec, out, err) <-
-    readProcessWithExitCode "llvm-disasm" disasmArgs ""
+    let args = words $ optDisasm opts
+        cmd = case args of
+                [] -> "llvm-disasm"
+                (c:_) -> c
+    in readProcessWithExitCode cmd (drop 1 args <> disasmArgs) ""
   case ec of
     ExitFailure c -> do
       putStrLn "[DISASM ERROR]"
@@ -537,10 +593,7 @@ mkJUnitXml :: Map Clang [TestResult] -> IO Element
 mkJUnitXml allResults = do
   hostname <- readProcess "hostname" [] ""
   now <- getZonedTime
-  let nowFmt = formatTime
-                 defaultTimeLocale
-                 (iso8601DateFormat (Just "%H:%M:%S"))
-                 now
+  let nowFmt = iso8601Show now
       testsuites = map (testsuite hostname nowFmt) (Map.toList allResults)
   return $ unode "testsuites" testsuites
   where
