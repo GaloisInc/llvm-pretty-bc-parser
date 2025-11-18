@@ -531,9 +531,9 @@ runAssemblyTest llvmVersion knownBugs sweet expct
 
 
 
--- | Compare two ASTs to see if they are the same.  Fundamentally is just done
+-- | Compare two ASTs to see if they are the same.  Fundamentally this is just done
 --  via (==) on the normalized ASTs, but this first uses the tree-diff package to
---  generate an nicer output to allow focus on the actual diffs rather than
+--  generate nicer output to allow focusing on the actual diffs rather than
 --  leaving it to the user to analyze the large blobs to find out where.
 cmpASTs :: AST.Module -> AST.Module -> TestM ()
 cmpASTs ast1 ast2 = do
