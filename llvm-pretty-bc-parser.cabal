@@ -127,6 +127,7 @@ test-suite unit-test
 Test-suite disasm-test
   type:                exitcode-stdio-1.0
   Main-is:             Main.hs
+  other-modules:       Instances
   Default-language:    Haskell2010
   hs-source-dirs:      disasm-test
   Ghc-options:         -Wall
