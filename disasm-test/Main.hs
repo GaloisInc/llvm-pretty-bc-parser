@@ -1,8 +1,12 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Main where
 
@@ -11,6 +15,7 @@ import           Data.LLVM.BitCode (parseBitCodeLazyFromFileWithWarnings,
                                     ParseWarning,ppParseWarnings)
 import qualified Text.LLVM.AST as AST
 import           Text.LLVM.PP ( ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP )
+import           Text.LLVM.Triple as Triple
 
 import qualified Control.Exception as EX
 import           Control.Lens ( (^?), _Right )
@@ -31,6 +36,7 @@ import           Data.Proxy ( Proxy(..) )
 import           Data.Sequence ( Seq )
 import           Data.String.Interpolate
 import qualified Data.Text as T
+import           Data.TreeDiff
 import           Data.Typeable (Typeable)
 import           Data.Versions (Versioning, versioning, prettyV, major, minor)
 import qualified GHC.IO.Exception as GE
@@ -51,7 +57,7 @@ import qualified System.Process as Proc
 import           Test.Tasty
 import           Test.Tasty.ExpectedFailure ( ignoreTestBecause
                                             , expectFailBecause )
-import           Test.Tasty.HUnit ( assertFailure, testCase )
+import           Test.Tasty.HUnit ( assertFailure, testCase, assertBool )
 import qualified Test.Tasty.Options as TO
 import qualified Test.Tasty.Runners as TR
 import qualified Test.Tasty.Sugar as TS
@@ -505,15 +511,15 @@ runAssemblyTest llvmVersion knownBugs sweet expct
        return $ (:[]) $ tmod
          $ testCaseM llvmVersion pfx
          $ with2Files (processLL pfx $ TS.rootFile sweet)
-         $ \(parsed1, ast) ->
-             case ast of
+         $ \(parsed1, mb'ast) ->
+             case mb'ast of
                Nothing   -> return ()
-               Just ast1 ->
+               Just (ast1, _) ->
                  -- Re-assemble and re-disassemble
                  with2Files (processLL pfx parsed1)
                  $ \(_, mb'ast2) ->
                      case mb'ast2 of
-                       Just ast2 -> diffCmp ast1 ast2 -- Ensure that the ASTs match
+                       Just (ast2, _) -> cmpASTs ast1 ast2 -- Ensure that the ASTs match
 
                                     -- Ensure that the disassembled files match.
                                     -- This is usually too strict (and doesn't
@@ -526,6 +532,104 @@ runAssemblyTest llvmVersion knownBugs sweet expct
                                     --
                                     -- diffCmp parsed1 parsed2
                        Nothing -> error "Failed processLL"
+
+
+
+-- | Compare two ASTs to see if they are the same.  Fundamentally is just done
+--  via (==) on the normalized ASTs, but this first uses the tree-diff package to
+--  generate an nicer output to allow focus on the actual diffs rather than
+--  leaving it to the user to analyze the large blobs to find out where.
+cmpASTs :: AST.Module -> AST.Module -> TestM ()
+cmpASTs ast1 ast2 = do
+  let d = ediff ast1 ast2
+      msg = "Differences (marked with + and - line prefixes:\n"
+            <> show (prettyEditExprCompact d)
+  liftIO $ assertBool msg $ ast1 == ast2
+
+deriving instance ToExpr (AST.Type' AST.Ident)
+deriving instance ToExpr (AST.Typed AST.Ident)
+deriving instance ToExpr (AST.Typed AST.Value)
+deriving instance ToExpr AST.Alignment
+deriving instance ToExpr AST.ArithOp
+deriving instance ToExpr AST.AtomicOrdering
+deriving instance ToExpr AST.AtomicRWOp
+deriving instance ToExpr AST.BasicBlock
+deriving instance ToExpr AST.BitOp
+deriving instance ToExpr AST.BlockLabel
+deriving instance ToExpr AST.Clause
+deriving instance ToExpr AST.ConstExpr
+deriving instance ToExpr AST.ConvOp
+deriving instance ToExpr AST.DIArgList
+deriving instance ToExpr AST.DIBasicType
+deriving instance ToExpr AST.DICompileUnit
+deriving instance ToExpr AST.DICompositeType
+deriving instance ToExpr AST.DIDerivedType
+deriving instance ToExpr AST.DIExpression
+deriving instance ToExpr AST.DIFile
+deriving instance ToExpr AST.DIGlobalVariable
+deriving instance ToExpr AST.DIGlobalVariableExpression
+deriving instance ToExpr AST.DIImportedEntity
+deriving instance ToExpr AST.DILabel
+deriving instance ToExpr AST.DILexicalBlock
+deriving instance ToExpr AST.DILexicalBlockFile
+deriving instance ToExpr AST.DILocalVariable
+deriving instance ToExpr AST.DINameSpace
+deriving instance ToExpr AST.DISubprogram
+deriving instance ToExpr AST.DISubrange
+deriving instance ToExpr AST.DISubroutineType
+deriving instance ToExpr AST.DITemplateTypeParameter
+deriving instance ToExpr AST.DITemplateValueParameter
+deriving instance ToExpr AST.DbgRecAssign
+deriving instance ToExpr AST.DbgRecDeclare
+deriving instance ToExpr AST.DbgRecLabel
+deriving instance ToExpr AST.DbgRecValue
+deriving instance ToExpr AST.DbgRecValueSimple
+deriving instance ToExpr AST.DebugInfo
+deriving instance ToExpr AST.DebugLoc
+deriving instance ToExpr AST.DebugRecord
+deriving instance ToExpr AST.Declare
+deriving instance ToExpr AST.Define
+deriving instance ToExpr AST.FCmpOp
+deriving instance ToExpr AST.FP80Value
+deriving instance ToExpr AST.FloatType
+deriving instance ToExpr AST.FunAttr
+deriving instance ToExpr AST.FunctionPointerAlignType
+deriving instance ToExpr AST.GC
+deriving instance ToExpr AST.GEPAttr
+deriving instance ToExpr AST.Global
+deriving instance ToExpr AST.GlobalAlias
+deriving instance ToExpr AST.GlobalAttrs
+deriving instance ToExpr AST.ICmpOp
+deriving instance ToExpr AST.Ident
+deriving instance ToExpr AST.Instr
+deriving instance ToExpr AST.LayoutSpec
+deriving instance ToExpr AST.Linkage
+deriving instance ToExpr AST.Mangling
+deriving instance ToExpr AST.Module
+deriving instance ToExpr AST.NamedMd
+deriving instance ToExpr AST.PointerSize
+deriving instance ToExpr AST.PrimType
+deriving instance ToExpr AST.RangeSpec
+deriving instance ToExpr AST.SelectionKind
+deriving instance ToExpr AST.Stmt
+deriving instance ToExpr AST.Storage
+deriving instance ToExpr AST.Symbol
+deriving instance ToExpr AST.TypeDecl
+deriving instance ToExpr AST.UnaryArithOp
+deriving instance ToExpr AST.UnnamedMd
+deriving instance ToExpr AST.ValMd
+deriving instance ToExpr AST.Value
+deriving instance ToExpr AST.Visibility
+deriving instance ToExpr Arch
+deriving instance ToExpr Environment
+deriving instance ToExpr OS
+deriving instance ToExpr ObjectFormat
+deriving instance ToExpr SubArch
+deriving instance ToExpr Triple.TargetTriple
+deriving instance ToExpr Vendor
+
+
+-- deriving instance ToExpr AST.DwarfAttrEncoding
 
 
 diffCmp :: FilePath -> FilePath -> TestM ()
@@ -548,7 +652,7 @@ diffCmp file1 file2 = do
 -- and prints the difference between the parsed version and the .ll file.
 -- Returns the library parsed version and the serialized AST from the library.
 
-processLL :: FilePath -> FilePath -> TestM (FilePath, Maybe FilePath)
+processLL :: FilePath -> FilePath -> TestM (FilePath, Maybe (AST.Module, FilePath))
 processLL pfx f = do
   Details det <- gets showDetails
   when det $ liftIO $ putStrLn (showString f ": ")
@@ -560,7 +664,7 @@ processLL pfx f = do
       liftIO $ assertFailure $ unlines
       $ "failure" : map ("; " ++) (lines (formatError msg))
 
-parseBC :: FilePath -> FilePath -> TestM (FilePath, Maybe FilePath)
+parseBC :: FilePath -> FilePath -> TestM (FilePath, Maybe (AST.Module, FilePath))
 parseBC pfx bc = do
   withFile (X.handle
             (\(_ :: GE.IOException) -> return "LLVM llvm-dis failed to parse this file")
@@ -637,12 +741,12 @@ runCompileTest llvmVersion knownBugs sweet expct = do
                 -- No round trip, so this just verifies that the bitcode could be
                 -- parsed without generating an error.
                 return ()
-              Just ast1 ->
+              Just (ast1, _) ->
                 -- Assemble and re-parse the bitcode to make sure it can be
                 -- round-tripped successfully.
                 with2Files (processLL pfx parsed1)
                 $ \(_, mb'ast2) -> case mb'ast2 of
-                                     Just ast2 -> diffCmp ast1 ast2
+                                     Just (ast2, _) -> cmpASTs ast1 ast2
                                      Nothing -> error "failed processLL"
                   -- fst is ignored because .ll files are not compared; see
                   -- runAssemblyTest for details.
@@ -680,12 +784,12 @@ runRawBCTest llvmVersion knownBugs sweet expct = do
                 -- No round trip, so this just verifies that the bitcode could be
                 -- parsed without generating an error.
                 return ()
-              Just ast1 ->
+              Just (ast1, _) ->
                 -- Assemble and re-parse the bitcode to make sure it can be
                 -- round-tripped successfully.
                 with2Files (processLL pfx parsed1)
                 $ \(_, mb'ast2) -> case mb'ast2 of
-                                     Just ast2 -> diffCmp ast1 ast2
+                                     Just (ast2, _) -> cmpASTs ast1 ast2
                                      Nothing -> error "Failed processLL"
                   -- fst is ignored because .ll files are not compared; see
                   -- runAssemblyTest for details.
@@ -775,10 +879,13 @@ disasmBitCode pfx file = do
            -- stripComments norm
            return norm
 
--- | Usually, the ASTs aren't "on the nose" identical.
--- The big thing is that the metadata numbering differs, so we zero out all
--- metadata indices and sort the unnamed metadata list.
--- Done with SYB (Scrap Your Boilerplate).
+-- | Usually, the ASTs aren't "on the nose" identical. This applies some
+-- normalization to the AST tree to remove AST items that are not important to
+-- the semantic comparisons.  Done with SYB (Scrap Your Boilerplate).
+--
+-- * The big thing is that the metadata numbering differs, so we zero out all
+--   metadata indices and sort the unnamed metadata list.
+--
 normalizeModule :: AST.Module -> AST.Module
 normalizeModule = sorted . everywhere (mkT zeroValMdRef)
                          . everywhere (mkT zeroNamedMd)
@@ -795,7 +902,7 @@ normalizeModule = sorted . everywhere (mkT zeroValMdRef)
 
 -- | Parse a bitcode file using llvm-pretty, failing the test if the parser
 -- fails.
-processBitCode :: FilePath -> FilePath -> TestM (FilePath, Maybe FilePath)
+processBitCode :: FilePath -> FilePath -> TestM (FilePath, Maybe (AST.Module, FilePath))
 processBitCode pfx file = do
   let handler ::
         X.SomeException -> IO (Either Error (AST.Module, Seq ParseWarning))
@@ -838,9 +945,10 @@ processBitCode pfx file = do
       Details det <- gets showDetails
       if roundtrip
       then do
-        tmp2 <- liftIO $ printToTempFile "ast" (ppShow (normalizeModule m'))
+        let nM = normalizeModule m'
+        tmp2 <- liftIO $ printToTempFile "ast" (ppShow nM)
         when det $ liftIO $ putStrLn $ "## parsed Bitcode to " <> parsed <> " and " <> tmp2
-        return (parsed, Just tmp2)
+        return (parsed, Just (nM,tmp2))
       else do
         when det $ liftIO $ putStrLn $ "## parsed Bitcode to " <> parsed
         return (parsed, Nothing)
@@ -919,13 +1027,13 @@ callProc p args = do
 withFile :: TestM FilePath -> (FilePath -> TestM r) -> TestM r
 withFile iofile f = X.bracket iofile rmFile f
 
-with2Files :: TestM (FilePath, Maybe FilePath)
-           -> ((FilePath, Maybe FilePath) -> TestM r)
+with2Files :: TestM (FilePath, Maybe (AST.Module, FilePath))
+           -> ((FilePath, Maybe (AST.Module, FilePath)) -> TestM r)
            -> TestM r
 with2Files iofiles f =
   let cleanup (tmp1, mbTmp2) = do
         rmFile tmp1
-        traverse rmFile mbTmp2
+        traverse rmFile (snd <$> mbTmp2)
   in X.bracket iofiles cleanup f
 
 rmFile :: FilePath -> TestM ()
