@@ -526,7 +526,7 @@ runAssemblyTest llvmVersion knownBugs sweet expct
                                     -- assembly: we need llvm-as to be able to
                                     -- re-assemble it.
                                     --
-                                    -- diffCmp parsed1 parsed2
+                                    -- diff parsed1 parsed2
                        Nothing -> error "Failed processLL"
 
 
@@ -541,21 +541,6 @@ cmpASTs ast1 ast2 = do
       msg = "Differences (marked with + and - line prefixes:\n"
             <> show (prettyEditExprCompact d)
   liftIO $ assertBool msg $ ast1 == ast2
-
-
-diffCmp :: FilePath -> FilePath -> TestM ()
-diffCmp file1 file2 = do
-  let assertF = liftIO . assertFailure . unlines
-  (code, stdOut, stdErr) <- liftIO $
-    Proc.readCreateProcessWithExitCode (Proc.proc "diff" ["-u", file1, file2]) ""
-  case code of
-    ExitFailure _ -> assertF ["diff failed", stdOut, stdErr]
-    ExitSuccess   ->
-      if stdOut /= "" || stdErr /= ""
-      then assertF ["non-empty diff", stdOut, stdErr]
-      else do Details det <- gets showDetails
-              when det $ liftIO
-                $ mapM_ putStrLn ["success: empty diff: ", file1, file2]
 
 
 -- Assembles the specified .ll file to bitcode, then disassembles it with
@@ -585,15 +570,7 @@ parseBC pfx bc = do
     Details dets <- gets showDetails
     when dets $ liftIO $ do
       -- Informationally display if there are differences between the llvm-dis
-      -- and llvm-disasm outputs, but no error if they differ.  Note that the
-      -- arguments to this diff are not the same as those supplied to the diffCmp
-      -- function. The diff here is intended to supply additional information to
-      -- the user for diagnostics, and whitespace changes are likely unimportant
-      -- in that context; this diff does not determine the pass/fail status of
-      -- the testing.  On the other hand, the diffCmp *does* determine if the
-      -- tests pass or fail, so ignoring whitespace in that determination would
-      -- potentially weaken the testing to an unsatisfactory degree and would
-      -- need more careful evaluation.
+      -- and llvm-disasm outputs, but no error if they differ.
       putStrLn "## Output differences: LLVM's llvm-dis <--> this llvm-disasm"
       ignore (Proc.callProcess "diff" ["-u", "-b", "-B", "-w", norm, parsed])
       putStrLn ("successfully parsed " ++ show pfx ++ " bitcode")
