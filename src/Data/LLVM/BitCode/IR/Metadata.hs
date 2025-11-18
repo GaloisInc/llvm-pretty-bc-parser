@@ -9,6 +9,7 @@
 
 module Data.LLVM.BitCode.IR.Metadata (
     parseMetadataBlock
+  , parseDebugLoc
   , parseMetadataKindEntry
   , PartialUnnamedMd(..)
   , finalizePartialUnnamedMd
@@ -32,11 +33,11 @@ import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import           Control.Applicative ((<|>))
 import           Control.Exception (throw)
 import           Control.Monad (foldM, guard, mplus, unless, when)
-import           Data.Bits (shiftR, testBit, shiftL, (.&.), (.|.), bit, complement)
-import           Data.Data (Data)
-import           Data.Typeable (Typeable)
+import           Data.Bits ( Bits, shiftR, testBit, shiftL, (.&.), (.|.), bit
+                           , complement )
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as Char8 (unpack)
+import           Data.Data (Data)
 import           Data.Either (partitionEithers)
 import           Data.Generics.Uniplate.Data
 import qualified Data.IntMap as IntMap
@@ -44,14 +45,14 @@ import           Data.List (mapAccumL, foldl')
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe, mapMaybe)
-import qualified Data.Sequence as Seq
 import           Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
+import           Data.Typeable (Typeable)
 import           Data.Word (Word8,Word32,Word64)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
-import Data.Bifunctor (bimap)
-
+import           Data.Bifunctor (bimap)
 
 
 -- Parsing State ---------------------------------------------------------------
@@ -488,23 +489,12 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
     -- [distinct, line, col, scope, inlined-at?]
     7 -> label "METADATA_LOCATION" $ do
-      -- TODO: broken in 3.7+; needs to be a DILocation rather than an
-      -- MDLocation, but there appears to be no difference in the
-      -- bitcode. /sigh/
-      assertRecordSizeIn [5, 6]
-      let field = parseField r
-      cxt        <- getContext
-      isDistinct <- field 0 nonzero
-      dlLine <- field 1 numeric
-      dlCol <- field 2 numeric
-      dlScope <- mdForwardRef cxt mt <$> field 3 numeric
-      dlIA <- mdForwardRefOrNull cxt mt <$> field 4 numeric
-      dlImplicit <- if length (recordFields r) <= 5
-                    then pure False
-                    else parseField r 5 nonzero
-      let loc = DebugLoc {..}
+      cxt <- getContext
+      isDistinct <- parseField r 0 nonzero
+      loc <- parseDebugLoc 1
+             (pure . mdForwardRef cxt mt)
+             (pure . mdForwardRefOrNull cxt mt) r
       return $! updateMetadataTable (addLoc isDistinct loc) pm
-
 
     -- [n x (type num, value num)]
     8 -> label "METADATA_OLD_NODE" (parseMetadataOldNode False vt mt r pm)
@@ -1250,6 +1240,26 @@ parseMetadataOldNode fnLocal vt mt r pm = do
     [] -> return []
 
     _ -> fail "Malformed metadata node"
+
+parseDebugLoc :: Num a => Bits a => Num b => Bits b
+              => Int
+              -> (a -> Parse (ValMd' r))
+              -> (b -> Parse (Maybe (ValMd' r))) -> Record
+              -> Parse (DebugLoc' r)
+parseDebugLoc idx resolveScope resolveIA r = do
+  assertRecordSizeIn r [ idx + i | i <- [4, 5, 7] ]
+  let recordSize = length $ recordFields r
+  let field = parseField r . (idx +)
+  let fieldDef d i = if recordSize < (idx + 1 + i)
+                     then const (pure d)
+                     else field i
+  dlLine <- field 0 numeric
+  dlCol <- field 1 numeric
+  dlScope <- resolveScope =<< field 2 numeric
+  dlIA <- resolveIA =<< field 3 numeric
+  dlImplicit <- fieldDef False 4 nonzero
+  return DebugLoc {..}
+
 
 parseMetadataKindEntry :: Record -> Parse ()
 parseMetadataKindEntry r = do

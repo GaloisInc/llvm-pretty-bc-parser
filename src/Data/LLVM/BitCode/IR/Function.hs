@@ -748,29 +748,15 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
       -- a pointer type. See Note [Typing function applications].
       result ret (Call False fnty fn args) d
 
-  -- [Line,Col,ScopeVal, IAVal]
+  -- [Line,Col,ScopeVal, IAVal, IsImplicit, atomGroup, atomRank]
+  -- isImplicit: added LLVM 16
+  -- atomGroup and atomRank: added LLVM 21
   35 -> label "FUNC_CODE_DEBUG_LOC" $ do
-    Assert.recordSizeGreater r 3
-
-    let field = parseField r
-    line    <- field 0 numeric
-    col     <- field 1 numeric
-    scopeId <- field 2 numeric
-    iaId    <- field 3 numeric
-
-    scope <- if scopeId > 0
-                then getMetadata (scopeId - 1)
-                else fail "No scope provided"
-
-    ia <- lookupMetadata iaId
-
-    let loc = DebugLoc
-          { dlLine  = line
-          , dlCol   = col
-          , dlScope = typedValue scope
-          , dlIA    = typedValue `fmap` ia
-          , dlImplicit = False
-          }
+    let lookupMetadata v = if v > 0
+                           then Just . typedValue <$> getMetadata (v-1)
+                           else return Nothing
+    let resolveScope = maybe (fail "No scope provided") return <=< lookupMetadata
+    loc <- parseDebugLoc 0 resolveScope lookupMetadata r
     setLastLoc loc
     updateLastStmt (extendMetadata ("dbg", ValMdLoc loc)) d
 
