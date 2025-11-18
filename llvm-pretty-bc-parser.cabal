@@ -127,6 +127,7 @@ test-suite unit-test
 Test-suite disasm-test
   type:                exitcode-stdio-1.0
   Main-is:             Main.hs
+  other-modules:       Instances
   Default-language:    Haskell2010
   hs-source-dirs:      disasm-test
   Ghc-options:         -Wall
@@ -148,6 +149,7 @@ Test-suite disasm-test
                        tasty-hunit,
                        tasty-sugar >= 2.2 && < 2.3,
                        transformers >= 0.5 && < 0.7,
+                       tree-diff >= 0.3 && < 0.4,
                        terminal-size >= 0.3 && < 0.4,
                        text,
                        versions < 7,
