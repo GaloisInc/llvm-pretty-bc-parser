@@ -1213,10 +1213,11 @@ parseMetadataOldNode fnLocal vt mt r pm = do
 
     _ -> fail "Malformed metadata node"
 
-parseDebugLoc :: Num a => Bits a => Num b => Bits b
+parseDebugLoc :: Num scope => Bits scope => Num ia => Bits ia
               => Int
-              -> (a -> Parse (ValMd' r))
-              -> (b -> Parse (Maybe (ValMd' r))) -> Record
+              -> (scope -> Parse (ValMd' r))
+              -> (ia -> Parse (Maybe (ValMd' r)))
+              -> Record
               -> Parse (DebugLoc' r)
 parseDebugLoc idx resolveScope resolveIA r = do
   assertRecordSizeIn r [ idx + i | i <- [4, 5, 7] ]
