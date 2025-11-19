@@ -20,6 +20,8 @@
   in LLVM 20), indicating that the arguments must have the same sign.
 * Support parsing `atomGroup` and `atomRank` fields in `DebugLoc` values
   (introduced in LLVM 21).
+* Support parsing `column`, `isArtificial`, and `coroSuspendIdx` fields in
+  `DILabel` values (introduced in LLVM 21).
 * Fix a bug in which `i1 true` literals would be parsed as
   `i1 18446744073709551615` in certain cases.
 

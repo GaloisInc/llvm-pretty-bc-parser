@@ -4,7 +4,9 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Data.LLVM.BitCode.IR.Metadata (
@@ -1102,13 +1104,34 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return pm
 
     40 -> label "METADATA_LABEL" $ do
-      assertRecordSizeIn r [5]
+      assertRecordSizeIn r [5, 7]
       cxt        <- getContext
-      isDistinct <- parseField r 0 nonzero
+      (flags :: Int) <- parseField r 0 numeric
+      let isDistinct      = testBit flags 0
+          dilIsArtificial = testBit flags 1
       dilScope <- ron 1
       dilName <- mdString cxt pm <$> parseField r 2 numeric
       dilFile <- ron 3
       dilLine <- parseField r 4 numeric
+      dilColumn <-
+        if length (recordFields r) > 5
+          then parseField r 5 numeric
+          else pure 0
+      -- Heavily based on the upstream metadata loader code in LLVM:
+      -- https://github.com/llvm/llvm-project/blob/58e6d02aa28ba48ee37f1b59ad006dfeb45d1dd3/llvm/lib/Bitcode/Reader/MetadataLoader.cpp#L2267-L2274
+      dilCoroSuspendIdx <-
+        if length (recordFields r) > 6
+          then do
+            (rawSuspendIdx :: Word64) <- parseField r 6 numeric
+            if rawSuspendIdx == maxBound @Word64
+              then pure Nothing
+              else do
+                when (rawSuspendIdx > fromIntegral @Word32 @Word64 maxBound) $
+                  fail $ "CoroSuspendIdx value is too large: " ++ show rawSuspendIdx
+                -- This use of fromIntegral (which truncates to a smaller Word
+                -- type) is always safe due to the check above.
+                pure $ Just $ fromIntegral @Word64 @Word32 rawSuspendIdx
+          else pure Nothing
       let dil = DILabel {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoLabel dil)) pm
