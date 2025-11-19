@@ -375,17 +375,6 @@ parseFunctionBlockEntry _ _ d (constantsBlockId -> Just es) =
   return d
 
 parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
- let lookupMetadata v = if v > 0 then Just <$> getMetadata (v-1) else return Nothing
-     -- DebugRecord parsing is essentially Metadata, which changes more
-     -- frequently, so just generate a warning on an unexpected size rather than
-     -- throwing a fatal assertion.
-     expectRecordSizeIn rcrd szs = do
-       cxt <- getContext
-       let len = length $ recordFields rcrd
-       unless (len `elem` szs)
-         $ addParseWarning
-         $ InvalidMetadataRecordSize len (MetadataRecordSizeIn szs) cxt
- in
  case recordCode r of
 
   -- [n]
@@ -748,29 +737,15 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
       -- a pointer type. See Note [Typing function applications].
       result ret (Call False fnty fn args) d
 
-  -- [Line,Col,ScopeVal, IAVal]
+  -- [Line,Col,ScopeVal, IAVal, IsImplicit, atomGroup, atomRank]
+  -- isImplicit: added LLVM 16
+  -- atomGroup and atomRank: added LLVM 21
   35 -> label "FUNC_CODE_DEBUG_LOC" $ do
-    Assert.recordSizeGreater r 3
-
-    let field = parseField r
-    line    <- field 0 numeric
-    col     <- field 1 numeric
-    scopeId <- field 2 numeric
-    iaId    <- field 3 numeric
-
-    scope <- if scopeId > 0
-                then getMetadata (scopeId - 1)
-                else fail "No scope provided"
-
-    ia <- lookupMetadata iaId
-
-    let loc = DebugLoc
-          { dlLine  = line
-          , dlCol   = col
-          , dlScope = typedValue scope
-          , dlIA    = typedValue `fmap` ia
-          , dlImplicit = False
-          }
+    let lookupMetadata v = if v > 0
+                           then Just . typedValue <$> getMetadata (v-1)
+                           else return Nothing
+    let resolveScope = maybe (fail "No scope provided") return <=< lookupMetadata
+    loc <- parseDebugLoc 0 resolveScope lookupMetadata r
     setLastLoc loc
     updateLastStmt (extendMetadata ("dbg", ValMdLoc loc)) d
 
@@ -1032,7 +1007,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
 
   61 -> label "FUNC_CODE_DEBUG_RECORD_VALUE" $ do
     -- [DILocation, DILocalVariable, DIExpression, ValueAsMetadata]
-    expectRecordSizeIn r [4]
+    assertRecordSizeIn r [4]
     let field = parseField r
     dil <- field 0 numeric >>= getMetadata
     var <- field 1 numeric >>= getMetadata
@@ -1048,7 +1023,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
 
   62 -> label "FUNC_CODE_DEBUG_RECORD_DECLARE" $ do
     -- [DILocation, DILocalVariable, DIExpression, ValueAsMetadata]
-    expectRecordSizeIn r [4]
+    assertRecordSizeIn r [4]
     let field = parseField r
     dil <- field 0 numeric >>= getMetadata
     var <- field 1 numeric >>= getMetadata
@@ -1065,7 +1040,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
   63 -> label "FUNC_CODE_DEBUG_RECORD_ASSIGN" $ do
     -- [DILocation, DILocalVariable, DIExpression, ValueAsMetadata,
     --  DIAssignID, DIExpression (addr), ValueAsMetadata (addr)]
-    expectRecordSizeIn r [7]
+    assertRecordSizeIn r [7]
     let field = parseField r
     dil <- field 0 numeric >>= getMetadata
     var <- field 1 numeric >>= getMetadata
@@ -1087,7 +1062,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
 
   64 -> label "FUNC_CODE_DEBUG_RECORD_VALUE_SIMPLE" $ do
     -- [DILocation, DILocalVariable, DIExpression, Value]
-    expectRecordSizeIn r [4]
+    assertRecordSizeIn r [4]
     let field = parseField r
     dil <- field 0 numeric >>= getMetadata
     var <- field 1 numeric >>= getMetadata
@@ -1103,7 +1078,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
 
   65 -> label "FUNC_CODE_DEBUG_RECORD_LABEL" $ do
     -- [DILocation, DILabel]
-    expectRecordSizeIn r [2]
+    assertRecordSizeIn r [2]
     let field = parseField r
     dil <- field 0 numeric >>= getMetadata
     lbl <- field 1 numeric >>= getMetadata
