@@ -18,6 +18,8 @@
     respectively.
 * Support parsing `icmp` instructions that use the `samesign` flag (introduced
   in LLVM 20), indicating that the arguments must have the same sign.
+* Fix a bug in which `i1 true` literals would be parsed as
+  `i1 18446744073709551615` in certain cases.
 
 ## 0.5.1.0 (October 2025)
 
