@@ -256,7 +256,11 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
     ty <- getTy
     n  <- field 0 signedWord64
     let val = fromMaybe (ValInteger (toInteger n)) $ do
-                Integer 0 <- elimPrimType ty
+                -- Include a special case for `i1`, as we would prefer to
+                -- render values of this type as `false` or `true` instead of
+                -- as integer literals. Note that `false` is always encoded as
+                -- `0`, but `true` may be encoded as `1` or `-1`.
+                Integer 1 <- elimPrimType ty
                 return (ValBool (n /= 0))
     return (getTy, Typed ty val:cs)
 
