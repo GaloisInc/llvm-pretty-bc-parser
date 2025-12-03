@@ -69,7 +69,7 @@ jobs:
           github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }} \
           --override-input nixpkgs github:nixos/nixpkgs/25.05
 
-  tests_llvm16-19:
+  tests_llvm16-21:
     # This job runs the LLVM tests.  The builds above verify that the code can be
     # built with different versions of GHC.  However, the resulting code should
     # be able to parse and represent the bitcode from a wide range of LLVM
@@ -95,10 +95,10 @@ jobs:
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
       - name: test
         shell: bash
-        run: nix build -L github:${{ github.repository }}/${{ github.sha }}#TESTS_16-19
+        run: nix build -L github:${{ github.repository }}/${{ github.sha }}#TESTS_16-21
 
   tests_llvm10-15:
-    # See note for tests_llvm16-19 above.  This job is identical except for the
+    # See note for tests_llvm16-21 above.  This job is identical except for the
     # nix build target.
     runs-on: ubuntu-latest
     steps:
