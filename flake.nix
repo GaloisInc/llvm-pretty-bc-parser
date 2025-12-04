@@ -56,14 +56,11 @@
             # you would like available in your development shell (or specify your
             # own version following these as a model):
 
-            # pkgs.clang_17
-            # pkgs.llvm_17
-
             # nixpkgs_old_llvm.legacyPackages.x86_64-linux.clang_16
             # nixpkgs_old_llvm.legacyPackages.x86_64-linux.llvm_16
 
-            nixpkgs_mid_llvm.legacyPackages.x86_64-linux.clang_19
-            nixpkgs_mid_llvm.legacyPackages.x86_64-linux.llvm_19
+            nixpkgs.legacyPackages.x86_64-linux.clang_21
+            nixpkgs.legacyPackages.x86_64-linux.llvm_21
 
             # Other packages to add to the development shell:
             pkgs.cabal-install
@@ -138,7 +135,7 @@
               # are multiple sub-ranges that can be explicitly invoked by the CI
               # in separate jobs to avoid this.
               TESTS_10-15
-              TESTS_16-19
+              TESTS_16-21
             ];
           TESTS_10-15 = wrap "llvm-pretty-bc-parser-TESTS_10-15"
             (builtins.map
@@ -152,7 +149,7 @@
                 "15"
               ]
             );
-          TESTS_16-19 = wrap "llvm-pretty-bc-parser-TESTS_16-19"
+          TESTS_16-21 = wrap "llvm-pretty-bc-parser-TESTS_16-21"
             (builtins.map
               (llvm-pretty-bc-parser-test llvm-pretty-bc-parser)
               [
@@ -160,6 +157,8 @@
                 "17"
                 "18"
                 "19"
+                "20"
+                "21"
               ]
             );
           llvm-pretty = mkHaskell "llvm-pretty" llvm-pretty-src {};
