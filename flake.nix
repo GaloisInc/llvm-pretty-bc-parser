@@ -56,9 +56,6 @@
             # you would like available in your development shell (or specify your
             # own version following these as a model):
 
-            # pkgs.clang_17
-            # pkgs.llvm_17
-
             # nixpkgs_old_llvm.legacyPackages.x86_64-linux.clang_16
             # nixpkgs_old_llvm.legacyPackages.x86_64-linux.llvm_16
 
