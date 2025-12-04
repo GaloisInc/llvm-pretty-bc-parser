@@ -27,18 +27,18 @@ compilers.
 |           | v7.0    | ✓                             |              |                      |
 |           | v8.0    | ✓                             |              |                      |
 |           | v9.0    | ✓                             |              |                      |
-|           | v10.0   | ✓                             |              |                      |
-|           | v11.0   | ✓                             |              |                      |
-|           | v12.0   | ✓                             |              |                      |
-|           | v13.0   | ✓                             |              | See [issues][llvm13] |
-|           | v14.0   | ✓                             |              | See [issues][llvm14] |
-|           | v15.0   | ✓                             |              | See [issues][llvm15] |
-|           | v16.0   | ✓                             |              | See [issues][llvm16] |
-|           | v17.0   | ✓                             |              | See [issues][llvm17] |
-|           | v18.0   |                               |              | See [issues][llvm18] |
-|           | v19.0   |                               |              | See [issues][llvm19] |
-|           | v20.0   |                               |              | See [issues][llvm20] |
-|           | v21.0   |                               |              | See [issues][llvm21] |
+|           | v10.0   | ✓                             | ✓            |                      |
+|           | v11.0   | ✓                             | ✓            |                      |
+|           | v12.0   | ✓                             | ✓            |                      |
+|           | v13.0   | ✓                             | ✓            | See [issues][llvm13] |
+|           | v14.0   | ✓                             | ✓            | See [issues][llvm14] |
+|           | v15.0   | ✓                             | ✓            | See [issues][llvm15] |
+|           | v16.0   | ✓                             | ✓            | See [issues][llvm16] |
+|           | v17.0   | ✓                             | ✓            | See [issues][llvm17] |
+|           | v18.0   |                               | ✓            | See [issues][llvm18] |
+|           | v19.0   |                               | ✓            | See [issues][llvm19] |
+|           | v20.0   |                               | ✓            | See [issues][llvm20] |
+|           | v21.0   |                               | ✓            | See [issues][llvm21] |
 
 If you encounter problems with the output of *any* compiler, please file [an
 issue](https://github.com/GaloisInc/llvm-pretty-bc-parser/issues).
