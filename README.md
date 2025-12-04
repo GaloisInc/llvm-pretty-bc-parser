@@ -35,10 +35,10 @@ compilers.
 |           | v15     | ✓                             | ✓            | See [issues][llvm15]  |
 |           | v16     | ✓                             | ✓            | See [issues][llvm16]  |
 |           | v17     | ✓                             | ✓            | See [issues][llvm17]  |
-|           | v18     |                               | ✓            | See [issues][llvm18]  |
-|           | v19     |                               | ✓            | See [issues][llvm19]  |
-|           | v20     |                               | ✓            | See [issues][llvm20]  |
-|           | v21     |                               | ✓            | See [issues][llvm21]  |
+|           | v18     | ✓                             | ✓            | See [issues][llvm18]  |
+|           | v19     | ✓                             | ✓            | See [issues][llvm19]  |
+|           | v20     | ✓                             | ✓            | See [issues][llvm20]  |
+|           | v21     | ✓                             | ✓            | See [issues][llvm21]  |
 
 If you encounter problems with the output of *any* compiler, please file [an
 issue](https://github.com/GaloisInc/llvm-pretty-bc-parser/issues).
