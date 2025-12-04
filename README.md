@@ -39,17 +39,6 @@ compilers.
 |           | v19.0   |                               |              | See [issues][llvm19] |
 |           | v20.0   |                               |              | See [issues][llvm20] |
 |           | v21.0   |                               |              | See [issues][llvm21] |
-| `clang++` | v3.4    |                               |              |                      |
-|           | v3.5    |                               |              |                      |
-|           | v3.6    |                               |              |                      |
-|           | v3.7    |                               |              |                      |
-|           | v3.8    |                               |              |                      |
-|           | v3.9    |                               |              |                      |
-|           | v4.0    |                               |              |                      |
-|           | v5.0    |                               |              |                      |
-|           | v6.0    |                               |              |                      |
-|           | v7.0    |                               | ✓            |                      |
-|           | v8.0    |                               |              |                      |
 
 If you encounter problems with the output of *any* compiler, please file [an
 issue](https://github.com/GaloisInc/llvm-pretty-bc-parser/issues).
