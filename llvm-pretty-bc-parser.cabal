@@ -28,6 +28,11 @@ Flag regressions
   Description:         Enable regression testing build
   Default:             False
 
+Flag old-optparse
+  Description:         Enable pprint compatibility when using older optparse-applicative
+  Default:             False
+  -- automatically enabled when the attempt to use the newer optparse fails
+
 Source-repository head
   type:                git
   location:            https://github.com/galoisinc/llvm-pretty-bc-parser
@@ -139,7 +144,6 @@ Test-suite disasm-test
                        exceptions >= 0.10 && < 0.11,
                        filepath,
                        lens,
-                       optparse-applicative >= 0.18.1.0,
                        pretty-show>= 1.6,
                        prettyprinter >= 1.7 && < 1.8,
                        string-interpolate >= 0.3 && < 0.4,
@@ -155,6 +159,12 @@ Test-suite disasm-test
                        versions < 7,
                        llvm-pretty,
                        llvm-pretty-bc-parser
+  if flag(old-optparse)
+    build-depends: optparse-applicative >= 0.17.0.0 && < 0.18.0.0,
+                   prettyprinter-convert-ansi-wl-pprint
+  else
+    build-depends: optparse-applicative >= 0.18.0.0
+
 
 Executable regression-test
   Main-is:             Main.hs

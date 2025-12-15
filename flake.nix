@@ -164,7 +164,13 @@
           llvm-pretty = mkHaskell "llvm-pretty" llvm-pretty-src {};
           llvm-pretty-bc-parser = mkHaskell "llvm-pretty-bc-parser" self {
             inherit llvm-pretty tasty-sugar;
-            configFlags = ["-ffuzz"];
+            configFlags = ["-ffuzz"] ++
+                          (let cmpv = builtins.compareVersions "0.18.0.0"
+                                      pkgs.haskellPackages.optparse-applicative.version;
+                           in if 1 == cmpv
+                              then ["-fold-optparse"]
+                              else []
+                          );
             # Build the tests, but do not run them.  The tests (specifically the
             # disasm-test) require the presence of llvm and optionally clang.
             # There are multiple versions of llvm and clang that will be used for
