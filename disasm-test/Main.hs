@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -61,8 +62,13 @@ import           Text.Show.Pretty (ppShow)
 
 import           Instances ()
 
+#if MIN_VERSION_optparse_applicative(0, 18, 0)
 descr :: PP.Doc ann
-descr = PP.vcat $
+descr = PP.align $ PP.vcat $
+#else
+import Data.Text.Prettyprint.Convert.AnsiWlPprint
+descr = toAnsiWlPprint $ PP.align $ PP.vcat $
+#endif
   let block = PPU.reflow in
   [ block [iii|
  This test verifies that the llvm-pretty-bc-parser is capable of
@@ -252,7 +258,7 @@ parseCmdLine = do
     OA.info (OA.helper <*> disasmOptParser)
     ( OA.fullDesc
       <> OA.header "llvm-pretty-bc-parser disassembly test suite"
-      <> OA.footerDoc (Just $ PP.align descr)
+      <> OA.footerDoc (Just descr)
     )
 
 
