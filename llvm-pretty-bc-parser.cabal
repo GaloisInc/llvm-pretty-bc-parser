@@ -1,6 +1,6 @@
 cabal-version:       2.4
 Name:                llvm-pretty-bc-parser
-Version:             0.5.1.0.99
+Version:             0.6.0.0
 License:             BSD-3-Clause
 License-file:        LICENSE
 Author:              Trevor Elliott <trevor@galois.com>

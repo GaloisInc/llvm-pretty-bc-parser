@@ -1,6 +1,6 @@
 # Revision history for llvm-pretty-bc-parser
 
-## next (TBA)
+## 0.6.0.0 -- 2026-01-23
 
 * Updates for supporting LLVM-19:
   * Parsing of new `DebugRecord` values.
