@@ -1,5 +1,7 @@
 # Revision history for llvm-pretty-bc-parser
 
+## next
+
 ## 0.6.0.0 -- 2026-01-23
 
 * Updates for supporting LLVM-19:
