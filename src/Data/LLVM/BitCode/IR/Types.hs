@@ -193,8 +193,7 @@ parseTypeBlockEntry (fromEntry -> Just r) = case recordCode r of
   22 -> label "TYPE_CODE_TOKEN" $ do
     notImplemented
 
-  23 -> label "TYPE_CODE_BFLOAT" $ do
-    notImplemented
+  23 -> label "TYPE_CODE_BFLOAT" (addType (PrimType (FloatType BFloat)))
 
   24 -> label "TYPE_CODE_X86_AMX" $ do
     notImplemented

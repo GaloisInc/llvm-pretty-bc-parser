@@ -279,11 +279,29 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
         build k = do
           a <-  parseField r 0 (fmap k . numeric)
           return (getTy, (Typed ty $! a):cs)
+    let build2 :: (Num a, Bits a, Num b, Bits b) => (a -> b -> PValue) -> Parse (Parse Type, [Typed PValue])
+        build2 k = do
+          a <- parseField r 0 numeric
+          b <- parseField r 1 numeric
+          return (getTy, (Typed ty $! (k a b)):cs)
     case ft of
+      Half -> build (ValHalf . FPHalf)
+      BFloat -> build (ValBFloat . FPBFloat)
       Float -> build (ValFloat  . castFloat)
       Double -> build (ValDouble . castDouble)
+      -- x86 80-bit float
       X86_fp80 -> fp80build ty r cs getTy
-      _ -> error $ "parseConstantEntry: Unsupported type " ++ show ft
+      -- IEEE 128-bit quad; ships as a pair of 64-bit values.
+      Fp128 -> build2 (\a b -> ValFP128 $ FP128_LongDouble a b)
+      -- PPC's weird quad, a pair of doubles.
+      PPC_fp128 ->
+        let construct a b =
+              let a' = castDouble a
+                  b' = castDouble b
+              in
+              ValFP128_PPC $ FP128_PPC_DoubleDouble a' b'
+        in
+        build2 construct
 
   -- [n x value number]
   7 -> label "CST_CODE_AGGREGATE" $ do
@@ -685,15 +703,21 @@ cast x = do
   res <- castSTUArray arr
   readArray res 0
 
--- fp80 is double extended format.  This conforms to IEEE 754, but is
--- store as two values: the significand and the exponent.  Discussion
--- here is relative to information from the LLVM source based at
--- https://github.com/llvm-mirror/llvm/blob/release_60 (hereafter
--- identified as LGH).
+-- fp80 is the x86 extended double format. It (mostly) conforms to
+-- IEEE 754, but is stored as two values: the significand and the
+-- exponent. Discussion here is relative to information from the LLVM
+-- source based at https://github.com/llvm-mirror/llvm/blob/release_60
+-- (hereafter identified as LGH).
 --
--- The exponent range is 16383..-16384 (14 bits), and the precision
--- (significand bits) is 64, including the integer bit (see
--- LGH/lib/Support/APFloat.cpp:75).
+-- The exponent range is 16383..-16384 (15 bits), and there are 64
+-- bits of mantissa. This includes, unlike IEEE floats, the integer
+-- (ones) bit. Thus, the _significand_ size is 63.
+--
+-- (See LGH/lib/Support/APFloat.cpp:75). Also your favorite x86 docs.
+--
+-- Note that there's also an m68k 80-bit float; it has essentially the
+-- same layout but subtly different semantics. Probably LLVM will
+-- never bother to support it.
 --
 -- When reading the Record here, there are two fields, one of 65 bits
 -- and the other of up to 20 bits (which clearly adds to more than
