@@ -54,6 +54,10 @@ deriving instance ToExpr AST.Declare
 deriving instance ToExpr AST.Define
 deriving instance ToExpr AST.FCmpOp
 deriving instance ToExpr AST.FP80Value
+deriving instance ToExpr AST.FP128Value
+deriving instance ToExpr AST.FP128_PPCValue
+deriving instance ToExpr AST.FPBFloatValue
+deriving instance ToExpr AST.FPHalfValue
 deriving instance ToExpr AST.FloatType
 deriving instance ToExpr AST.FunAttr
 deriving instance ToExpr AST.FunctionPointerAlignType

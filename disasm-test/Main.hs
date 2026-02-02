@@ -400,6 +400,7 @@ assemblyCube rootPath llvmver = TS.mkCUBE
   , TS.separators = "."
   , TS.validParams = [ ("llvm-range", Just [ "recent-llvm"
                                            , "pre-llvm9"
+                                           , "pre-llvm11"
                                            , "pre-llvm12"
                                            , "pre-llvm13"
                                            , "pre-llvm14"

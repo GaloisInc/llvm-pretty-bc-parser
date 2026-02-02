@@ -2,6 +2,11 @@
 
 ## next
 
+* Add support for reading 16-bit "Brain" floats (`bfloat`)
+* Add missing handling for 16-bit IEEE half-precision floats,
+  64-bit IEEE quad-precision floats, and PowerPC pair-of-doubles
+  floats.
+
 ## 0.6.0.0 -- 2026-01-23
 
 * Updates for supporting LLVM-19:
