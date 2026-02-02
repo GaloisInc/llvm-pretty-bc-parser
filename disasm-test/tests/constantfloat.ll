@@ -14,15 +14,14 @@
 ; prints a diff of what you got wrong... with no visible differences,
 ; which is highly confusing.
 ;
-; Also disable the inf case until someone fixes llvm-pretty #187. We
-; print it as 0x7f800000; apparently the proper behavior for printing
-; single-precision as hex is to promote to double and print that.
-; (This is also why the hex values below are doubles.)
+; Note: apparently the proper behavior for printing single-precision
+; as hex is to promote to double and print that. This is also why the
+; hex values below are doubles.
 @f0 = dso_local global float 0.0, align 4
 @f1 = dso_local global float 1.0, align 4
 @f2 = dso_local global float 2.0, align 4
 @f025 = dso_local global float 0.25, align 4
-;@finf = dso_local global float 0x7FF0000000000000, align 4
+@finf = dso_local global float 0x7FF0000000000000, align 4
 ;@fnan = dso_local global float 0xFFF5555540000000, align 4
 
 ; double-floats
