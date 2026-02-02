@@ -283,7 +283,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
         build2 k = do
           a <- parseField r 0 numeric
           b <- parseField r 1 numeric
-          return (getTy, (Typed ty $! (k a b)):cs)
+          return (getTy, (Typed ty $! k a b):cs)
     case ft of
       Half -> build (ValHalf . FPHalf)
       BFloat -> build (ValBFloat . FPBFloat)
