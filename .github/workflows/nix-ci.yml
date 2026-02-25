@@ -7,6 +7,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     # This job builds the main package, via a number of GHC versions.  This is
@@ -32,7 +36,6 @@ jobs:
           name: galois
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
       - name: build ${{ matrix.ghc-version }}
-        shell: bash
         run: nix build -L github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }}
 
   build_old_GHC:
@@ -63,7 +66,6 @@ jobs:
           name: galois
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
       - name: build ${{ matrix.ghc-version }}
-        shell: bash
         run: |
           nix build -L \
           github:${{ github.repository }}/${{ github.sha }}#llvm-pretty-bc-parser.${{ matrix.ghc-version }} \
@@ -94,7 +96,6 @@ jobs:
           name: galois
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
       - name: test
-        shell: bash
         run: nix build -L github:${{ github.repository }}/${{ github.sha }}#TESTS_22
 
   tests_llvm16-21:
@@ -111,7 +112,6 @@ jobs:
           name: galois
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
       - name: test
-        shell: bash
         run: nix build -L github:${{ github.repository }}/${{ github.sha }}#TESTS_16-21
 
   tests_llvm10-15:
@@ -128,5 +128,4 @@ jobs:
           name: galois
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
       - name: test
-        shell: bash
         run: nix build -L github:${{ github.repository }}/${{ github.sha }}#TESTS_10-15
