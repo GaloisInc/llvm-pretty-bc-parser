@@ -41,8 +41,11 @@
           # (https://gitlab.haskell.org/ghc/ghc/-/issues/25771).  This bug is
           # fixed in GHC 9.12.3; remove the following ghcver setting when GHC
           # 9.12.3 is available in nixpkgs.
+          #
+          # GHC 9.14 dependencies are not ready yet.
           builtins.filter
-            (n: builtins.substring 0 6 n != "ghc912")
+            (n: builtins.substring 0 6 n != "ghc912" &&
+                builtins.substring 0 6 n != "ghc914")
             (levers.validGHCVersions pkgs.haskell.compiler);
     in
     rec {
@@ -59,8 +62,8 @@
             # nixpkgs_old_llvm.legacyPackages.x86_64-linux.clang_16
             # nixpkgs_old_llvm.legacyPackages.x86_64-linux.llvm_16
 
-            nixpkgs.legacyPackages.x86_64-linux.clang_21
-            nixpkgs.legacyPackages.x86_64-linux.llvm_21
+            nixpkgs.legacyPackages.x86_64-linux.clang_22
+            nixpkgs.legacyPackages.x86_64-linux.llvm_22
 
             # Other packages to add to the development shell:
             pkgs.cabal-install
@@ -136,6 +139,7 @@
               # in separate jobs to avoid this.
               TESTS_10-15
               TESTS_16-21
+              TESTS_22
             ];
           TESTS_10-15 = wrap "llvm-pretty-bc-parser-TESTS_10-15"
             (builtins.map
@@ -159,6 +163,13 @@
                 "19"
                 "20"
                 "21"
+              ]
+            );
+          TESTS_22 = wrap "llvm-pretty-bc-parser-TESTS_22"
+            (builtins.map
+              (llvm-pretty-bc-parser-test llvm-pretty-bc-parser)
+              [
+                "22"
               ]
             );
           llvm-pretty = mkHaskell "llvm-pretty" llvm-pretty-src {};

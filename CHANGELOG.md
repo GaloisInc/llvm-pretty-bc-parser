@@ -2,6 +2,10 @@
 
 ## next
 
+* Support LLVM 22:
+  * Support parsing `sourceLanguageVersion` fields in `DICompileUnit` debug
+    metadata.
+  * Support parsing `dataSize` fields in `DIBasicType` debug metadata.
 * Add support for reading 16-bit "Brain" floats (`bfloat`)
 * Add missing handling for 16-bit IEEE half-precision floats,
   64-bit IEEE quad-precision floats, and PowerPC pair-of-doubles
