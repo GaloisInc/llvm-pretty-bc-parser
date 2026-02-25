@@ -572,7 +572,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return $! updateMetadataTable (addDebugInfo isDistinct diEnum) pm
 
     15 -> label "METADATA_BASIC_TYPE" $ do
-      assertRecordSizeBetween r 6 8
+      assertRecordSizeBetween r 6 9
       ctx        <- getContext
       flags      <- parseField r 0 numeric
       let isDistinct     = testBit (flags :: Int) 0
@@ -589,6 +589,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         if length (recordFields r) <= 7
         then pure 0
         else parseField r 7 numeric
+      dibtDataSize <-
+        if length (recordFields r) <= 8
+        then pure 0
+        else parseField r 8 numeric
       let dibt = DIBasicType {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoBasicType dibt)) pm
