@@ -697,7 +697,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoSubroutineType dist)) pm
 
     20 -> label "METADATA_COMPILE_UNIT" $ do
-      assertRecordSizeBetween r 14 22
+      assertRecordSizeBetween r 14 23
       let recordSize = length (recordFields r)
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
@@ -738,6 +738,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       dicuSDK <- if recordSize <= 21
                  then pure Nothing
                  else mdStringOrNull ctx pm <$> parseField r 21 numeric
+      dicuSourceLanguageVersion <-
+        if recordSize <= 22
+        then pure 0
+        else parseField r 22 numeric
       let dicu = DICompileUnit {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoCompileUnit dicu)) pm
