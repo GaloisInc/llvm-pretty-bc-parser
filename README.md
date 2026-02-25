@@ -57,7 +57,7 @@ the developers' documentation for more details and a rationale:
 - GHC 9.8.4
 - GHC 9.10.1
 
-[fuzz-workflow]: https://github.com/GaloisInc/llvm-pretty-bc-parser/blob/master/.github/workflows/llvm-quick-fuzz.yml
+[fuzz-workflow]: https://github.com/GaloisInc/llvm-pretty-bc-parser/blob/4934fb36e377fd5b1339f33ddcfd76bf9c68be0d/flake.nix#L104-L105
 [llvm3.4]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F3.4
 [llvm3.5]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F3.5
 [llvm3.6]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F3.6
