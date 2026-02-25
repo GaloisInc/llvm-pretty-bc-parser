@@ -41,8 +41,11 @@
           # (https://gitlab.haskell.org/ghc/ghc/-/issues/25771).  This bug is
           # fixed in GHC 9.12.3; remove the following ghcver setting when GHC
           # 9.12.3 is available in nixpkgs.
+          #
+          # GHC 9.14 dependencies are not ready yet.
           builtins.filter
-            (n: builtins.substring 0 6 n != "ghc912")
+            (n: builtins.substring 0 6 n != "ghc912" &&
+                builtins.substring 0 6 n != "ghc914")
             (levers.validGHCVersions pkgs.haskell.compiler);
     in
     rec {
