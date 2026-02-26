@@ -27,10 +27,10 @@ jobs:
         # level.  There is information there on what is needed to be done
         # to supported added new GHC versions.
     steps:
-      - uses: cachix/install-nix-action@v20
+      - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@v16
         with:
           name: galois
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
@@ -56,10 +56,10 @@ jobs:
       matrix:
         ghc-version: [ "ghc92", "ghc810" ]
     steps:
-      - uses: cachix/install-nix-action@v20
+      - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@v16
         with:
           name: galois
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
@@ -85,10 +85,10 @@ jobs:
     # time.
     runs-on: ubuntu-latest
     steps:
-      - uses: cachix/install-nix-action@v20
+      - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@v16
         with:
           name: galois
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
@@ -100,11 +100,11 @@ jobs:
     # nix build target.
     runs-on: ubuntu-latest
     steps:
-      - uses: cachix/install-nix-action@v20
+      - uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-23.05
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@v16
         with:
           name: galois
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
@@ -116,10 +116,10 @@ jobs:
     # nix build target.
     runs-on: ubuntu-latest
     steps:
-      - uses: cachix/install-nix-action@v20
+      - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: cachix/cachix-action@v15
+      - uses: cachix/cachix-action@v16
         with:
           name: galois
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
