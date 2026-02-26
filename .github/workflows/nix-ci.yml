@@ -19,8 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # TODO: Add "ghc912" when version 9.12.3 is released in nixpkgs.  Earlier
-        # versions are not supported due to a GHC bug
+        # TODO: Add "ghc914" when version 9.14 is released in nixpkgs.
+        # Not used: GHC version 9.12 which has many problems, including
         # (https://gitlab.haskell.org/ghc/ghc/-/issues/25771).
         ghc-version: [ "ghc910", "ghc98", "ghc96", "ghc94" ]
         # When adding a new GHC version here, check the flake.nix at the top
@@ -29,7 +29,6 @@ jobs:
     steps:
       - uses: cachix/install-nix-action@v20
         with:
-          nix_path: nixpkgs=channel:nixos-23.05
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - uses: cachix/cachix-action@v15
         with:
@@ -59,7 +58,6 @@ jobs:
     steps:
       - uses: cachix/install-nix-action@v20
         with:
-          nix_path: nixpkgs=channel:nixos-23.05
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - uses: cachix/cachix-action@v15
         with:
@@ -89,7 +87,6 @@ jobs:
     steps:
       - uses: cachix/install-nix-action@v20
         with:
-          nix_path: nixpkgs=channel:nixos-23.05
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - uses: cachix/cachix-action@v15
         with:
@@ -121,7 +118,6 @@ jobs:
     steps:
       - uses: cachix/install-nix-action@v20
         with:
-          nix_path: nixpkgs=channel:nixos-23.05
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - uses: cachix/cachix-action@v15
         with:
