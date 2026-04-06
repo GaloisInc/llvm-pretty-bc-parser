@@ -439,21 +439,21 @@ setMdTable md = modify $ \ps -> ps { psMdTable = md }
 getMetadata :: Int -> Parse (Typed PValMd)
 getMetadata ix = do
   ps <- Parse get
-  case resolveMd ix (psMdTable ps) (psMdRefs ps) of
+  case resolveMd (UnnamedMdIdx ix) (psMdTable ps) (psMdRefs ps) of
     Just tv -> case typedValue tv of
       ValMd val -> return tv { typedValue = val }
       _         -> fail "unexpected non-metadata value in metadata table"
     Nothing -> fail ("metadata index " ++ show ix ++ " is not defined")
 
-resolveMd :: Int -> MdTable -> MdRefTable -> Maybe (Typed PValue)
-resolveMd ix mdTable mdRefs = nodeRef `mplus` mdValue
+resolveMd :: UnnamedMdIdx -> MdTable -> MdRefTable -> Maybe (Typed PValue)
+resolveMd (UnnamedMdIdx ix) mdTable mdRefs = nodeRef `mplus` mdValue
   where
   reference = Typed (PrimType Metadata) . ValMd . ValMdRef
   nodeRef   = reference `fmap` IntMap.lookup ix mdRefs
   mdValue   = lookupValueTableAbs ix mdTable
 
 
-type MdRefTable = IntMap.IntMap Int
+type MdRefTable = IntMap.IntMap UnnamedMdIdx
 
 class Monad m => HasMdRefTable m where
   getMdRefTable :: m MdRefTable

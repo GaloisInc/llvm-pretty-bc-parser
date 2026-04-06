@@ -40,6 +40,7 @@ import           Control.Exception (throw)
 import           Control.Monad (foldM, guard, mplus, unless, when)
 import           Data.Bits ( Bits, shiftR, testBit, shiftL, (.&.), (.|.), bit
                            , complement )
+import           Data.Bool ( bool )
 import qualified Data.ByteString as S
 import qualified Data.ByteString.Char8 as Char8 (unpack)
 import           Data.Data (Data)
@@ -64,26 +65,32 @@ import           Data.Bifunctor (bimap)
 
 data MetadataTable = MetadataTable
   { mtEntries   :: MdTable
-  , mtNextNode  :: !Int
-  , mtNodes     :: IntMap.IntMap (Bool, Bool, Int)
+  , mtNextNode  :: !UnnamedMdIdx
+  , mtNodes     :: IntMap.IntMap (Bool, Bool, UnnamedMdIdx)
                    -- ^ The entries in the map are: is the entry function local,
                    -- is the entry distinct, and the implicit id for the node.
   } deriving (Show)
 
 emptyMetadataTable ::
-  Int {- ^ globals seen so far -} ->
+  UnnamedMdIdx {- ^ maximum unnamed metadata index seen so far -} ->
   MdTable -> MetadataTable
-emptyMetadataTable globals es = MetadataTable
+emptyMetadataTable maxUnMdIdx es = MetadataTable
   { mtEntries   = es
-  , mtNextNode  = globals
+  , mtNextNode  = maxUnMdIdx
   , mtNodes     = IntMap.empty
   }
 
 metadata :: PValMd -> Typed PValue
 metadata  = Typed (PrimType Metadata) . ValMd
 
-addMetadata :: PValMd  -> MetadataTable -> (Int,MetadataTable)
-addMetadata val mt = (ix, mt { mtEntries = es' })
+parseMdIdx :: Record -> Int -> Parse UnnamedMdIdx
+parseMdIdx r n  = UnnamedMdIdx <$> parseField r n numeric
+
+parseMultiMdIdx :: Record -> Int -> Parse [UnnamedMdIdx]
+parseMultiMdIdx r n  = fmap UnnamedMdIdx <$> parseFields r n numeric
+
+addMetadata :: PValMd  -> MetadataTable -> (UnnamedMdIdx, MetadataTable)
+addMetadata val mt = (UnnamedMdIdx ix, mt { mtEntries = es' })
   where
   (ix,es') = addValue' (metadata val) (mtEntries mt)
 
@@ -95,10 +102,11 @@ addMdValue tv mt = mt { mtEntries = addValue tv' (mtEntries mt) }
               , typedValue = ValMd (ValMdValue tv)
               }
 
-nameNode :: Bool -> Bool -> Int -> MetadataTable -> MetadataTable
+nameNode :: Bool -> Bool -> UnnamedMdIdx -> MetadataTable -> MetadataTable
 nameNode fnLocal isDistinct ix mt = mt
-  { mtNodes    = IntMap.insert ix (fnLocal,isDistinct,mtNextNode mt) (mtNodes mt)
-  , mtNextNode = mtNextNode mt + 1
+  { mtNodes    = IntMap.insert (unnamedMdIdx ix) (fnLocal,isDistinct,mtNextNode mt)
+                 (mtNodes mt)
+  , mtNextNode = nextUnnamedMdIdx $ mtNextNode mt
   }
 
 addString :: String -> PartialMetadata -> PartialMetadata
@@ -148,34 +156,35 @@ addOldNode fnLocal vals mt = nameNode fnLocal False ix mt'
   where
   (ix,mt') = addMetadata (ValMdNode [ Just (ValMdValue tv) | tv <- vals ]) mt
 
-mdForwardRef :: [String] -> MetadataTable -> Int -> PValMd
+mdForwardRef :: [String] -> MetadataTable -> UnnamedMdIdx -> PValMd
 mdForwardRef cxt mt ix = fromMaybe fallback nodeRef
   where
-  nodeRef           = reference `fmap` IntMap.lookup ix (mtNodes mt)
-  fallback          = case forwardRef cxt ix (mtEntries mt) of
+  nodeRef           = reference `fmap` IntMap.lookup (unnamedMdIdx ix) (mtNodes mt)
+  fallback          = case forwardRef cxt (unnamedMdIdx ix) (mtEntries mt) of
                         Typed { typedValue = ValMd md } -> md
                         tv                              -> ValMdValue tv
   reference (False, _, r) = ValMdRef r
   reference (_    , _, r) =
     let explanation = "Illegal forward reference into function-local metadata."
-    in throw (BadValueRef callStack cxt explanation r)
+    in throw (BadValueRef callStack cxt explanation $ unnamedMdIdx r)
 
-mdForwardRefOrNull :: [String] -> MetadataTable -> Int -> Maybe PValMd
-mdForwardRefOrNull cxt mt ix | ix > 0 = Just (mdForwardRef cxt mt (ix - 1))
-                             | otherwise = Nothing
+mdForwardRefOrNull :: [String] -> MetadataTable -> UnnamedMdIdx -> Maybe PValMd
+mdForwardRefOrNull cxt mt ix
+  | unnamedMdIdx ix > 0 = Just (mdForwardRef cxt mt (nonNullUnnamedMdIdx ix))
+  | otherwise = Nothing
 
 mdNodeRef :: HasCallStack
-          => [String] -> MetadataTable -> Int -> Int
-mdNodeRef cxt mt ix = maybe except prj (IntMap.lookup ix (mtNodes mt))
+          => [String] -> MetadataTable -> UnnamedMdIdx -> UnnamedMdIdx
+mdNodeRef cxt mt ix = maybe except prj (IntMap.lookup (unnamedMdIdx ix) (mtNodes mt))
   where explanation   = "Bad forward reference into mtNodes"
-        except        = throw (BadValueRef callStack cxt explanation ix)
+        except        = throw (BadValueRef callStack cxt explanation $ unnamedMdIdx ix)
         prj (_, _, x) = x
 
 mdString :: HasCallStack
-         => [String] -> PartialMetadata -> Int -> String
+         => [String] -> PartialMetadata -> UnnamedMdIdx -> String
 mdString cxt partialMeta ix =
   let explanation = "Null value when metadata string was expected"
-  in fromMaybe (throw (BadValueRef callStack cxt explanation ix))
+  in fromMaybe (throw (BadValueRef callStack cxt explanation $ unnamedMdIdx ix))
                (mdStringOrNull cxt partialMeta ix)
 
 -- | This preferentially fetches the string from the strict string table
@@ -183,21 +192,21 @@ mdString cxt partialMeta ix =
 mdStringOrNull :: HasCallStack
                => [String]
                -> PartialMetadata
-               -> Int
+               -> UnnamedMdIdx
                -> Maybe String
 mdStringOrNull cxt partialMeta ix =
-  Map.lookup (ix - 1) (pmStrings partialMeta) <|>
+  Map.lookup (nonNullUnnamedMdIdx ix) (pmStrings partialMeta) <|>
     case mdForwardRefOrNull cxt (pmEntries partialMeta) ix of
       Nothing                -> Nothing
       Just (ValMdString str) -> Just str
       Just _                 ->
         let explanation = "Non-string metadata when string was expected"
-        in throw (BadTypeRef callStack cxt explanation ix)
+        in throw (BadTypeRef callStack cxt explanation $ unnamedMdIdx ix)
 
 mdStringOrEmpty :: HasCallStack
                 => [String]
                 -> PartialMetadata
-                -> Int
+                -> UnnamedMdIdx
                 -> String
 mdStringOrEmpty cxt partialMeta = fromMaybe "" . mdStringOrNull cxt partialMeta
 
@@ -210,12 +219,12 @@ mkMdRefTable mt = IntMap.mapMaybe step (mtNodes mt)
 
 data PartialMetadata = PartialMetadata
   { pmEntries          :: MetadataTable
-  , pmNamedEntries     :: Map.Map String [Int]
+  , pmNamedEntries     :: Map.Map String [UnnamedMdIdx]
   , pmNextName         :: Maybe String
   , pmInstrAttachments :: InstrMdAttachments
   , pmFnAttachments    :: PFnMdAttachments
   , pmGlobalAttachments:: PGlobalAttachments
-  , pmStrings          :: Map Int String
+  , pmStrings          :: Map UnnamedMdIdx String
   -- ^ Forward references to metadata strings are never actually
   -- forward references, string blocks (@METADATA_STRINGS@) always come first.
   -- So references to them don't need to be inside the @MonadFix@ like
@@ -227,10 +236,10 @@ data PartialMetadata = PartialMetadata
   } deriving (Show)
 
 emptyPartialMetadata ::
-  Int {- ^ globals seen so far -} ->
+  UnnamedMdIdx {- ^ maximum unnamed metadata index seen so far -} ->
   MdTable -> PartialMetadata
-emptyPartialMetadata globals es = PartialMetadata
-  { pmEntries           = emptyMetadataTable globals es
+emptyPartialMetadata maxUnMdIdx es = PartialMetadata
+  { pmEntries           = emptyMetadataTable maxUnMdIdx es
   , pmNamedEntries      = Map.empty
   , pmNextName          = Nothing
   , pmInstrAttachments  = Map.empty
@@ -264,7 +273,7 @@ addInstrAttachment :: Int -> [(KindMd,PValMd)]
 addInstrAttachment instr md pm =
   pm { pmInstrAttachments = Map.insert instr md (pmInstrAttachments pm) }
 
-nameMetadata :: [Int] -> PartialMetadata -> Parse PartialMetadata
+nameMetadata :: [UnnamedMdIdx] -> PartialMetadata -> Parse PartialMetadata
 nameMetadata val pm = case pmNextName pm of
   Just name -> return $! pm
     { pmNextName     = Nothing
@@ -295,18 +304,18 @@ dedupMetadata pumd = helper (mkPartialUnnamedMdMap pumd) <$> pumd
 
         -- | We avoid erroneously recursing into ValMdValues and exit early on
         -- a few other constructors de-duplication wouldn't affect.
-        maybeTransform :: Map PValMd Int -> PValMd -> PValMd
+        maybeTransform :: Map PValMd UnnamedMdIdx -> PValMd -> PValMd
         maybeTransform pumdMap v@(ValMdNode _)      = transform (trans pumdMap) v
         maybeTransform pumdMap v@(ValMdLoc _)       = transform (trans pumdMap) v
         maybeTransform pumdMap v@(ValMdDebugInfo _) = transform (trans  pumdMap) v
         maybeTransform _       v                    = v
 
-        trans :: Map PValMd Int -> PValMd -> PValMd
+        trans :: Map PValMd UnnamedMdIdx -> PValMd -> PValMd
         trans pumdMap v = case Map.lookup v pumdMap of
                             Just idex -> ValMdRef idex
                             Nothing   -> v
 
-        mkPartialUnnamedMdMap :: Seq PartialUnnamedMd -> Map PValMd Int
+        mkPartialUnnamedMdMap :: Seq PartialUnnamedMd -> Map PValMd UnnamedMdIdx
         mkPartialUnnamedMdMap =
           foldl' (\mp part -> Map.insert (pumValues part) (pumIndex part) mp) Map.empty
 
@@ -319,7 +328,7 @@ namedEntries  = Seq.fromList
               . pmNamedEntries
 
 data PartialUnnamedMd = PartialUnnamedMd
-  { pumIndex    :: Int
+  { pumIndex    :: UnnamedMdIdx
   , pumValues   :: PValMd
   , pumDistinct :: Bool
   } deriving (Data, Eq, Ord, Generic, Show, Typeable)
@@ -338,18 +347,19 @@ finalizePValMd = relabel requireBbEntryName
 
 -- | Partition unnamed entries into global and function local unnamed entries.
 unnamedEntries :: PartialMetadata -> (Seq PartialUnnamedMd, Seq PartialUnnamedMd)
-unnamedEntries pm = bimap Seq.fromList Seq.fromList (partitionEithers (mapMaybe resolveNode (IntMap.toList (mtNodes mt))))
+unnamedEntries pm = bimap Seq.fromList Seq.fromList
+                    (partitionEithers (mapMaybe resolveNode (IntMap.toList (mtNodes mt))))
   where
   mt = pmEntries pm
 
   -- TODO: is this silently eating errors with metadata that's not in the
   -- value table (when the lookupValueTableAbs fails)?
-  resolveNode :: (Int, (Bool, Bool, Int))
+  resolveNode :: (Int, (Bool, Bool, UnnamedMdIdx))
               -> Maybe (Either PartialUnnamedMd PartialUnnamedMd)
   resolveNode (ref,(fnLocal,d,ix)) =
     ((if fnLocal then Right else Left) <$> lookupNode ref d ix)
 
-  lookupNode :: Int -> Bool -> Int -> Maybe PartialUnnamedMd
+  lookupNode :: Int -> Bool -> UnnamedMdIdx -> Maybe PartialUnnamedMd
   lookupNode ref d ix = do
     tv <- lookupValueTableAbs ref (mtEntries mt)
     case tv of
@@ -387,11 +397,11 @@ parsedMetadata pm =
 -- Metadata Parsing ------------------------------------------------------------
 
 parseMetadataBlock ::
-  Int {- ^ globals seen so far -} ->
+  UnnamedMdIdx {- ^ maximum unnamed metadata index seen so far -} ->
   ValueTable -> [Entry] -> Parse ParsedMetadata
-parseMetadataBlock globals vt es = label "METADATA_BLOCK" $ do
+parseMetadataBlock maxUnMdIdx vt es = label "METADATA_BLOCK" $ do
   ms <- getMdTable
-  let pm0 = emptyPartialMetadata globals ms
+  let pm0 = emptyPartialMetadata maxUnMdIdx ms
   rec pm <- foldM (parseMetadataEntry vt (pmEntries pm)) pm0 es
   let entries = pmEntries pm
   setMdTable (mtEntries entries)
@@ -410,7 +420,7 @@ parseMetadataEntry :: ValueTable -> MetadataTable -> PartialMetadata -> Entry
 parseMetadataEntry vt mt pm (fromEntry -> Just r) =
   let -- Helpers for common patterns which appear below in parsing metadata
       ron n = do ctx <- getContext
-                 mdForwardRefOrNull ctx mt <$> parseField r n numeric
+                 mdForwardRefOrNull ctx mt <$> parseMdIdx r n
       ronl n = if length (recordFields r) <= n then pure Nothing else ron n
 
       -- If the @isMetadata@ argument is 'True', then parse a metadata value
@@ -481,8 +491,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       cxt <- getContext
       isDistinct <- parseField r 0 nonzero
       loc <- parseDebugLoc 1
-             (pure . mdForwardRef cxt mt)
-             (pure . mdForwardRefOrNull cxt mt) r
+             (pure . mdForwardRef cxt mt . UnnamedMdIdx)
+             (pure . mdForwardRefOrNull cxt mt . UnnamedMdIdx) r
       return $! updateMetadataTable (addLoc isDistinct loc) pm
 
     -- [n x (type num, value num)]
@@ -493,7 +503,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
     -- [n x mdnodes]
     10 -> label "METADATA_NAMED_NODE" $ do
-      mdIds <- parseFields r 0 numeric
+      mdIds <- parseMultiMdIdx r 0
       cxt   <- getContext
       let ids = map (mdNodeRef cxt mt) mdIds
       nameMetadata ids pm
@@ -561,7 +571,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       let isDistinct = testBit (flags :: Int) 0
           isUnsigned = testBit (flags :: Int) 1
           isBigInt   = testBit (flags :: Int) 2
-      name  <- mdString ctx pm <$> parseField r 2 numeric
+      name  <- mdString ctx pm <$> parseMdIdx r 2
       value <-
         if isBigInt
           -- LLVM 12 or later
@@ -578,7 +588,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       let isDistinct     = testBit (flags :: Int) 0
           sizeIsMetadata = testBit (flags :: Int) 1
       dibtTag <- parseField r 1 numeric
-      dibtName <- mdString ctx pm <$> parseField r 2 numeric
+      dibtName <- mdString ctx pm <$> parseMdIdx r 2
       dibtSize <- mdOrConstant sizeIsMetadata 3
       dibtAlign <- parseField r 4 numeric
       dibtEncoding <- parseField r 5 numeric
@@ -602,8 +612,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       assertRecordSizeIn r [3, 5]
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
-      difFilename <- mdStringOrEmpty ctx pm <$> parseField r 1 numeric
-      difDirectory <- mdStringOrEmpty ctx pm <$> parseField r 2 numeric
+      difFilename <- mdStringOrEmpty ctx pm <$> parseMdIdx r 1
+      difDirectory <- mdStringOrEmpty ctx pm <$> parseMdIdx r 2
       let diFile = DIFile {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoFile diFile)) pm
@@ -618,7 +628,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       let isDistinct     = testBit (flags :: Int) 0
           sizeIsMetadata = testBit (flags :: Int) 1
       didtTag <- parseField r 1 numeric
-      didtName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
+      didtName <- mdStringOrNull ctx pm <$> parseMdIdx r 2
       didtFile <- ron 3
       didtLine <- parseField r 4 numeric
       didtScope <- ron 5
@@ -656,7 +666,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
           -- isNotUsedInTypeRef = testBit (flags :: Int) 1
           sizeIsMetadata = testBit (flags :: Int) 2
       dictTag <- parseField r 1 numeric
-      dictName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
+      dictName <- mdStringOrNull ctx pm <$> parseMdIdx r 2
       dictFile <- ron 3
       dictLine <- parseField r 4 numeric
       dictScope <- ron 5
@@ -669,7 +679,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       dictRuntimeLang <- parseField r 12 numeric
       dictVTableHolder <- ron 13
       dictTemplateParams <- ron 14
-      dictIdentifier <- mdStringOrNull ctx pm <$> parseField r 15 numeric
+      dictIdentifier <- mdStringOrNull ctx pm <$> parseMdIdx r 15
       dictDiscriminator <- ronl 16
       dictDataLocation <- ronl 17
       dictAssociated <- ronl 18
@@ -707,11 +717,11 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       isDistinct <- parseField r 0 nonzero
       dicuLanguage <- parseField r 1 numeric
       dicuFile <- ron 2
-      dicuProducer <- mdStringOrNull ctx pm <$> parseField r 3 numeric
+      dicuProducer <- mdStringOrNull ctx pm <$> parseMdIdx r 3
       dicuIsOptimized <- parseField r 4 nonzero
-      dicuFlags <- mdStringOrNull ctx pm <$> parseField r 5 numeric
+      dicuFlags <- mdStringOrNull ctx pm <$> parseMdIdx r 5
       dicuRuntimeVersion <- parseField r 6 numeric
-      dicuSplitDebugFilename <- mdStringOrNull ctx pm <$> parseField r 7 numeric
+      dicuSplitDebugFilename <- mdStringOrNull ctx pm <$> parseMdIdx r 7
       dicuEmissionKind <- parseField r 8 numeric
       dicuEnums <- ron 9
       dicuRetainedTypes <- ron 10
@@ -738,10 +748,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
                                else parseField r 19 nonzero
       dicuSysRoot <- if recordSize <= 20
                      then pure Nothing
-                     else mdStringOrNull ctx pm <$> parseField r 20 numeric
+                     else mdStringOrNull ctx pm <$> parseMdIdx r 20
       dicuSDK <- if recordSize <= 21
                  then pure Nothing
-                 else mdStringOrNull ctx pm <$> parseField r 21 numeric
+                 else mdStringOrNull ctx pm <$> parseMdIdx r 21
       dicuSourceLanguageVersion <-
         if recordSize <= 22
         then pure 0
@@ -847,12 +857,12 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       -- Forward references that depend on the 'version'
       let optFwdRef b n =
             if b
-            then mdForwardRefOrNull ctx mt <$> parseField r n numeric
+            then mdForwardRefOrNull ctx mt . UnnamedMdIdx <$> parseField r n numeric
             else pure Nothing
 
       dispScope <- ron 1
-      dispName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
-      dispLinkageName <- mdStringOrNull ctx pm <$> parseField r 3 numeric
+      dispName <- mdStringOrNull ctx pm <$> parseMdIdx r 2
+      dispLinkageName <- mdStringOrNull ctx pm <$> parseMdIdx r 3
       dispFile <- ron 4
       dispLine <- parseField r 5 numeric
       dispType <- ron 6
@@ -892,7 +902,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       assertRecordSizeIn r [4]
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
-      dilbfScope <- mdForwardRef cxt mt <$> parseField r 1 numeric
+      dilbfScope <- mdForwardRef cxt mt <$> parseMdIdx r 1
       dilbfFile <- ron 2
       dilbfDiscriminator <- parseField r 3 numeric
       let dilbf = DILexicalBlockFile {..}
@@ -902,15 +912,15 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     24 -> label "METADATA_NAMESPACE" $ do
       assertRecordSizeIn r [3, 5]
       let isNew = length (recordFields r) == 3
-      let nameIdx = if isNew then 2 else 3
+      let nameIdx = bool 3 2 isNew
 
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
-      dinsName <- mdStringOrNull cxt pm <$> parseField r nameIdx numeric
-      dinsScope <- mdForwardRef cxt mt <$> parseField r 1 numeric
+      dinsName <- mdStringOrNull cxt pm <$> parseMdIdx r nameIdx
+      dinsScope <- mdForwardRef cxt mt <$> parseMdIdx r 1
       dinsFile <- if isNew
                   then return (ValMdString "")
-                  else mdForwardRef cxt mt <$> parseField r 2 numeric
+                  else mdForwardRef cxt mt <$> parseMdIdx r 2
       dinsLine <- if isNew then return 0 else parseField r 4 numeric
       let dins = DINameSpace {..}
       return $! updateMetadataTable
@@ -921,7 +931,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       let hasIsDefault = length (recordFields r) == 4
       cxt <- getContext
       isDistinct <- parseField r 0 nonzero
-      dittpName <- mdStringOrNull cxt pm <$> parseField r 1 numeric
+      dittpName <- mdStringOrNull cxt pm <$> parseMdIdx r 1
       dittpType <- ron 2
       dittpIsDefault <- if hasIsDefault
                         then Just <$> parseField r 3 boolean
@@ -936,12 +946,12 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
       ditvpTag <- parseField r 1 numeric
-      ditvpName <- mdStringOrNull cxt pm <$> parseField r 2 numeric
+      ditvpName <- mdStringOrNull cxt pm <$> parseMdIdx r 2
       ditvpType <- ron 3
       ditvpIsDefault <- if hasIsDefault
                         then Just <$> parseField r 4 boolean
                         else pure Nothing
-      ditvpValue <- mdForwardRef cxt mt <$> parseField r (if hasIsDefault then 5 else 4) numeric
+      ditvpValue <- mdForwardRef cxt mt <$> parseMdIdx r (bool 4 5 hasIsDefault)
       let ditvp = DITemplateValueParameter {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoTemplateValueParameter ditvp)) pm
@@ -954,8 +964,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
           _version   = shiftR  field0 1 :: Int
 
       digvScope <- ron 1
-      digvName <- mdStringOrNull ctx pm <$> parseField r 2 numeric
-      digvLinkageName <- mdStringOrNull ctx pm <$> parseField r 3 numeric
+      digvName <- mdStringOrNull ctx pm <$> parseMdIdx r 2
+      digvLinkageName <- mdStringOrNull ctx pm <$> parseMdIdx r 3
       digvFile <- ron 4
       digvLine <- parseField r 5 numeric
       digvType <- ron 6
@@ -989,14 +999,14 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
 
 
       dilvScope <- mdForwardRefOrNull ("dilvScope":ctx) mt
-                   <$> parseField r (adj 1) numeric
+                   <$> parseMdIdx r (adj 1)
       dilvName <- mdStringOrNull     ("dilvName" :ctx) pm
-                  <$> parseField r (adj 2) numeric
+                  <$> parseMdIdx r (adj 2)
       dilvFile <- mdForwardRefOrNull ("dilvFile" :ctx) mt
-                  <$> parseField r (adj 3) numeric
+                  <$> parseMdIdx r (adj 3)
       dilvLine <- parseField r (adj 4) numeric
       dilvType <- mdForwardRefOrNull ("dilvType" :ctx) mt
-                  <$> parseField r (adj 5) numeric
+                  <$> parseMdIdx r (adj 5)
       dilvArg <- parseField r (adj 6) numeric
       dilvFlags <- parseField r (adj 7) numeric
       dilvAlignment <-
@@ -1040,7 +1050,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
                   then ron 6
                   else pure Nothing
       diieLine <- parseField r 4 numeric
-      diieName <- mdStringOrNull cxt pm <$> parseField r 5 numeric
+      diieName <- mdStringOrNull cxt pm <$> parseMdIdx r 5
       let diie = DIImportedEntity {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoImportedEntity diie)) pm
@@ -1139,7 +1149,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       let isDistinct      = testBit flags 0
           dilIsArtificial = testBit flags 1
       dilScope <- ron 1
-      dilName <- mdString cxt pm <$> parseField r 2 numeric
+      dilName <- mdString cxt pm <$> parseMdIdx r 2
       dilFile <- ron 3
       dilLine <- parseField r 4 numeric
       dilColumn <-
@@ -1180,7 +1190,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
     46 -> label "METADATA_ARG_LIST" $ do
       cxt <- getContext
       dial <- DIArgList
-        <$> (map (mdForwardRef cxt mt) <$> parseFields r 0 numeric)
+        <$> (map (mdForwardRef cxt mt) <$> parseMultiMdIdx r 0)
       return $! updateMetadataTable
         (addInlineDebugInfo (DebugInfoArgList dial)) pm
 
@@ -1223,7 +1233,7 @@ parseGlobalObjectAttachment mt r = label "parseGlobalObjectAttachment" $
 
   go cxt acc n | n < len =
     do kind <- getKind =<< parseField r n numeric
-       i    <- parseField r (n + 1) numeric
+       i    <- parseMdIdx r (n + 1)
        go cxt (Map.insert kind (mdForwardRef cxt mt i) acc) (n + 2)
 
   go _ acc _ =
@@ -1234,7 +1244,7 @@ parseGlobalObjectAttachment mt r = label "parseGlobalObjectAttachment" $
 parseMetadataNode :: Bool -> MetadataTable -> Record -> PartialMetadata
                   -> Parse PartialMetadata
 parseMetadataNode isDistinct mt r pm = do
-  ixs <- parseFields r 0 numeric
+  ixs <- parseMultiMdIdx r 0
   cxt <- getContext
   let lkp = mdForwardRefOrNull cxt mt
   return $! updateMetadataTable (addNode isDistinct (map lkp ixs)) pm
@@ -1254,7 +1264,8 @@ parseMetadataOldNode fnLocal vt mt r pm = do
       ty  <- getType' tyId
       val <- case ty of
         PrimType Metadata -> return $ Typed (PrimType Metadata)
-                                            (ValMd (mdForwardRef cxt mt valId))
+                                            (ValMd (mdForwardRef cxt mt
+                                                    $ UnnamedMdIdx valId))
         -- XXX need to check for a void type here
         _                 -> return (forwardRef cxt valId vt)
 
