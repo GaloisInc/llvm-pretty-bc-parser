@@ -94,6 +94,7 @@ deriving instance ToExpr ObjectFormat
 deriving instance ToExpr SubArch
 deriving instance ToExpr Triple.TargetTriple
 deriving instance ToExpr Vendor
+deriving instance ToExpr AST.UnnamedMdIdx
 
 
 -- deriving instance ToExpr AST.DwarfAttrEncoding

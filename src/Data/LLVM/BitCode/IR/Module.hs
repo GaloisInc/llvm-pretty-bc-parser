@@ -142,8 +142,8 @@ parseModuleBlockEntry pm (moduleCodeFunction -> Just r) = do
   parseFunProto r pm
 
 parseModuleBlockEntry pm (functionBlockId -> Just es) = label "FUNCTION_BLOCK_ID" $ do
-  let unnamedGlobalsCount = length (partialUnnamedMd pm)
-  def <- parseFunctionBlock unnamedGlobalsCount es
+  let maxUnMdIdx = UnnamedMdIdx $ length (partialUnnamedMd pm)
+  def <- parseFunctionBlock maxUnMdIdx es
   let def' = def { partialGlobalMd = mempty }
   return pm { partialDefines = partialDefines pm Seq.|> def'
             , partialUnnamedMd = partialGlobalMd def <> partialUnnamedMd pm
@@ -161,8 +161,8 @@ parseModuleBlockEntry pm (paramattrGroupBlockId -> Just _) = do
 
 parseModuleBlockEntry pm (metadataBlockId -> Just es) = label "METADATA_BLOCK_ID" $ do
   vt <- getValueTable
-  let globalsSoFar = length (partialUnnamedMd pm)
-  (ns,(gs,_),_,_,atts) <- parseMetadataBlock globalsSoFar vt es
+  let maxUnMdIdx = UnnamedMdIdx $ length (partialUnnamedMd pm)
+  (ns,(gs,_),_,_,atts) <- parseMetadataBlock maxUnMdIdx vt es
   return $ addGlobalAttachments atts pm
     { partialNamedMd   = partialNamedMd   pm <> ns
     , partialUnnamedMd = partialUnnamedMd pm <> gs

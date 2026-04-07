@@ -62,7 +62,7 @@ getFnValueById' mbVt ty n = case ty of
     cxt <- getContext
     md  <- getMdTable
     mdr <- getMdRefTable
-    case resolveMd n md mdr of
+    case resolveMd (UnnamedMdIdx n) md mdr of
       Just tv -> return tv
       Nothing ->
         let explanation = "Illegal forward reference into metadata"

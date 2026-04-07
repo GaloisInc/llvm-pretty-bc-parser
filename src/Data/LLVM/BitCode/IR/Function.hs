@@ -337,9 +337,9 @@ callExplicitTypeBit = 15
 
 -- | Parse the function block.
 parseFunctionBlock ::
-  Int {- ^ unnamed globals so far -} ->
+  UnnamedMdIdx {- ^ maximum unnamed Metadata index so far -} ->
   [Entry] -> Parse PartialDefine
-parseFunctionBlock unnamedGlobals ents =
+parseFunctionBlock maxUnMdIdx ents =
   label "FUNCTION_BLOCK" $ enterFunctionDef $ do
 
   -- parse the value symtab block first, so that names are present during the
@@ -357,7 +357,7 @@ parseFunctionBlock unnamedGlobals ents =
 
     -- generate the initial partial definition
     pd  <- emptyPartialDefine proto
-    rec pd' <- foldM (parseFunctionBlockEntry unnamedGlobals vt) pd ents
+    rec pd' <- foldM (parseFunctionBlockEntry maxUnMdIdx vt) pd ents
         vt  <- getValueTable
 
     -- merge the symbol table with the anonymous symbol table
@@ -365,7 +365,7 @@ parseFunctionBlock unnamedGlobals ents =
 
 -- | Parse the members of the function block
 parseFunctionBlockEntry ::
-  Int {- ^ unnamed globals so far -} ->
+  UnnamedMdIdx {- ^ maximum unnamed metadata index used so far -} ->
   ValueTable -> PartialDefine -> Entry ->
   Parse PartialDefine
 
@@ -1144,15 +1144,15 @@ parseFunctionBlockEntry _ _ d (valueSymtabBlockId -> Just _) = do
   -- this is parsed before any of the function block
   return d
 
-parseFunctionBlockEntry globals t d (metadataBlockId -> Just es) = do
-  (_, (globalUnnamedMds, localUnnamedMds), _, _, _) <- parseMetadataBlock globals t es
+parseFunctionBlockEntry maxUnMdIdx t d (metadataBlockId -> Just es) = do
+  (_, (globalUnnamedMds, localUnnamedMds), _, _, _) <- parseMetadataBlock maxUnMdIdx t es
   if (null localUnnamedMds)
     then return d { partialGlobalMd = globalUnnamedMds <> partialGlobalMd d }
     else return d -- silently drop unexpected local unnamed metadata
 
-parseFunctionBlockEntry globals t d (metadataAttachmentBlockId -> Just es) = do
+parseFunctionBlockEntry maxUnMdIdx t d (metadataAttachmentBlockId -> Just es) = do
   (_,(globalUnnamedMds, localUnnamedMds),instrAtt,fnAtt,_)
-     <- parseMetadataBlock globals t es
+     <- parseMetadataBlock maxUnMdIdx t es
   unless (null localUnnamedMds)
      (fail "parseFunctionBlockEntry PANIC: unexpected local unnamed metadata")
   unless (null globalUnnamedMds)
