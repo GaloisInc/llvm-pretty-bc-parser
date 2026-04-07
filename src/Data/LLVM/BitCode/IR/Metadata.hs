@@ -193,13 +193,13 @@ mdStringOrNull :: HasCallStack
                -> UnnamedMdIdx
                -> Maybe String
 mdStringOrNull cxt partialMeta ix =
-  let pmEntryStr = \case
-        ValMdString str -> str
-        _ -> let explanation = "Non-string metadata when string was expected"
-             in throw (BadTypeRef callStack cxt explanation $ unnamedMdIdx ix)
-  in do aix <- nonNullUnnamedMdIdx ix
-        Map.lookup aix (pmStrings partialMeta)
-          <|> (pmEntryStr <$> mdForwardRefOrNull cxt (pmEntries partialMeta) ix)
+  do aix <- nonNullUnnamedMdIdx ix
+     Map.lookup aix (pmStrings partialMeta)
+       <|> case mdForwardRef cxt (pmEntries partialMeta) aix of
+             ValMdString str -> Just str
+             _ -> let explanation = "Non-string metadata when string was expected"
+                  in throw (BadTypeRef callStack cxt explanation $ unnamedMdIdx ix)
+
 
 mdStringOrEmpty :: HasCallStack
                 => [String]
