@@ -305,7 +305,6 @@ type PInstr = Instr' Int
 data ValueTable = ValueTable
   { valueNextId  :: !Int
   , valueEntries :: IntMap.IntMap (Typed PValue)
-  , strtabEntries :: IntMap.IntMap (Int, Int)
   , valueRelIds  :: Bool
   } deriving (Show)
 
@@ -313,7 +312,6 @@ emptyValueTable :: Bool -> ValueTable
 emptyValueTable rel = ValueTable
   { valueNextId  = 0
   , valueEntries = IntMap.empty
-  , strtabEntries = IntMap.empty
   , valueRelIds  = rel
   }
 
