@@ -52,3 +52,4 @@ instance Arbitrary lab => Arbitrary (DbgRecValueSimple' lab) where arbitrary = g
 instance Arbitrary lab => Arbitrary (DbgRecDeclare' lab) where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DbgRecAssign' lab) where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DbgRecLabel' lab) where arbitrary = genericArbitrary uniform
+instance Arbitrary UnnamedMdIdx where arbitrary = genericArbitrary uniform
