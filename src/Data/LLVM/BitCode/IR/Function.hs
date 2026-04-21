@@ -761,7 +761,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
   -- [ptrty,ptr,cmp,new, align, vol,
   --  ordering, synchscope]
   37 -> label "FUNC_CODE_INST_CMPXCHG_OLD" $ do
-    notImplemented
+    effect (Comment "unsupported: cmpxchg_old") d
 
   -- LLVM 6.0: [ptrty, ptr, val, operation, vol, ordering, ssid]
   38 -> label "FUNC_CODE_INST_ATOMICRMW_OLD" $
@@ -815,7 +815,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
 
   -- [ptrty, ptr, val, align, vol, ordering, synchscope]
   42 -> label "FUNC_CODE_INST_STOREATOMIC_OLD" $ do
-    notImplemented
+    effect (Comment "unsupported: storeatomic_old") d
 
   43 -> label "FUNC_CODE_INST_GEP" (parseGEP t Nothing r d)
 
@@ -923,29 +923,30 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     result ty (LandingPad ty Nothing isCleanup clauses) d
 
   48 -> label "FUNC_CODE_CLEANUPRET" $ do
-    -- Assert.recordSizeIn r [1, 2]
-    notImplemented
+    -- MSVC SEH: parsed as comment so module can load
+    effect (Comment "unsupported: cleanupret (MSVC SEH)") d
 
   49 -> label "FUNC_CODE_CATCHRET" $ do
-    -- Assert.recordSizeIn r [2]
-    notImplemented
+    -- MSVC SEH: parsed as comment so module can load
+    effect (Comment "unsupported: catchret (MSVC SEH)") d
 
   50 -> label "FUNC_CODE_CATCHPAD" $ do
-    notImplemented
+    -- MSVC SEH: parsed as comment so module can load
+    effect (Comment "unsupported: catchpad (MSVC SEH)") d
 
   51 -> label "FUNC_CODE_CLEANUPPAD" $ do
-    -- Assert.recordSizeGreater r [1]
-    notImplemented
+    -- MSVC SEH: parsed as comment so module can load
+    effect (Comment "unsupported: cleanuppad (MSVC SEH)") d
 
   52 -> label "FUNC_CODE_CATCHSWITCH" $ do
-    -- Assert.recordSizeGreater r [1]
-    notImplemented
+    -- MSVC SEH: parsed as comment so module can load
+    effect (Comment "unsupported: catchswitch (MSVC SEH)") d
 
   -- 53 is unused
   -- 54 is unused
 
   55 -> label "FUNC_CODE_OPERAND_BUNDLE" $ do
-    notImplemented
+    effect (Comment "unsupported: operand_bundle") d
 
   -- [opval,ty,opcode]
   56 -> label "FUNC_CODE_INST_UNOP" $ do
@@ -1003,7 +1004,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
 
   60 -> label "FUNC_CODE_BLOCKADDR_USERS" $
     -- BLOCKADDR_USERS: [value..]
-    notImplemented
+    effect (Comment "unsupported: blockaddr_users") d
 
   61 -> label "FUNC_CODE_DEBUG_RECORD_VALUE" $ do
     -- [DILocation, DILocalVariable, DIExpression, ValueAsMetadata]
