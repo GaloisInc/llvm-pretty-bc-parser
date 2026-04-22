@@ -421,6 +421,17 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
                  mdForwardRefOrNull ctx mt <$> parseMdIdx r n
       ronl n = if length (recordFields r) <= n then pure Nothing else ron n
 
+      asSignedVal = fmap $ \case
+        v@(ValMdValue tv)
+          | PrimType (Integer s) <- typedType tv
+          , ValInteger i <- typedValue tv
+            -> let x = fromInteger i :: Word64
+                   xNeg = (toInteger $ (complement x + 1)) * (-1)
+               in if testBit x (fromEnum $ s - 1)
+                  then ValMdValue $ tv { typedValue = ValInteger xNeg }
+                  else v
+        o -> o
+
       -- If the @isMetadata@ argument is 'True', then parse a metadata value
       -- (which may be null). Otherwise, parse a 64-bit integer and return it as
       -- a 'ValMdValue'. This is used for parsing size and offset fields in
@@ -682,7 +693,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       dictDataLocation <- ronl 17
       dictAssociated <- ronl 18
       dictAllocated <- ronl 19
-      dictRank <- ronl 20
+      dictRank <- asSignedVal <$> ronl 20
       dictAnnotations <- ronl 21
       dictNumExtraInhabitants <- if length (recordFields r) <= 22
                                  then pure 0
@@ -1215,10 +1226,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       disrtAlign <- parseField r 6 numeric
       disrtFlags <- parseField r 7 numeric
       disrtBaseType <- ron 8
-      disrtLowerBound <- ron 9
-      disrtUpperBound <- ron 10
-      disrtStride <- ron 11
-      disrtBias <- ron 12
+      disrtLowerBound <- asSignedVal <$> ron 9
+      disrtUpperBound <- asSignedVal <$> ron 10
+      disrtStride <- asSignedVal <$> ron 11
+      disrtBias <- asSignedVal <$> ron 12
       let disrt = DISubrangeType {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoSubrangeType disrt)) pm
