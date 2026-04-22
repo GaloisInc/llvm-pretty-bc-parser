@@ -421,6 +421,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
                  mdForwardRefOrNull ctx mt <$> parseMdIdx r n
       ronl n = if length (recordFields r) <= n then pure Nothing else ron n
 
+      -- Converts from the parsed raw numeric value (a two's-complement
+      -- representation) into a native positive or negative value.
       asSignedVal = fmap $ \case
         v@(ValMdValue tv)
           | PrimType (Integer s) <- typedType tv
@@ -428,7 +430,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
             -> let checkNeg x =
                      if testBit x (fromEnum $ s - 1)
                      then
-                       let xNeg = -(toInteger $ (complement x + 1))
+                       let xNeg = toInteger (complement x + 1) * (-1)
                        in ValMdValue $ tv { typedValue = ValInteger xNeg }
                      else v
                in case s of
