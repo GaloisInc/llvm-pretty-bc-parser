@@ -54,7 +54,7 @@ import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Typeable (Typeable)
-import           Data.Word (Word8,Word32,Word64)
+import           Data.Word (Word8,Word16,Word32,Word64)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
@@ -425,11 +425,18 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         v@(ValMdValue tv)
           | PrimType (Integer s) <- typedType tv
           , ValInteger i <- typedValue tv
-            -> let x = fromInteger i :: Word64
-                   xNeg = (toInteger $ (complement x + 1)) * (-1)
-               in if testBit x (fromEnum $ s - 1)
-                  then ValMdValue $ tv { typedValue = ValInteger xNeg }
-                  else v
+            -> let checkNeg x =
+                     if testBit x (fromEnum $ s - 1)
+                     then
+                       let xNeg = -(toInteger $ (complement x + 1))
+                       in ValMdValue $ tv { typedValue = ValInteger xNeg }
+                     else v
+               in case s of
+                    8  -> checkNeg (fromInteger i :: Word8)
+                    16 -> checkNeg (fromInteger i :: Word16)
+                    32 -> checkNeg (fromInteger i :: Word32)
+                    64 -> checkNeg (fromInteger i :: Word64)
+                    _  -> v
         o -> o
 
       -- If the @isMetadata@ argument is 'True', then parse a metadata value
