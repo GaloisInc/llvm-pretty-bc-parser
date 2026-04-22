@@ -54,7 +54,7 @@ import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Typeable (Typeable)
-import           Data.Word (Word8,Word32,Word64)
+import           Data.Word (Word8,Word16,Word32,Word64)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
@@ -421,6 +421,26 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
                  mdForwardRefOrNull ctx mt <$> parseMdIdx r n
       ronl n = if length (recordFields r) <= n then pure Nothing else ron n
 
+      -- Converts from the parsed raw numeric value (a two's-complement
+      -- representation) into a native positive or negative value.
+      asSignedVal = fmap $ \case
+        v@(ValMdValue tv)
+          | PrimType (Integer s) <- typedType tv
+          , ValInteger i <- typedValue tv
+            -> let checkNeg x =
+                     if testBit x (fromEnum $ s - 1)
+                     then
+                       let xNeg = toInteger (complement x + 1) * (-1)
+                       in ValMdValue $ tv { typedValue = ValInteger xNeg }
+                     else v
+               in case s of
+                    8  -> checkNeg (fromInteger i :: Word8)
+                    16 -> checkNeg (fromInteger i :: Word16)
+                    32 -> checkNeg (fromInteger i :: Word32)
+                    64 -> checkNeg (fromInteger i :: Word64)
+                    _  -> v
+        o -> o
+
       -- If the @isMetadata@ argument is 'True', then parse a metadata value
       -- (which may be null). Otherwise, parse a 64-bit integer and return it as
       -- a 'ValMdValue'. This is used for parsing size and offset fields in
@@ -682,7 +702,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       dictDataLocation <- ronl 17
       dictAssociated <- ronl 18
       dictAllocated <- ronl 19
-      dictRank <- ronl 20
+      dictRank <- asSignedVal <$> ronl 20
       dictAnnotations <- ronl 21
       dictNumExtraInhabitants <- if length (recordFields r) <= 22
                                  then pure 0
@@ -1201,6 +1221,27 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         fail "Invalid DIAssignID record. Must be distinct"
       return $! updateMetadataTable
         (addDebugInfo isDistinct DebugInfoAssignID) pm
+
+    48 -> label "METADATA_SUBRANGE_TYPE" $ do
+      assertRecordSizeIn r [13]
+      ctx        <- getContext
+      field0 <- parseField r 0 unsigned
+      let isDistinct = field0 .&. 0 == 1
+      disrtName <- mdStringOrNull ctx pm <$> parseMdIdx r 1
+      disrtFile <- ron 2
+      disrtLine <- parseField r 3 numeric
+      disrtScope <- ron 4
+      disrtSize <- ron 5
+      disrtAlign <- parseField r 6 numeric
+      disrtFlags <- parseField r 7 numeric
+      disrtBaseType <- ron 8
+      disrtLowerBound <- asSignedVal <$> ron 9
+      disrtUpperBound <- asSignedVal <$> ron 10
+      disrtStride <- asSignedVal <$> ron 11
+      disrtBias <- asSignedVal <$> ron 12
+      let disrt = DISubrangeType {..}
+      return $! updateMetadataTable
+        (addDebugInfo isDistinct (DebugInfoSubrangeType disrt)) pm
 
     code -> fail ("unknown record code: " ++ show code)
 

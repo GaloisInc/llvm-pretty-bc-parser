@@ -24,6 +24,7 @@ deriving instance ToExpr AST.ConstExpr
 deriving instance ToExpr AST.ConvOp
 deriving instance ToExpr AST.DIArgList
 deriving instance ToExpr AST.DIBasicType
+deriving instance ToExpr AST.DISubrangeType
 deriving instance ToExpr AST.DICompileUnit
 deriving instance ToExpr AST.DICompositeType
 deriving instance ToExpr AST.DIDerivedType
