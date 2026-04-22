@@ -20,7 +20,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     llvm-pretty-src = {
-      url = "github:GaloisInc/llvm-pretty";
+      url = "github:GaloisInc/llvm-pretty/de6acc11";
       flake = false;
     };
     tasty-sugar = {
