@@ -1,5 +1,5 @@
 ;; This test checks generation of DISubrangeType.
-;; Copy of llvm-project llvm/test/Bitcode/subrange_type.ll
+;; Copy of llvm-project llvm/test/Bitcode/subrange_type.ll (https://github.com/llvm/llvm-project/blob/main/llvm/test/Bitcode/subrange_type.ll)
 
 ; ModuleID = 'subrange_type.ll'
 source_filename = "/dir/subrange_type.adb"
