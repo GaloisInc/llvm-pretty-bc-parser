@@ -1202,6 +1202,27 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return $! updateMetadataTable
         (addDebugInfo isDistinct DebugInfoAssignID) pm
 
+    48 -> label "METADATA_SUBRANGE_TYPE" $ do
+      assertRecordSizeIn r [13]
+      ctx        <- getContext
+      field0 <- parseField r 0 unsigned
+      let isDistinct = field0 .&. 0 == 1
+      disrtName <- mdStringOrNull ctx pm <$> parseMdIdx r 1
+      disrtFile <- ron 2
+      disrtLine <- parseField r 3 numeric
+      disrtScope <- ron 4
+      disrtSize <- ron 5
+      disrtAlign <- parseField r 6 numeric
+      disrtFlags <- parseField r 7 numeric
+      disrtBaseType <- ron 8
+      disrtLowerBound <- ron 9
+      disrtUpperBound <- ron 10
+      disrtStride <- ron 11
+      disrtBias <- ron 12
+      let disrt = DISubrangeType {..}
+      return $! updateMetadataTable
+        (addDebugInfo isDistinct (DebugInfoSubrangeType disrt)) pm
+
     code -> fail ("unknown record code: " ++ show code)
 
 parseMetadataEntry _ _ pm (abbrevDef -> Just _) =
