@@ -411,7 +411,7 @@ assemblyCube rootPath llvmver = TS.mkCUBE
                                            , "post-llvm18"
                                            , "pre-llvm19"
                                            , "pre-llvm20"
-                                           , "pre-llvm22"
+                                           , "pre-llvm21"
                                            ])
                      ]
     -- Somewhat unusually for tasty-sugar, we make the expectedSuffix the same
