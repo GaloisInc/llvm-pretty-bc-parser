@@ -35,6 +35,8 @@ instance Arbitrary lab => Arbitrary (DISubrangeType' lab)             where arbi
 instance Arbitrary lab => Arbitrary (DICompileUnit' lab)              where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DICompositeType' lab)            where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DIDerivedType' lab)              where arbitrary = genericArbitrary uniform
+instance Arbitrary lab => Arbitrary (DIFixedPointType' lab)           where arbitrary = genericArbitrary uniform
+instance Arbitrary lab => Arbitrary (DIFixedPointKind' lab)           where arbitrary = genericArbitrary uniform
 instance Arbitrary DIExpression                                       where arbitrary = genericArbitrary uniform
 instance Arbitrary DIFile                                             where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DIGlobalVariable' lab)           where arbitrary = genericArbitrary uniform

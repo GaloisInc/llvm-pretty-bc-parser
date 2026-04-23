@@ -8,6 +8,7 @@
   * Support parsing `dataSize` fields in `DIBasicType` debug metadata.
 * Support LLVM 21:
   * Parsing for `DISubrangeType` (metadata ID 48).
+  * Parsing for `DIFixedPointType` (metadata ID 49).
 * Add support for reading 16-bit "Brain" floats (`bfloat`)
 * Add missing handling for 16-bit IEEE half-precision floats,
   64-bit IEEE quad-precision floats, and PowerPC pair-of-doubles
