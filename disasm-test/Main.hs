@@ -346,6 +346,7 @@ main =  do
   clangVC <- getClangVersion clang'
   unless (and [ vcVersioning llvmAsVC == vcVersioning llvmDisVC
               , vcVersioning llvmAsVC == vcVersioning clangVC
+              , not ("missing" `isInfixOf` showVC llvmAsVC)
               ]) $
     error $ unlines
       [ "Unexpected version mismatch between clang, llvm-as and llvm-dis"
