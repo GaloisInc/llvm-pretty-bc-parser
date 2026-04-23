@@ -30,6 +30,8 @@ deriving instance ToExpr AST.DICompositeType
 deriving instance ToExpr AST.DIDerivedType
 deriving instance ToExpr AST.DIExpression
 deriving instance ToExpr AST.DIFile
+deriving instance ToExpr AST.DIFixedPointType
+deriving instance ToExpr AST.DIFixedPointKind
 deriving instance ToExpr AST.DIGlobalVariable
 deriving instance ToExpr AST.DIGlobalVariableExpression
 deriving instance ToExpr AST.DIImportedEntity

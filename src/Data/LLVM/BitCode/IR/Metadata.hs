@@ -1243,6 +1243,41 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoSubrangeType disrt)) pm
 
+    49 -> label "METADATA_FIXED_POINT_TYPE" $ do
+      assertRecordSizeAtLeast r 11
+      ctx <- getContext
+      field0 <- parseField r 0 unsigned
+      let isDistinct = field0 .&. 0 == 1
+      difptTag <- parseField r 1 numeric
+      difptName <- mdStringOrNull ctx pm <$> parseMdIdx r 2
+      difptSize <- ron 3
+      difptAlign <- parseField r 4 numeric
+      difptEncoding <- parseField r 5 numeric
+      difptFlags <- parseField r 6 numeric
+      kind <- parseField r 7 numeric
+      difptKind <-
+        case (kind :: Integer) of
+          0 -> FixedPointBinary <$> parseField r 8 numeric
+          1 -> FixedPointDecimal <$> parseField r 8 numeric
+          2 -> do let parseWInt n = do
+                        (encoded :: Word64) <- parseField r n numeric
+                        let nwords = fromEnum $ encoded `shiftR` 32
+                        -- let bitwidth = encoded .&. (1 `shiftL` 32) - 1)
+                              -- Technically, the value should be no wider than
+                              -- bitwidth bits, so we could apply a mask here,
+                              -- but we don't expect non-zero values in the
+                              -- unused portions of the parsed words so we can
+                              -- save the overhead of the masking operation.
+                        v <- parseWideAPInt r (n+1) nwords
+                        return (n+1+nwords, v)
+                  (idx, numerator) <- parseWInt 9
+                  (_, denominator) <- parseWInt idx
+                  return $ FixedPointRational numerator denominator
+          _ -> fail $ "unrecognized FixedPointType kind: " <> show kind
+      let difpt = DIFixedPointType {..}
+      return $! updateMetadataTable
+        (addDebugInfo isDistinct (DebugInfoFixedPointType difpt)) pm
+
     code -> fail ("unknown record code: " ++ show code)
 
 parseMetadataEntry _ _ pm (abbrevDef -> Just _) =
