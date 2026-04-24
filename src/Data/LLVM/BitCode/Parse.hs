@@ -806,6 +806,10 @@ data ParseWarning
     -- the @[String]@ is the stack trace at the point where the warning was
     -- emitted.
     InvalidMetadataRecordSize !Int !MetadataRecordSizeRange ![String]
+    -- | The parser encountered a metadata record code that it is aware of, but
+    -- does notknow how to parse, where the 'Int' is the record code value and
+    -- the 'String' is the associated name of the record type.
+  | UnsupportedMetadataRecordCode !Int !String
   deriving Show
 
 -- | The expected size of a metadata record.
@@ -847,6 +851,10 @@ ppParseWarning (InvalidMetadataRecordSize len range cxt) =
           "Expected one of:" PP.<+> PP.pPrint ns
         MetadataRecordSizeAtLeast lb ->
           "Expected size of" PP.<+> PP.pPrint lb PP.<+> "or greater"
+ppParseWarning (UnsupportedMetadataRecordCode code name) =
+  "Unsupported metadata record:"
+  PP.<+> PP.text name
+  PP.<+> PP.parens (PP.pPrint code)
 
 -- | Pretty-print a group of 'ParseWarning's in a format suitable for
 -- user-facing messages.
@@ -861,10 +869,11 @@ ppParseWarnings warnings
         (\warning ->
           PP.nest 4 $ PP.vcat [ppParseWarning warning, ""])
         (F.toList warnings) ++
-      [supportMsg | any isInvalidMetadataRecordSize warnings]
+      [supportMsg | any maybeBadVersion warnings]
   where
-    isInvalidMetadataRecordSize :: ParseWarning -> Bool
-    isInvalidMetadataRecordSize (InvalidMetadataRecordSize {}) = True
+    maybeBadVersion :: ParseWarning -> Bool
+    maybeBadVersion (InvalidMetadataRecordSize {}) = True
+    maybeBadVersion _ = False
 
     supportMsg :: PP.Doc
     supportMsg =
