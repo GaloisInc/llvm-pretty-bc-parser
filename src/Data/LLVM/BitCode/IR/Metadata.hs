@@ -456,7 +456,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
             (parseField r n numeric)
 
       -- Used when some sort of placeholder entry must be added to the metadata
-      -- table, because it may be cross-reference by other metadata; here we use
+      -- table, because it may be cross-referenced by other metadata; here we use
       -- an empty expression as that placeholder.
       placeholderRecord :: DebugInfo' Int
       placeholderRecord = DebugInfoExpression $ DIExpression mempty
