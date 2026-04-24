@@ -810,6 +810,9 @@ data ParseWarning
     -- does notknow how to parse, where the 'Int' is the record code value and
     -- the 'String' is the associated name of the record type.
   | UnsupportedMetadataRecordCode !Int !String
+    -- | The parser encountered a metadata record code that it is not aware of,
+    -- where the 'Int' is the record code value.
+  | UnknownMetadataRecordCode !Int
   deriving Show
 
 -- | The expected size of a metadata record.
@@ -855,6 +858,8 @@ ppParseWarning (UnsupportedMetadataRecordCode code name) =
   "Unsupported metadata record:"
   PP.<+> PP.text name
   PP.<+> PP.parens (PP.pPrint code)
+ppParseWarning (UnknownMetadataRecordCode code) =
+  "Unrecognized metadata record code:" PP.<+> PP.pPrint code
 
 -- | Pretty-print a group of 'ParseWarning's in a format suitable for
 -- user-facing messages.
@@ -873,6 +878,7 @@ ppParseWarnings warnings
   where
     maybeBadVersion :: ParseWarning -> Bool
     maybeBadVersion (InvalidMetadataRecordSize {}) = True
+    maybeBadVersion (UnknownMetadataRecordCode {}) = True
     maybeBadVersion _ = False
 
     supportMsg :: PP.Doc

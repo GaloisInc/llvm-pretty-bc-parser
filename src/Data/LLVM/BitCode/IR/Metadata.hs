@@ -455,14 +455,16 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
             (Just . ValMdValue . Typed (PrimType (Integer 64)) . ValInteger)
             (parseField r n numeric)
 
+      -- Used when some sort of placeholder entry must be added to the metadata
+      -- table, because it may be cross-reference by other metadata; here we use
+      -- an empty expression as that placeholder.
+      placeholderRecord :: DebugInfo' Int
+      placeholderRecord = DebugInfoExpression $ DIExpression mempty
+
       mdNotImplemented :: String -> Parse PartialMetadata
       mdNotImplemented name = do
         addParseWarning $ UnsupportedMetadataRecordCode (recordCode r) name
-        -- Some sort of placeholder entry must be added to the metadata table,
-        -- because it may be cross-reference by other metadata; here we use an
-        -- empty expression as that placeholder.
-        return $! updateMetadataTable
-          (addDebugInfo False (DebugInfoExpression $ DIExpression mempty)) pm
+        return $! updateMetadataTable (addDebugInfo False placeholderRecord) pm
 
   -- Note: the parsing cases below use a Monadic coding style, as opposed to an
   -- Applicative style (as was originally used) for performance reasons:
@@ -1284,7 +1286,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoFixedPointType difpt)) pm
 
-    code -> fail ("unknown record code: " ++ show code)
+    _ -> do
+      addParseWarning $ UnknownMetadataRecordCode (recordCode r)
+      return $! updateMetadataTable (addDebugInfo False placeholderRecord) pm
 
 parseMetadataEntry _ _ pm (abbrevDef -> Just _) =
   return pm
