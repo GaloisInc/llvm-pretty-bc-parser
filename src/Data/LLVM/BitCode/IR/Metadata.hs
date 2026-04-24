@@ -455,6 +455,17 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
             (Just . ValMdValue . Typed (PrimType (Integer 64)) . ValInteger)
             (parseField r n numeric)
 
+      -- Used when some sort of placeholder entry must be added to the metadata
+      -- table, because it may be cross-referenced by other metadata; here we use
+      -- an empty expression as that placeholder.
+      placeholderRecord :: DebugInfo' Int
+      placeholderRecord = DebugInfoExpression $ DIExpression mempty
+
+      mdNotImplemented :: String -> Parse PartialMetadata
+      mdNotImplemented name = do
+        addParseWarning $ UnsupportedMetadataRecordCode (recordCode r) name
+        return $! updateMetadataTable (addDebugInfo False placeholderRecord) pm
+
   -- Note: the parsing cases below use a Monadic coding style, as opposed to an
   -- Applicative style (as was originally used) for performance reasons:
   -- Applicative record construction has quadratic size and corresponding
@@ -1193,17 +1204,14 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoLabel dil)) pm
 
-    41 -> label "METADATA_STRING_TYPE" $ do
-      notImplemented
+    41 -> mdNotImplemented "METADATA_STRING_TYPE"
 
     -- Codes 42 and 43 are reserved for Fortran array–specific debug info, see
     -- https://github.com/llvm/llvm-project/blob/4681f6111e655057f5015564a9bf3705f87495bf/llvm/include/llvm/Bitcode/LLVMBitCodes.h#L348-L349
 
-    44 -> label "METADATA_COMMON_BLOCK" $ do
-      notImplemented
+    44 -> mdNotImplemented "METADATA_COMMON_BLOCK"
 
-    45 -> label "METADATA_GENERIC_SUBRANGE" $ do
-      notImplemented
+    45 -> mdNotImplemented "METADATA_GENERIC_SUBRANGE"
 
     46 -> label "METADATA_ARG_LIST" $ do
       cxt <- getContext
@@ -1278,7 +1286,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoFixedPointType difpt)) pm
 
-    code -> fail ("unknown record code: " ++ show code)
+    _ -> do
+      addParseWarning $ UnknownMetadataRecordCode (recordCode r)
+      return $! updateMetadataTable (addDebugInfo False placeholderRecord) pm
 
 parseMetadataEntry _ _ pm (abbrevDef -> Just _) =
   return pm
