@@ -24,7 +24,7 @@ import qualified Data.ByteString.Lazy as L
 import           Data.Char (ord,isLetter,isSpace,chr)
 import           Data.Function ( on )
 import           Data.Generics (everywhere, mkT) -- SYB
-import           Data.List ( find, isInfixOf, isPrefixOf, isSuffixOf, nub, sort , groupBy, sortBy )
+import           Data.List ( find, isPrefixOf, isSuffixOf, nub, sort , groupBy, sortBy )
 import           Data.Map ( (!), (!?) )
 import qualified Data.Map as Map
 import           Data.Maybe ( fromMaybe )
@@ -275,8 +275,11 @@ showVC (VC nm v) = nm <> " " <> (T.unpack $ either id prettyV v)
 vcVersioning :: VersionCheck -> Either T.Text Versioning
 vcVersioning (VC _ v) = v
 
-mkVC :: String -> String -> VersionCheck
-mkVC nm raw = let r = T.pack raw in VC nm $ first (const r) $ versioning r
+versionMissing :: Either T.Text a
+versionMissing = Left "[missing]"
+
+mkVC :: String -> T.Text -> VersionCheck
+mkVC nm r = VC nm $ first (const r) $ versioning r
 
 getLLVMAsVersion :: LLVMAs -> IO VersionCheck
 getLLVMAsVersion (LLVMAs llvmAsPath) = getLLVMToolVersion "llvm-as" llvmAsPath
@@ -292,27 +295,27 @@ getClangVersion (Clang clangPath) = getLLVMToolVersion "clang" clangPath
 -- captured.
 getLLVMToolVersion :: String -> FilePath -> IO VersionCheck
 getLLVMToolVersion toolName toolPath = do
-  let isVerLine l = isInfixOf "LLVM version" l || isInfixOf "clang version" l
-      dropLetter = dropWhile (all isLetter)
+  let isVerLine l = T.isInfixOf "LLVM version" l || T.isInfixOf "clang version" l
+      dropLetter = dropWhile (all isLetter. T.unpack)
       getVer (Right inp) =
         -- example inp: "LLVM version 10.0.1" or "clang version 11.1.0"
-        case filter isVerLine $ lines inp of
-          [] -> "NO VERSION IDENTIFIED FOR " <> toolName
-          (l:_) -> case dropLetter $ words l of
-            [] -> toolName <> " VERSION NOT PARSED: " <> l
-            (v:_) -> fst $ break (== '-') v -- remove vendor suffix (e.g. 12.0.1-19ubuntu3)
+        case filter isVerLine $ T.lines $ T.pack inp of
+          [] -> "NO VERSION IDENTIFIED FOR " <> T.pack toolName
+          (l:_) -> case dropLetter $ T.words l of
+            [] -> T.pack toolName <> " VERSION NOT PARSED: " <> l
+            (v:_) -> fst $ T.break (== '-') v -- remove vendor suffix (e.g. 12.0.1-19ubuntu3)
       getVer (Left full) = full
   mkVC toolName . getVer <$> readProcessVersion toolPath
 
 -- Runs the tool with a --version argument to have it self-report its version.
 -- The tool may not even be installed.  Returns either an error string or the
 -- output string from the tool.
-readProcessVersion :: String -> IO (Either String String)
+readProcessVersion :: String -> IO (Either T.Text String)
 readProcessVersion forTool =
   X.catches (Right <$> Proc.readProcess forTool [ "--version" ] "")
   [ X.Handler $ \(e :: EX.IOException) ->
       if GE.ioe_type e == GE.NoSuchThing
-      then return $ Left "[missing]" -- tool executable not found
+      then return $ versionMissing -- tool executable not found
       else do putStrLn $ "Warning: IO error attempting to determine " <> forTool <> " version:"
               putStrLn $ show e
               return $ Left "unknown"
@@ -344,9 +347,9 @@ main =  do
   llvmAsVC <- getLLVMAsVersion llvmAs'
   llvmDisVC <- getLLVMDisVersion llvmDis'
   clangVC <- getClangVersion clang'
-  unless (and [ vcVersioning llvmAsVC == vcVersioning llvmDisVC
+  unless (and [ vcVersioning llvmAsVC /= versionMissing
+              , vcVersioning llvmAsVC == vcVersioning llvmDisVC
               , vcVersioning llvmAsVC == vcVersioning clangVC
-              , not ("missing" `isInfixOf` showVC llvmAsVC)
               ]) $
     error $ unlines
       [ "Unexpected version mismatch between clang, llvm-as and llvm-dis"
