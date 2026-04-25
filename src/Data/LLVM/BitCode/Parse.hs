@@ -2,11 +2,12 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module Data.LLVM.BitCode.Parse where
 
@@ -24,11 +25,12 @@ import           Control.Monad.Except (MonadError(..), Except, runExcept)
 import           Control.Monad.Reader (MonadReader(..), ReaderT(..), asks)
 import           Control.Monad.State.Strict (MonadState(..), StateT(..)
                                             , gets, modify)
+import           Data.Bits ( testBit, complement )
 import qualified Data.Foldable as F
 import           Data.Maybe (fromMaybe)
 import           Data.Semigroup
 import           Data.Typeable (Typeable)
-import           Data.Word ( Word32 )
+import           Data.Word ( Word8, Word16, Word32, Word64 )
 
 import qualified Codec.Binary.UTF8.String as UTF8 (decode)
 import qualified Control.Exception as X
@@ -597,6 +599,28 @@ getTypeId n = do
   case Map.lookup n (tsByName symtab) of
     Just ix -> return ix
     Nothing -> fail ("unknown type alias " ++ show (ppLLVM llvmVlatest (llvmPP n)))
+
+-- | Convert a raw two's-complement value of the size specified in the first
+-- argument into a signed value.
+asSignedInt :: (Eq bitsize, Num bitsize, Enum bitsize)
+            => bitsize ->  Integer -> Integer
+asSignedInt nbits val =
+  let checkNeg x = if testBit x (fromEnum $ nbits - 1)
+                   then toInteger (complement x + 1) * (-1)
+                   else toInteger x
+  in case nbits of
+       8  -> checkNeg (fromInteger val :: Word8)
+       16 -> checkNeg (fromInteger val :: Word16)
+       32 -> checkNeg (fromInteger val :: Word32)
+       64 -> checkNeg (fromInteger val :: Word64)
+       _  -> val
+
+asSignedTypedVal :: Typed (Value' lab) -> Typed (Value' lab)
+asSignedTypedVal = \case
+  tv@(Typed { typedType = PrimType (Integer s)
+            , typedValue = ValInteger i
+            }) -> tv { typedValue = ValInteger $ asSignedInt s i }
+  tv -> tv
 
 
 -- Value Symbol Table ----------------------------------------------------------
