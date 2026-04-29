@@ -143,7 +143,7 @@ Test-suite disasm-test
                        bytestring,
                        exceptions >= 0.10 && < 0.11,
                        filepath,
-                       lens,
+                       microlens,
                        pretty-show>= 1.6,
                        prettyprinter >= 1.7 && < 1.8,
                        string-interpolate >= 0.3 && < 0.4,
