@@ -923,23 +923,59 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     result ty (LandingPad ty Nothing isCleanup clauses) d
 
   48 -> label "FUNC_CODE_CLEANUPRET" $ do
-    -- Assert.recordSizeIn r [1, 2]
-    notImplemented
+    -- [val] (no unwind) or [val, bb#].  LLVM's bitcode writer uses
+    -- @pushValue@ (value-only) for the pad, but in well-formed bitcode the
+    -- pad always dominates its use, so the read is always a backward
+    -- reference and @getValueTypePair@ consumes exactly one field.
+    let field = parseField r
+    (pad,ix) <- getValueTypePair t r 0
+    let nFields = length (recordFields r)
+    if nFields > ix
+      then do unwindBB <- field ix numeric
+              effect (CleanupRet pad (Just unwindBB)) d
+      else effect (CleanupRet pad Nothing) d
 
   49 -> label "FUNC_CODE_CATCHRET" $ do
-    -- Assert.recordSizeIn r [2]
-    notImplemented
+    -- [val, bb#].  As with cleanupret, the pad operand is value-only on the
+    -- LLVM side; we rely on the pad being a backward reference here.
+    let field = parseField r
+    (pad,ix) <- getValueTypePair t r 0
+    succBB   <- field ix numeric
+    effect (CatchRet pad succBB) d
 
   50 -> label "FUNC_CODE_CATCHPAD" $ do
-    notImplemented
+    -- [catchswitch-(val,type), num_args, (val,type)*num_args]
+    let field = parseField r
+    (parent,ix) <- getValueTypePair t r 0
+    numArgs     <- field ix numeric
+    args        <- mapM (\i -> fst <$> getValueTypePair t r (ix + 1 + i))
+                        [0..numArgs-1]
+    let tokenTy = PrimType Token
+    result tokenTy (CatchPad parent args) d
 
   51 -> label "FUNC_CODE_CLEANUPPAD" $ do
-    -- Assert.recordSizeGreater r [1]
-    notImplemented
+    -- [parent-(val,type), num_args, (val,type)*num_args]
+    let field = parseField r
+    (parent,ix) <- getValueTypePair t r 0
+    numArgs     <- field ix numeric
+    args        <- mapM (\i -> fst <$> getValueTypePair t r (ix + 1 + i))
+                        [0..numArgs-1]
+    let tokenTy = PrimType Token
+    result tokenTy (CleanupPad parent args) d
 
   52 -> label "FUNC_CODE_CATCHSWITCH" $ do
-    -- Assert.recordSizeGreater r [1]
-    notImplemented
+    -- [parent-(val,type), num_handlers, bb#*num_handlers, optional bb#]
+    let field = parseField r
+    (parent,ix) <- getValueTypePair t r 0
+    numHandlers <- field ix numeric
+    handlers    <- mapM (\i -> field (ix + 1 + i) numeric)
+                        [0..numHandlers-1]
+    let ixAfter = ix + 1 + numHandlers
+        nFields = length (recordFields r)
+    if nFields > ixAfter
+      then do unwindBB <- field ixAfter numeric
+              effect (CatchSwitch parent handlers (Just unwindBB)) d
+      else effect (CatchSwitch parent handlers Nothing) d
 
   -- 53 is unused
   -- 54 is unused
