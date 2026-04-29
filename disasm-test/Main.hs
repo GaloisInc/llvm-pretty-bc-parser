@@ -14,7 +14,6 @@ import qualified Text.LLVM.AST as AST
 import           Text.LLVM.PP ( ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP )
 
 import qualified Control.Exception as EX
-import           Control.Lens ( (^?), _Right )
 import           Control.Monad ( foldM, unless, when )
 import qualified Control.Monad.Catch as X
 import           Control.Monad.IO.Class ( MonadIO, liftIO )
@@ -35,6 +34,7 @@ import qualified Data.Text as T
 import           Data.TreeDiff
 import           Data.Typeable (Typeable)
 import           Data.Versions (Versioning, versioning, prettyV, major, minor)
+import           Lens.Micro ( (^?), _Right )
 import qualified GHC.IO.Exception as GE
 import qualified Options.Applicative as OA
 import qualified Prettyprinter as PP
