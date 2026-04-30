@@ -11,7 +11,8 @@ import           Data.LLVM.BitCode (parseBitCodeLazyFromFileWithWarnings,
                                     Error(..),formatError,
                                     ParseWarning,ppParseWarnings)
 import qualified Text.LLVM.AST as AST
-import           Text.LLVM.PP ( ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP )
+import           Text.LLVM.PP ( ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP
+                              , llvmVlatest )
 
 import qualified Control.Exception as EX
 import           Control.Monad ( foldM, unless, when )
@@ -31,7 +32,6 @@ import           Data.Proxy ( Proxy(..) )
 import           Data.Sequence ( Seq )
 import           Data.String.Interpolate
 import qualified Data.Text as T
-import           Data.TreeDiff
 import           Data.Typeable (Typeable)
 import           Data.Versions (Versioning, versioning, prettyV, major, minor)
 import           Lens.Micro ( (^?), _Right )
@@ -40,7 +40,8 @@ import qualified Options.Applicative as OA
 import qualified Prettyprinter as PP
 import qualified Prettyprinter.Util as PPU
 import qualified System.Console.Terminal.Size as Term
-import           System.Directory ( doesFileExist, getTemporaryDirectory
+import           System.Directory ( doesFileExist, findExecutable
+                                  , getTemporaryDirectory
                                   , listDirectory
                                   , removeFile )
 import           System.Environment ( lookupEnv )
@@ -50,17 +51,17 @@ import           System.IO (openBinaryTempFile,hClose,openTempFile,hPrint,
                             hPutStrLn,stderr)
 import qualified System.IO as IO (stderr)
 import qualified System.Process as Proc
+import           System.Process (readProcessWithExitCode)
 import           Test.Tasty
 import           Test.Tasty.ExpectedFailure ( ignoreTestBecause
                                             , expectFailBecause )
-import           Test.Tasty.HUnit ( assertFailure, testCase, assertBool )
+import           Test.Tasty.HUnit ( assertEqual, assertFailure, testCase )
 import qualified Test.Tasty.Options as TO
 import qualified Test.Tasty.Runners as TR
 import qualified Test.Tasty.Sugar as TS
 import           Text.Read (readMaybe)
 import           Text.Show.Pretty (ppShow)
 
-import           Instances ()
 
 #if MIN_VERSION_optparse_applicative(0, 18, 0)
 descr :: PP.Doc ann
@@ -543,16 +544,31 @@ runAssemblyTest llvmVersion knownBugs sweet expct
 
 
 
--- | Compare two ASTs to see if they are the same.  Fundamentally this is just done
---  via (==) on the normalized ASTs, but this first uses the tree-diff package to
---  generate nicer output to allow focusing on the actual diffs rather than
---  leaving it to the user to analyze the large blobs to find out where.
+-- | Compare two ASTs to see if they are the same.  Fundamentally this is just
+-- done via (==) on the normalized ASTs.  On failure, serializes both modules to
+-- .ll files and runs llvm-diff for a structured diff; falls back to plain
+-- diff -u if llvm-diff is not available.
 cmpASTs :: AST.Module -> AST.Module -> TestM ()
-cmpASTs ast1 ast2 = do
-  let d = ediff ast1 ast2
-      msg = "Differences (marked with + and - line prefixes:\n"
-            <> show (prettyEditExprCompact d)
-  liftIO $ assertBool msg $ ast1 == ast2
+cmpASTs ast1 ast2 =
+  when (ast1 /= ast2) $ liftIO $ do
+    tmp <- getTemporaryDirectory
+    let withLL name m f =
+          EX.bracket (openTempFile tmp name) (\(path, h) -> hClose h >> removeFile path) $ \(path, h) -> do
+            hPutStrLn h (show (ppLLVM llvmVlatest (llvmPP m)))
+            hClose h
+            f path
+    withLL "cmpASTs1.ll" ast1 $ \f1 ->
+      withLL "cmpASTs2.ll" ast2 $ \f2 -> do
+        irDiff <- do
+          mb <- findExecutable "llvm-diff"
+          case mb of
+            Just exe -> do
+              (_, out, err) <- readProcessWithExitCode exe [f1, f2] ""
+              return $ "llvm-diff output:\n" <> out <> err
+            Nothing -> do
+              (_, out, _) <- readProcessWithExitCode "diff" ["-u", f1, f2] ""
+              return $ "diff -u output (llvm-diff not found):\n" <> out
+        assertEqual irDiff ast1 ast2
 
 
 -- Assembles the specified .ll file to bitcode, then disassembles it with
