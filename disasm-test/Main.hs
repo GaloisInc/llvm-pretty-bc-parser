@@ -11,8 +11,7 @@ import           Data.LLVM.BitCode (parseBitCodeLazyFromFileWithWarnings,
                                     Error(..),formatError,
                                     ParseWarning,ppParseWarnings)
 import qualified Text.LLVM.AST as AST
-import           Text.LLVM.PP ( ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP
-                              , llvmVlatest )
+import           Text.LLVM.PP ( ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP )
 
 import qualified Control.Exception as EX
 import           Control.Monad ( foldM, unless, when )
@@ -195,6 +194,17 @@ instance TO.IsOption Clang where
   optionCLParser = TO.mkOptionCLParser $
     OA.metavar "FILEPATH"
 
+newtype LLVMDiff = LLVMDiff FilePath
+
+instance TO.IsOption LLVMDiff where
+  defaultValue = LLVMDiff "llvm-diff"
+  parseValue = Just . LLVMDiff
+  optionName = pure "with-llvm-diff"
+  optionHelp = pure "path to llvm-diff"
+  showDefaultValue (LLVMDiff d) = Just d
+  optionCLParser = TO.mkOptionCLParser $
+    OA.metavar "FILEPATH"
+
 newtype Roundtrip = Roundtrip Bool
 
 instance TO.IsOption Roundtrip where
@@ -233,6 +243,7 @@ disasmTestIngredients rootPath llvmver =
   includingOptions [ TO.Option (Proxy @LLVMAs)
                    , TO.Option (Proxy @LLVMDis)
                    , TO.Option (Proxy @Clang)
+                   , TO.Option (Proxy @LLVMDiff)
                    , TO.Option (Proxy @Roundtrip)
                    , TO.Option (Proxy @Keep)
                    , TO.Option (Proxy @Details)
@@ -550,25 +561,41 @@ runAssemblyTest llvmVersion knownBugs sweet expct
 -- diff -u if llvm-diff is not available.
 cmpASTs :: AST.Module -> AST.Module -> TestM ()
 cmpASTs ast1 ast2 =
-  when (ast1 /= ast2) $ liftIO $ do
-    tmp <- getTemporaryDirectory
-    let withLL name m f =
-          EX.bracket (openTempFile tmp name) (\(path, h) -> hClose h >> removeFile path) $ \(path, h) -> do
-            hPutStrLn h (show (ppLLVM llvmVlatest (llvmPP m)))
-            hClose h
-            f path
-    withLL "cmpASTs1.ll" ast1 $ \f1 ->
-      withLL "cmpASTs2.ll" ast2 $ \f2 -> do
-        irDiff <- do
-          mb <- findExecutable "llvm-diff"
-          case mb of
+  when (ast1 /= ast2) $ do
+    llvmVersion <- gets llvmVer
+    LLVMDiff diffExe <- gets llvmDiff
+    let ppForVersion m =
+          case vcVersioning llvmVersion ^? (_Right . major) of
+            Nothing -> ppLLVM35 $ llvmPP m
+            Just v ->
+              case v of
+                3 -> case vcVersioning llvmVersion ^? (_Right . minor) of
+                       Just 5 -> ppLLVM35 $ llvmPP m
+                       Just 6 -> ppLLVM36 $ llvmPP m
+                       Just 7 -> ppLLVM37 $ llvmPP m
+                       Just 8 -> ppLLVM38 $ llvmPP m
+                       o -> if maybe True (< 5) o
+                            then ppLLVM35 $ llvmPP m
+                            else ppLLVM38 $ llvmPP m
+                _ -> ppLLVM (fromEnum v) $ llvmPP m
+    liftIO $ do
+      tmp <- getTemporaryDirectory
+      let withLL name m f =
+            EX.bracket (openTempFile tmp name) (\(path, _) -> removeFile path) $ \(path, h) -> do
+              hPutStrLn h (show (ppForVersion m))
+              hClose h
+              f path
+      withLL "cmpASTs1.ll" ast1 $ \f1 ->
+        withLL "cmpASTs2.ll" ast2 $ \f2 -> do
+          mb <- findExecutable diffExe
+          irDiff <- case mb of
             Just exe -> do
               (_, out, err) <- readProcessWithExitCode exe [f1, f2] ""
               return $ "llvm-diff output:\n" <> out <> err
             Nothing -> do
               (_, out, _) <- readProcessWithExitCode "diff" ["-u", f1, f2] ""
               return $ "diff -u output (llvm-diff not found):\n" <> out
-        assertEqual irDiff ast1 ast2
+          assertEqual irDiff ast1 ast2
 
 
 -- Assembles the specified .ll file to bitcode, then disassembles it with
@@ -730,6 +757,7 @@ data TestState = TestState { keepTemp :: Keep
                            , llvmAs :: LLVMAs
                            , llvmDis :: LLVMDis
                            , clang :: Clang
+                           , llvmDiff :: LLVMDiff
                            , llvmVer :: VersionCheck
                            }
 
@@ -743,12 +771,14 @@ testCaseM llvmVersion pfx ops =
   askOption $ \keep ->
   askOption $ \details ->
   askOption $ \clang' ->
+  askOption $ \llvmDiff' ->
   testCase pfx $ evalStateT ops (TestState { keepTemp = keep
                                            , rndTrip = roundtrip
                                            , showDetails = details
                                            , llvmAs = llvmAs'
                                            , llvmDis = llvmDis'
                                            , clang = clang'
+                                           , llvmDiff = llvmDiff'
                                            , llvmVer = llvmVersion
                                            })
 
