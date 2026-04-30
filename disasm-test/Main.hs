@@ -12,6 +12,7 @@ import           Data.LLVM.BitCode (parseBitCodeLazyFromFileWithWarnings,
                                     ParseWarning,ppParseWarnings)
 import qualified Text.LLVM.AST as AST
 import           Text.LLVM.PP ( ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP )
+import qualified Text.PrettyPrint.HughesPJ as HPJ
 
 import qualified Control.Exception as EX
 import           Control.Monad ( foldM, unless, when )
@@ -555,6 +556,23 @@ runAssemblyTest llvmVersion knownBugs sweet expct
 
 
 
+-- | Pretty-print a module using the version-appropriate LLVM printer.
+ppModuleForVersion :: VersionCheck -> AST.Module -> HPJ.Doc
+ppModuleForVersion vc m =
+  case vcVersioning vc ^? (_Right . major) of
+    Nothing -> ppLLVM35 $ llvmPP m
+    Just v ->
+      case v of
+        3 -> case vcVersioning vc ^? (_Right . minor) of
+               Just 5 -> ppLLVM35 $ llvmPP m
+               Just 6 -> ppLLVM36 $ llvmPP m
+               Just 7 -> ppLLVM37 $ llvmPP m
+               Just 8 -> ppLLVM38 $ llvmPP m
+               o -> if maybe True (< 5) o
+                    then ppLLVM35 $ llvmPP m
+                    else ppLLVM38 $ llvmPP m
+        _ -> ppLLVM (fromEnum v) $ llvmPP m
+
 -- | Compare two ASTs to see if they are the same.  Fundamentally this is just
 -- done via (==) on the normalized ASTs.  On failure, serializes both modules to
 -- .ll files and runs llvm-diff for a structured diff; falls back to plain
@@ -564,20 +582,7 @@ cmpASTs ast1 ast2 =
   when (ast1 /= ast2) $ do
     llvmVersion <- gets llvmVer
     LLVMDiff diffExe <- gets llvmDiff
-    let ppForVersion m =
-          case vcVersioning llvmVersion ^? (_Right . major) of
-            Nothing -> ppLLVM35 $ llvmPP m
-            Just v ->
-              case v of
-                3 -> case vcVersioning llvmVersion ^? (_Right . minor) of
-                       Just 5 -> ppLLVM35 $ llvmPP m
-                       Just 6 -> ppLLVM36 $ llvmPP m
-                       Just 7 -> ppLLVM37 $ llvmPP m
-                       Just 8 -> ppLLVM38 $ llvmPP m
-                       o -> if maybe True (< 5) o
-                            then ppLLVM35 $ llvmPP m
-                            else ppLLVM38 $ llvmPP m
-                _ -> ppLLVM (fromEnum v) $ llvmPP m
+    let ppForVersion = ppModuleForVersion llvmVersion
     liftIO $ do
       tmp <- getTemporaryDirectory
       let withLL name m f =
@@ -868,23 +873,11 @@ processBitCode pfx file = do
       let m' = AST.fixupOpaquePtrs m
       postParseTests m'
       llvmVersion <- gets llvmVer
-      llvmAssembly <-
-        case vcVersioning llvmVersion ^? (_Right . major) of
-          Nothing -> do liftIO $ hPutStrLn IO.stderr
-                          ( "warning: unknown LLVM version ("
-                            <> showVC llvmVersion <> "), assuming 3.5")
-                        return $ ppLLVM35 $ llvmPP m'
-          Just v ->
-            case v of
-              3 -> case vcVersioning llvmVersion ^? (_Right . minor) of
-                     Just 5 -> return $ ppLLVM35 $ llvmPP m'
-                     Just 6 -> return $ ppLLVM36 $ llvmPP m'
-                     Just 7 -> return $ ppLLVM37 $ llvmPP m'
-                     Just 8 -> return $ ppLLVM38 $ llvmPP m'
-                     o -> if maybe True (< 5) o
-                          then return $ ppLLVM35 $ llvmPP m'
-                          else return $ ppLLVM38 $ llvmPP m'
-              _ -> return $ ppLLVM (fromEnum v) $ llvmPP m'
+      when (vcVersioning llvmVersion == versionMissing) $
+        liftIO $ hPutStrLn IO.stderr
+          ( "warning: unknown LLVM version ("
+            <> showVC llvmVersion <> "), assuming 3.5")
+      let llvmAssembly = ppModuleForVersion llvmVersion m'
       parsed <- liftIO $ printToTempFile "ll" $ show llvmAssembly
       Roundtrip roundtrip <- gets rndTrip
       -- stripComments parsed

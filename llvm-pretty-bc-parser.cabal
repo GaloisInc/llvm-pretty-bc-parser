@@ -143,6 +143,7 @@ Test-suite disasm-test
                        exceptions >= 0.10 && < 0.11,
                        filepath,
                        microlens,
+                       pretty,
                        pretty-show>= 1.6,
                        prettyprinter >= 1.7 && < 1.8,
                        string-interpolate >= 0.3 && < 0.4,
