@@ -12,6 +12,7 @@ import           Data.LLVM.BitCode (parseBitCodeLazyFromFileWithWarnings,
                                     ParseWarning,ppParseWarnings)
 import qualified Text.LLVM.AST as AST
 import           Text.LLVM.PP ( ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP )
+import qualified Text.PrettyPrint.HughesPJ as HPJ
 
 import qualified Control.Exception as EX
 import           Control.Monad ( foldM, unless, when )
@@ -31,7 +32,6 @@ import           Data.Proxy ( Proxy(..) )
 import           Data.Sequence ( Seq )
 import           Data.String.Interpolate
 import qualified Data.Text as T
-import           Data.TreeDiff
 import           Data.Typeable (Typeable)
 import           Data.Versions (Versioning, versioning, prettyV, major, minor)
 import           Lens.Micro ( (^?), _Right )
@@ -40,7 +40,8 @@ import qualified Options.Applicative as OA
 import qualified Prettyprinter as PP
 import qualified Prettyprinter.Util as PPU
 import qualified System.Console.Terminal.Size as Term
-import           System.Directory ( doesFileExist, getTemporaryDirectory
+import           System.Directory ( doesFileExist, findExecutable
+                                  , getTemporaryDirectory
                                   , listDirectory
                                   , removeFile )
 import           System.Environment ( lookupEnv )
@@ -50,17 +51,17 @@ import           System.IO (openBinaryTempFile,hClose,openTempFile,hPrint,
                             hPutStrLn,stderr)
 import qualified System.IO as IO (stderr)
 import qualified System.Process as Proc
+import           System.Process (readProcessWithExitCode)
 import           Test.Tasty
 import           Test.Tasty.ExpectedFailure ( ignoreTestBecause
                                             , expectFailBecause )
-import           Test.Tasty.HUnit ( assertFailure, testCase, assertBool )
+import           Test.Tasty.HUnit ( assertEqual, assertFailure, testCase )
 import qualified Test.Tasty.Options as TO
 import qualified Test.Tasty.Runners as TR
 import qualified Test.Tasty.Sugar as TS
 import           Text.Read (readMaybe)
 import           Text.Show.Pretty (ppShow)
 
-import           Instances ()
 
 #if MIN_VERSION_optparse_applicative(0, 18, 0)
 descr :: PP.Doc ann
@@ -194,6 +195,17 @@ instance TO.IsOption Clang where
   optionCLParser = TO.mkOptionCLParser $
     OA.metavar "FILEPATH"
 
+newtype LLVMDiff = LLVMDiff FilePath
+
+instance TO.IsOption LLVMDiff where
+  defaultValue = LLVMDiff "llvm-diff"
+  parseValue = Just . LLVMDiff
+  optionName = pure "with-llvm-diff"
+  optionHelp = pure "path to llvm-diff"
+  showDefaultValue (LLVMDiff d) = Just d
+  optionCLParser = TO.mkOptionCLParser $
+    OA.metavar "FILEPATH"
+
 newtype Roundtrip = Roundtrip Bool
 
 instance TO.IsOption Roundtrip where
@@ -232,6 +244,7 @@ disasmTestIngredients rootPath llvmver =
   includingOptions [ TO.Option (Proxy @LLVMAs)
                    , TO.Option (Proxy @LLVMDis)
                    , TO.Option (Proxy @Clang)
+                   , TO.Option (Proxy @LLVMDiff)
                    , TO.Option (Proxy @Roundtrip)
                    , TO.Option (Proxy @Keep)
                    , TO.Option (Proxy @Details)
@@ -290,6 +303,9 @@ getLLVMDisVersion (LLVMDis llvmDisPath) = getLLVMToolVersion "llvm-dis" llvmDisP
 getClangVersion :: Clang -> IO VersionCheck
 getClangVersion (Clang clangPath) = getLLVMToolVersion "clang" clangPath
 
+getLLVMDiffVersion :: LLVMDiff -> IO VersionCheck
+getLLVMDiffVersion (LLVMDiff llvmDiffPath) = getLLVMToolVersion "llvm-diff" llvmDiffPath
+
 -- Determine which version of an LLVM tool will be used for these tests (if
 -- possible).  Uses partial 'head' but this is just tests, and failure is
 -- captured.
@@ -340,22 +356,26 @@ main =  do
   -- result, we have to resort to using more of tasty's internals here.
   disasmOpts <- parseCmdLine
 
-  let llvmAs'  = TO.lookupOption disasmOpts
-      llvmDis' = TO.lookupOption disasmOpts
-      clang'   = TO.lookupOption disasmOpts
+  let llvmAs'   = TO.lookupOption disasmOpts
+      llvmDis'  = TO.lookupOption disasmOpts
+      llvmDiff' = TO.lookupOption disasmOpts
+      clang'    = TO.lookupOption disasmOpts
 
   llvmAsVC <- getLLVMAsVersion llvmAs'
   llvmDisVC <- getLLVMDisVersion llvmDis'
   clangVC <- getClangVersion clang'
+  llvmDiffVC <- getLLVMDiffVersion llvmDiff'
   unless (and [ vcVersioning llvmAsVC /= versionMissing
               , vcVersioning llvmAsVC == vcVersioning llvmDisVC
               , vcVersioning llvmAsVC == vcVersioning clangVC
+              , vcVersioning llvmAsVC == vcVersioning llvmDiffVC
               ]) $
     error $ unlines
-      [ "Unexpected version mismatch between clang, llvm-as and llvm-dis"
-      , "* llvm-as  version: " ++ showVC llvmAsVC
-      , "* llvm-dis version: " ++ showVC llvmDisVC
-      , "* clang    version: " ++ showVC clangVC
+      [ "Unexpected version mismatch between clang, llvm-as, llvm-dis, llvm-diff"
+      , "* llvm-as   version: " ++ showVC llvmAsVC
+      , "* llvm-dis  version: " ++ showVC llvmDisVC
+      , "* llvm-diff version: " ++ showVC llvmDiffVC
+      , "* clang     version: " ++ showVC clangVC
       ]
 
   knownBugs <- getKnownBugs rootPth
@@ -543,16 +563,51 @@ runAssemblyTest llvmVersion knownBugs sweet expct
 
 
 
--- | Compare two ASTs to see if they are the same.  Fundamentally this is just done
---  via (==) on the normalized ASTs, but this first uses the tree-diff package to
---  generate nicer output to allow focusing on the actual diffs rather than
---  leaving it to the user to analyze the large blobs to find out where.
+-- | Pretty-print a module using the version-appropriate LLVM printer.
+ppModuleForVersion :: VersionCheck -> AST.Module -> HPJ.Doc
+ppModuleForVersion vc m =
+  case vcVersioning vc ^? (_Right . major) of
+    Nothing -> ppLLVM35 $ llvmPP m
+    Just v ->
+      case v of
+        3 -> case vcVersioning vc ^? (_Right . minor) of
+               Just 5 -> ppLLVM35 $ llvmPP m
+               Just 6 -> ppLLVM36 $ llvmPP m
+               Just 7 -> ppLLVM37 $ llvmPP m
+               Just 8 -> ppLLVM38 $ llvmPP m
+               o -> if maybe True (< 5) o
+                    then ppLLVM35 $ llvmPP m
+                    else ppLLVM38 $ llvmPP m
+        _ -> ppLLVM (fromEnum v) $ llvmPP m
+
+-- | Compare two ASTs to see if they are the same.  Fundamentally this is just
+-- done via (==) on the normalized ASTs.  On failure, serializes both modules to
+-- .ll files and runs llvm-diff for a structured diff; falls back to plain
+-- diff -u if llvm-diff is not available.
 cmpASTs :: AST.Module -> AST.Module -> TestM ()
-cmpASTs ast1 ast2 = do
-  let d = ediff ast1 ast2
-      msg = "Differences (marked with + and - line prefixes:\n"
-            <> show (prettyEditExprCompact d)
-  liftIO $ assertBool msg $ ast1 == ast2
+cmpASTs ast1 ast2 =
+  when (ast1 /= ast2) $ do
+    llvmVersion <- gets llvmVer
+    LLVMDiff diffExe <- gets llvmDiff
+    let ppForVersion = ppModuleForVersion llvmVersion
+    liftIO $ do
+      tmp <- getTemporaryDirectory
+      let withLL name m f =
+            EX.bracket (openTempFile tmp name) (\(path, _) -> removeFile path) $ \(path, h) -> do
+              hPutStrLn h (show (ppForVersion m))
+              hClose h
+              f path
+      withLL "cmpASTs1.ll" ast1 $ \f1 ->
+        withLL "cmpASTs2.ll" ast2 $ \f2 -> do
+          mb <- findExecutable diffExe
+          irDiff <- case mb of
+            Just exe -> do
+              (_, out, err) <- readProcessWithExitCode exe [f1, f2] ""
+              return $ "llvm-diff output:\n" <> out <> err
+            Nothing -> do
+              (_, out, _) <- readProcessWithExitCode "diff" ["-u", f1, f2] ""
+              return $ "diff -u output (llvm-diff not found):\n" <> out
+          assertEqual irDiff ast1 ast2
 
 
 -- Assembles the specified .ll file to bitcode, then disassembles it with
@@ -714,6 +769,7 @@ data TestState = TestState { keepTemp :: Keep
                            , llvmAs :: LLVMAs
                            , llvmDis :: LLVMDis
                            , clang :: Clang
+                           , llvmDiff :: LLVMDiff
                            , llvmVer :: VersionCheck
                            }
 
@@ -727,12 +783,14 @@ testCaseM llvmVersion pfx ops =
   askOption $ \keep ->
   askOption $ \details ->
   askOption $ \clang' ->
+  askOption $ \llvmDiff' ->
   testCase pfx $ evalStateT ops (TestState { keepTemp = keep
                                            , rndTrip = roundtrip
                                            , showDetails = details
                                            , llvmAs = llvmAs'
                                            , llvmDis = llvmDis'
                                            , clang = clang'
+                                           , llvmDiff = llvmDiff'
                                            , llvmVer = llvmVersion
                                            })
 
@@ -822,23 +880,11 @@ processBitCode pfx file = do
       let m' = AST.fixupOpaquePtrs m
       postParseTests m'
       llvmVersion <- gets llvmVer
-      llvmAssembly <-
-        case vcVersioning llvmVersion ^? (_Right . major) of
-          Nothing -> do liftIO $ hPutStrLn IO.stderr
-                          ( "warning: unknown LLVM version ("
-                            <> showVC llvmVersion <> "), assuming 3.5")
-                        return $ ppLLVM35 $ llvmPP m'
-          Just v ->
-            case v of
-              3 -> case vcVersioning llvmVersion ^? (_Right . minor) of
-                     Just 5 -> return $ ppLLVM35 $ llvmPP m'
-                     Just 6 -> return $ ppLLVM36 $ llvmPP m'
-                     Just 7 -> return $ ppLLVM37 $ llvmPP m'
-                     Just 8 -> return $ ppLLVM38 $ llvmPP m'
-                     o -> if maybe True (< 5) o
-                          then return $ ppLLVM35 $ llvmPP m'
-                          else return $ ppLLVM38 $ llvmPP m'
-              _ -> return $ ppLLVM (fromEnum v) $ llvmPP m'
+      when (vcVersioning llvmVersion == versionMissing) $
+        liftIO $ hPutStrLn IO.stderr
+          ( "warning: unknown LLVM version ("
+            <> showVC llvmVersion <> "), assuming 3.5")
+      let llvmAssembly = ppModuleForVersion llvmVersion m'
       parsed <- liftIO $ printToTempFile "ll" $ show llvmAssembly
       Roundtrip roundtrip <- gets rndTrip
       -- stripComments parsed
