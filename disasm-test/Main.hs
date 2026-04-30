@@ -303,6 +303,9 @@ getLLVMDisVersion (LLVMDis llvmDisPath) = getLLVMToolVersion "llvm-dis" llvmDisP
 getClangVersion :: Clang -> IO VersionCheck
 getClangVersion (Clang clangPath) = getLLVMToolVersion "clang" clangPath
 
+getLLVMDiffVersion :: LLVMDiff -> IO VersionCheck
+getLLVMDiffVersion (LLVMDiff llvmDiffPath) = getLLVMToolVersion "llvm-diff" llvmDiffPath
+
 -- Determine which version of an LLVM tool will be used for these tests (if
 -- possible).  Uses partial 'head' but this is just tests, and failure is
 -- captured.
@@ -353,22 +356,26 @@ main =  do
   -- result, we have to resort to using more of tasty's internals here.
   disasmOpts <- parseCmdLine
 
-  let llvmAs'  = TO.lookupOption disasmOpts
-      llvmDis' = TO.lookupOption disasmOpts
-      clang'   = TO.lookupOption disasmOpts
+  let llvmAs'   = TO.lookupOption disasmOpts
+      llvmDis'  = TO.lookupOption disasmOpts
+      llvmDiff' = TO.lookupOption disasmOpts
+      clang'    = TO.lookupOption disasmOpts
 
   llvmAsVC <- getLLVMAsVersion llvmAs'
   llvmDisVC <- getLLVMDisVersion llvmDis'
   clangVC <- getClangVersion clang'
+  llvmDiffVC <- getLLVMDiffVersion llvmDiff'
   unless (and [ vcVersioning llvmAsVC /= versionMissing
               , vcVersioning llvmAsVC == vcVersioning llvmDisVC
               , vcVersioning llvmAsVC == vcVersioning clangVC
+              , vcVersioning llvmAsVC == vcVersioning llvmDiffVC
               ]) $
     error $ unlines
-      [ "Unexpected version mismatch between clang, llvm-as and llvm-dis"
-      , "* llvm-as  version: " ++ showVC llvmAsVC
-      , "* llvm-dis version: " ++ showVC llvmDisVC
-      , "* clang    version: " ++ showVC clangVC
+      [ "Unexpected version mismatch between clang, llvm-as, llvm-dis, llvm-diff"
+      , "* llvm-as   version: " ++ showVC llvmAsVC
+      , "* llvm-dis  version: " ++ showVC llvmDisVC
+      , "* llvm-diff version: " ++ showVC llvmDiffVC
+      , "* clang     version: " ++ showVC clangVC
       ]
 
   knownBugs <- getKnownBugs rootPth
