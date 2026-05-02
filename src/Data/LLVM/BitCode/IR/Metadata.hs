@@ -54,7 +54,7 @@ import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import           Data.Typeable (Typeable)
-import           Data.Word (Word8,Word16,Word32,Word64)
+import           Data.Word (Word8,Word32,Word64)
 
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack, callStack)
@@ -421,24 +421,8 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
                  mdForwardRefOrNull ctx mt <$> parseMdIdx r n
       ronl n = if length (recordFields r) <= n then pure Nothing else ron n
 
-      -- Converts from the parsed raw numeric value (a two's-complement
-      -- representation) into a native positive or negative value.
       asSignedVal = fmap $ \case
-        v@(ValMdValue tv)
-          | PrimType (Integer s) <- typedType tv
-          , ValInteger i <- typedValue tv
-            -> let checkNeg x =
-                     if testBit x (fromEnum $ s - 1)
-                     then
-                       let xNeg = toInteger (complement x + 1) * (-1)
-                       in ValMdValue $ tv { typedValue = ValInteger xNeg }
-                     else v
-               in case s of
-                    8  -> checkNeg (fromInteger i :: Word8)
-                    16 -> checkNeg (fromInteger i :: Word16)
-                    32 -> checkNeg (fromInteger i :: Word32)
-                    64 -> checkNeg (fromInteger i :: Word64)
-                    _  -> v
+        ValMdValue tv -> ValMdValue $ asSignedTypedVal tv
         o -> o
 
       -- If the @isMetadata@ argument is 'True', then parse a metadata value
