@@ -50,6 +50,7 @@ import           System.FilePath ( (</>), (<.>) )
 import           System.IO (openBinaryTempFile,hClose,openTempFile,hPrint,
                             hPutStrLn,stderr)
 import qualified System.IO as IO (stderr)
+import           System.IO.Temp (withTempFile)
 import qualified System.Process as Proc
 import           System.Process (readProcessWithExitCode)
 import           Test.Tasty
@@ -589,22 +590,24 @@ cmpASTs ast1 ast2 =
   when (ast1 /= ast2) $ do
     llvmVersion <- gets llvmVer
     LLVMDiff diffExe <- gets llvmDiff
-    let ppForVersion = ppModuleForVersion llvmVersion
+    Details dets <- gets showDetails
     liftIO $ do
       tmp <- getTemporaryDirectory
       let withLL name m f =
-            EX.bracket (openTempFile tmp name) (\(path, _) -> removeFile path) $ \(path, h) -> do
-              hPutStrLn h (show (ppForVersion m))
+            withTempFile tmp name $ \path h -> do
+              hPutStrLn h (show (ppModuleForVersion llvmVersion m))
               hClose h
               f path
-      withLL "cmpASTs1.ll" ast1 $ \f1 ->
-        withLL "cmpASTs2.ll" ast2 $ \f2 -> do
+      withLL "mod1.ll" ast1 $ \f1 ->
+        withLL "mod2.ll" ast2 $ \f2 -> do
           mb <- findExecutable diffExe
           irDiff <- case mb of
             Just exe -> do
+              when dets $ liftIO $ putStrLn ("## Running: " ++ exe ++ " " ++ unwords [f1, f2])
               (_, out, err) <- readProcessWithExitCode exe [f1, f2] ""
               return $ "llvm-diff output:\n" <> out <> err
             Nothing -> do
+              when dets $ liftIO $ putStrLn ("## Running: " ++ "diff -u " ++ unwords [f1, f2])
               (_, out, _) <- readProcessWithExitCode "diff" ["-u", f1, f2] ""
               return $ "diff -u output (llvm-diff not found):\n" <> out
           assertEqual irDiff ast1 ast2
