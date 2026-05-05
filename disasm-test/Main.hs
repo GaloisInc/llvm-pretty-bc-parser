@@ -372,7 +372,7 @@ main =  do
               , vcVersioning llvmAsVC == vcVersioning llvmDiffVC
               ]) $
     error $ unlines
-      [ "Unexpected version mismatch between clang, llvm-as, llvm-dis, llvm-diff"
+      [ "Unexpected version mismatch between clang, llvm-as, llvm-dis, or llvm-diff"
       , "* llvm-as   version: " ++ showVC llvmAsVC
       , "* llvm-dis  version: " ++ showVC llvmDisVC
       , "* llvm-diff version: " ++ showVC llvmDiffVC
