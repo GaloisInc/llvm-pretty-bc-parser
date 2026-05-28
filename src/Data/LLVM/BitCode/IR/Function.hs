@@ -156,6 +156,9 @@ data PartialDefine = PartialDefine
   , partialMetadata   :: Map.Map PKindMd PValMd
   , partialGlobalMd   :: !(Seq.Seq PartialUnnamedMd)
   , partialComdatName :: Maybe String
+  , partialPersonality :: Maybe Int
+    -- ^ Index into the module value table for the function's personality
+    -- routine (resolved during 'finalizePartialDefine').
   } deriving Show
 
 -- | Generate a partial function definition from a function prototype.
@@ -183,6 +186,7 @@ emptyPartialDefine proto = do
     , partialMetadata   = mempty
     , partialGlobalMd   = mempty
     , partialComdatName = protoComdat proto
+    , partialPersonality = protoPersonality proto
     }
 
 -- | Set the statement list in a partial define.
@@ -229,6 +233,17 @@ finalizePartialDefine defs pd =
   withValueSymtab (partialSymtab pd) $ do
     body <- liftFinalize defs $ finalizeBody (partialBody pd)
     md <- finalizeMetadata defs (partialMetadata pd)
+    personality <- case partialPersonality pd of
+      Nothing -> return Nothing
+      Just n  -> do
+        mb <- lookupValueAbs n
+        case mb of
+          Nothing -> fail ("personality value " ++ show n
+                           ++ " not found in value table")
+          Just tv -> do
+            val' <- liftFinalize defs $
+                      relabel requireBbEntryName (typedValue tv)
+            return (Just (Typed (typedType tv) val'))
     return Define
       { defLinkage    = partialLinkage pd
       , defVisibility = partialVisibility pd
@@ -242,6 +257,7 @@ finalizePartialDefine defs pd =
       , defSection    = partialSection pd
       , defMetadata   = md
       , defComdat     = partialComdatName pd
+      , defPersonality = personality
       }
 
 finalizeMetadata :: FuncSymTabs -> PFnMdAttachments -> Parse FnMdAttachments
@@ -964,7 +980,11 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     result tokenTy (CleanupPad parent args) d
 
   52 -> label "FUNC_CODE_CATCHSWITCH" $ do
-    -- [parent-(val,type), num_handlers, bb#*num_handlers, optional bb#]
+    -- [parent-(val,type), num_handlers, bb#*num_handlers, optional bb#].
+    -- @catchswitch@ is both a terminator AND a value-producing instruction
+    -- (its result is the token consumed by the @catchpad@ in each handler),
+    -- so we use 'result' rather than 'effect' to ensure the produced token
+    -- is added to the value table.
     let field = parseField r
     (parent,ix) <- getValueTypePair t r 0
     numHandlers <- field ix numeric
@@ -972,10 +992,11 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
                         [0..numHandlers-1]
     let ixAfter = ix + 1 + numHandlers
         nFields = length (recordFields r)
+        tokenTy = PrimType Token
     if nFields > ixAfter
       then do unwindBB <- field ixAfter numeric
-              effect (CatchSwitch parent handlers (Just unwindBB)) d
-      else effect (CatchSwitch parent handlers Nothing) d
+              result tokenTy (CatchSwitch parent handlers (Just unwindBB)) d
+      else result tokenTy (CatchSwitch parent handlers Nothing) d
 
   -- 53 is unused
   -- 54 is unused

@@ -2,6 +2,21 @@
 
 ## next
 
+* Support parsing Windows SEH funclet opcodes used by clang-cl when lowering
+  C++ exception handling:
+  * `catchswitch` (now correctly added to the value table so that subsequent
+    `catchpad`/`cleanuppad` instructions can reference it as their parent
+    token),
+  * `catchpad`,
+  * `cleanuppad`,
+  * `catchret`, and
+  * `cleanupret`.
+* Add support for the `token` primitive type (`TYPE_CODE_TOKEN`), which is
+  produced by the SEH funclet opcodes above as well as by `ConstantTokenNone`.
+* Parse the `personalityfn` field of `MODULE_CODE_FUNCTION` so that the
+  pretty-printed round-trip preserves the `personality` clause on function
+  definitions.  This is required by the IR verifier whenever a function body
+  contains `landingpad` or any of the SEH funclet opcodes listed above.
 * Support LLVM 22:
   * Support parsing `sourceLanguageVersion` fields in `DICompileUnit` debug
     metadata.

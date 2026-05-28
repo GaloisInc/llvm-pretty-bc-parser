@@ -476,6 +476,10 @@ data FunProto = FunProto
   , protoIndex      :: Int
   , protoSect       :: Maybe String
   , protoComdat     :: Maybe String
+  , protoPersonality :: Maybe Int
+    -- ^ Index into the module value table for the personality function,
+    -- if any.  Encoded as @personalityfn + 1@ in MODULE_CODE_FUNCTION (or
+    -- @0@ if absent).
   } deriving Show
 
 -- | Push a function prototype on to the prototype stack.

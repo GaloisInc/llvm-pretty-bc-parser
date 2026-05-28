@@ -190,8 +190,7 @@ parseTypeBlockEntry (fromEntry -> Just r) = case recordCode r of
       rty:ptys -> addType (FunTy rty ptys vararg)
       []       -> fail "function expects a return type"
 
-  22 -> label "TYPE_CODE_TOKEN" $ do
-    notImplemented
+  22 -> label "TYPE_CODE_TOKEN" (addType (PrimType Token))
 
   23 -> label "TYPE_CODE_BFLOAT" (addType (PrimType (FloatType BFloat)))
 

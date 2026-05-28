@@ -353,6 +353,14 @@ parseFunProto r pm = label "FUNCTION" $ do
                then do comdatID <- field 12 numeric
                        pure (fst <$> partialComdat pm `lkMb` comdatID)
                else pure Nothing
+  -- personalityfn is at index 14 (encoded as value-id + 1, or 0 if absent).
+  -- See LLVM's BitcodeWriter::writeModuleInfo for the field layout.
+  personality <- if length (recordFields r) > 14
+                    then do pid <- field 14 numeric
+                            if (pid :: Int) == 0
+                               then return Nothing
+                               else return (Just (pid - 1))
+                    else return Nothing
   let proto = FunProto
         { protoType  = ty
         , protoLinkage =
@@ -366,6 +374,7 @@ parseFunProto r pm = label "FUNCTION" $ do
         , protoIndex = ix
         , protoSect  = section
         , protoComdat = comdat
+        , protoPersonality = personality
         }
 
   if isProto == (0 :: Int)
