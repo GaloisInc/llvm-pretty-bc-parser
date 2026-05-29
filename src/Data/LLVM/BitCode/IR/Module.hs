@@ -282,10 +282,21 @@ parseModuleBlockEntry pm (globalvalSummaryBlockId -> Just _) = do
   -- It should be safe to ignore this for now.
   return pm
 
-parseModuleBlockEntry pm (operandBundleTagsBlockId -> Just _) = do
-  -- OPERAND_BUNDLE_TAGS_BLOCK_ID
-  -- fail "OPERAND_BUNDLE_TAGS_BLOCK_ID"
-  return pm
+parseModuleBlockEntry pm (operandBundleTagsBlockId -> Just es) =
+  label "OPERAND_BUNDLE_TAGS_BLOCK_ID" $ do
+    -- Each record in this block is OPERAND_BUNDLE_TAG (record code 1) whose
+    -- fields are the bytes of one tag string (e.g. "funclet", "deopt").
+    -- Tags are appended in encounter order; their 0-based index is what
+    -- FUNC_CODE_OPERAND_BUNDLE (opcode 55) records reference from inside
+    -- function bodies.
+    forM_ es $ \e ->
+      case fromEntry e of
+        Just r | recordCode r == 1 -> do
+          chars <- parseFields r 0 char
+          addOperandBundleTag (UTF8.decode chars)
+        Just _  -> return ()   -- unknown record code; tolerate forward-compat
+        Nothing -> return ()   -- nested abbreviations / sub-blocks; ignore
+    return pm
 
 parseModuleBlockEntry pm (metadataKindBlockId -> Just es) = label "METADATA_KIND_BLOCK_ID" $ do
   forM_ es $ \e ->

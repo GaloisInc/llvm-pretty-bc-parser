@@ -126,6 +126,17 @@ data ParseState = ParseState
   , psKinds         :: !KindTable
   , psModVersion    :: !Int
   , psWarnings      :: Seq.Seq ParseWarning
+  -- | Module-level table of operand bundle tag names, populated when
+  -- 'OPERAND_BUNDLE_TAGS_BLOCK_ID' (block 21) is parsed.  Tags are referenced
+  -- by 0-based index from 'FUNC_CODE_OPERAND_BUNDLE' records (opcode 55) in
+  -- function bodies.
+  , psOperandBundleTags :: Seq.Seq String
+  -- | Per-function accumulator for operand bundles parsed via
+  -- 'FUNC_CODE_OPERAND_BUNDLE' (opcode 55).  Bundle records appear in the
+  -- bitcode immediately before the @call@ / @invoke@ / @callbr@ instruction
+  -- they attach to; we stash them here and the following instruction's
+  -- parser consumes the list.
+  , psPendingBundles :: [OperandBundle' Int]
   } deriving (Show)
 
 -- | The initial parsing state.
@@ -145,6 +156,8 @@ emptyParseState  = ParseState
   , psKinds         = emptyKindTable
   , psModVersion    = 0
   , psWarnings      = Seq.empty
+  , psOperandBundleTags = Seq.empty
+  , psPendingBundles    = []
   }
 
 -- | The next implicit result id.
@@ -184,6 +197,43 @@ setModVersion v = Parse $ do
 getModVersion :: Parse Int
 getModVersion = Parse (psModVersion <$> get)
 
+-- | Append an operand bundle tag (string) parsed from
+-- 'OPERAND_BUNDLE_TAGS_BLOCK_ID' to the module-level tag table.  Tags are
+-- referenced by 0-based index from 'FUNC_CODE_OPERAND_BUNDLE' records.
+addOperandBundleTag :: String -> Parse ()
+addOperandBundleTag s = Parse $ do
+  ps <- get
+  put $! ps { psOperandBundleTags = psOperandBundleTags ps Seq.|> s }
+
+-- | Look up an operand bundle tag name by index.  Fails the parse if the
+-- index is out of range (which indicates a malformed bitcode file).
+getOperandBundleTag :: Int -> Parse String
+getOperandBundleTag i = do
+  tags <- Parse (psOperandBundleTags <$> get)
+  case Seq.lookup i tags of
+    Just t  -> return t
+    Nothing -> fail ("operand bundle tag index out of range: " ++ show i)
+
+-- | Push a pending operand bundle parsed from 'FUNC_CODE_OPERAND_BUNDLE'.
+--
+-- Bundle records appear in the bitcode stream immediately before the @call@
+-- / @invoke@ / @callbr@ instruction they attach to.  The next call-style
+-- instruction's parser consumes the accumulated list via
+-- 'consumePendingBundles'.
+pushPendingBundle :: OperandBundle' Int -> Parse ()
+pushPendingBundle b = Parse $ do
+  ps <- get
+  put $! ps { psPendingBundles = psPendingBundles ps ++ [b] }
+
+-- | Take and clear the list of pending operand bundles accumulated since
+-- the last @call@ / @invoke@ / @callbr@ instruction.  Should be called from
+-- the parser for those instruction opcodes.
+consumePendingBundles :: Parse [OperandBundle' Int]
+consumePendingBundles = Parse $ do
+  ps <- get
+  put $! ps { psPendingBundles = [] }
+  return (psPendingBundles ps)
+
 -- | Sort of a hack to preserve state between function body parses.  It would
 -- really be nice to separate this into a different monad, that could just run
 -- under the Parse monad, but sort of unnecessary in the long run.
@@ -191,15 +241,17 @@ enterFunctionDef :: Parse a -> Parse a
 enterFunctionDef m = Parse $ do
   ps  <- get
   put ps
-    { psNextResultId = 0
+    { psNextResultId   = 0
+    , psPendingBundles = []
     }
   res <- unParse m
   ps' <- get
   put ps'
-    { psValueTable = psValueTable ps
-    , psMdTable    = psMdTable ps
-    , psMdRefs     = psMdRefs ps
-    , psLastLoc    = Nothing
+    { psValueTable     = psValueTable ps
+    , psMdTable        = psMdTable ps
+    , psMdRefs         = psMdRefs ps
+    , psLastLoc        = Nothing
+    , psPendingBundles = []
     }
   return res
 

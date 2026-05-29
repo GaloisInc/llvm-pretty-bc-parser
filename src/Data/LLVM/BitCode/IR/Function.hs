@@ -574,9 +574,10 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
         `mplus` fail "invalid INVOKE record"
 
     args        <- parseInvokeArgs t va r ix' as
+    bundles     <- consumePendingBundles
     -- Use `fty` instead of `typedType f` as the function type, as `typedType f`
     -- will be a pointer type. See Note [Typing function applications].
-    result ret (Invoke fty (typedValue f) args normal unwind) d
+    result ret (Invoke fty (typedValue f) args normal unwind bundles) d
 
   14 -> label "FUNC_CODE_INST_UNWIND" (effect Unwind d)
 
@@ -749,9 +750,10 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     label (show fn) $ do
       (ret,as,va) <- elimFunTy fnty `mplus` fail "invalid CALL record"
       args <- parseCallArgs t va r ix2 as
+      bundles <- consumePendingBundles
       -- Use `fnty` instead of `opTy` as the function type, as `opTy` will be
       -- a pointer type. See Note [Typing function applications].
-      result ret (Call False fnty fn args) d
+      result ret (Call False fnty fn args bundles) d
 
   -- [Line,Col,ScopeVal, IAVal, IsImplicit, atomGroup, atomRank]
   -- isImplicit: added LLVM 16
@@ -1001,8 +1003,34 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
   -- 53 is unused
   -- 54 is unused
 
+  -- [tag_idx, (value, type)*]
+  --
+  -- Operand bundle records appear in the bitcode stream immediately before
+  -- the @call@ / @invoke@ / @callbr@ instruction they attach to.  We stash
+  -- the parsed bundle in the per-function 'psPendingBundles' list and the
+  -- next call-style instruction's parser consumes the accumulated list via
+  -- 'consumePendingBundles'.  The @tag_idx@ is a 0-based index into the
+  -- 'psOperandBundleTags' table populated from 'OPERAND_BUNDLE_TAGS_BLOCK_ID'
+  -- (block 21).  Subsequent fields are (value, type) pairs encoded the same
+  -- way as call arguments, via 'getValueTypePair' (which consumes 1 or 2
+  -- record fields per pair depending on the relative-id encoding).
+  --
+  -- An operand bundle is /not/ itself an instruction; it does not produce a
+  -- value and does not appear in the basic-block instruction list, so we
+  -- return the 'PartialDefine' unchanged.
   55 -> label "FUNC_CODE_OPERAND_BUNDLE" $ do
-    notImplemented
+    let field   = parseField r
+        nFields = length (recordFields r)
+    tagIdx  <- field 0 numeric
+    tagName <- getOperandBundleTag tagIdx
+    let go ix acc
+          | ix >= nFields = return (reverse acc)
+          | otherwise     = do
+              (tv, ix') <- getValueTypePair t r ix
+              go ix' (tv : acc)
+    args <- go 1 []
+    pushPendingBundle (OperandBundle tagName args)
+    return d
 
   -- [opval,ty,opcode]
   56 -> label "FUNC_CODE_INST_UNOP" $ do
@@ -1045,9 +1073,10 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     label (show fn) $ do
       (ret,as,va) <- elimFunTy fnty `mplus` fail "invalid CALLBR record"
       args <- parseCallArgs t va r ix2 as
+      bundles <- consumePendingBundles
       -- Use `fnty` instead of `opTy` as the function type, as `opTy` will be
       -- a pointer type. See Note [Typing function applications].
-      result ret (CallBr fnty fn args normal indirectDests) d
+      result ret (CallBr fnty fn args normal indirectDests bundles) d
 
   -- [opty, opval]
   58 -> label "FUNC_CODE_INST_FREEZE" $ do
