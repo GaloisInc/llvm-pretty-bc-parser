@@ -284,18 +284,15 @@ parseModuleBlockEntry pm (globalvalSummaryBlockId -> Just _) = do
 
 parseModuleBlockEntry pm (operandBundleTagsBlockId -> Just es) =
   label "OPERAND_BUNDLE_TAGS_BLOCK_ID" $ do
-    -- Each record in this block is OPERAND_BUNDLE_TAG (record code 1) whose
-    -- fields are the bytes of one tag string (e.g. "funclet", "deopt").
-    -- Tags are appended in encounter order; their 0-based index is what
-    -- FUNC_CODE_OPERAND_BUNDLE (opcode 55) records reference from inside
-    -- function bodies.
+    -- Each record is OPERAND_BUNDLE_TAG (code 1) whose fields are the
+    -- bytes of one tag string (e.g. "funclet", "deopt").
     forM_ es $ \e ->
       case fromEntry e of
         Just r | recordCode r == 1 -> do
           chars <- parseFields r 0 char
           addOperandBundleTag (UTF8.decode chars)
-        Just _  -> return ()   -- unknown record code; tolerate forward-compat
-        Nothing -> return ()   -- nested abbreviations / sub-blocks; ignore
+        Just _  -> return ()
+        Nothing -> return ()
     return pm
 
 parseModuleBlockEntry pm (metadataKindBlockId -> Just es) = label "METADATA_KIND_BLOCK_ID" $ do
@@ -364,8 +361,7 @@ parseFunProto r pm = label "FUNCTION" $ do
                then do comdatID <- field 12 numeric
                        pure (fst <$> partialComdat pm `lkMb` comdatID)
                else pure Nothing
-  -- personalityfn is at index 14 (encoded as value-id + 1, or 0 if absent).
-  -- See LLVM's BitcodeWriter::writeModuleInfo for the field layout.
+  -- personalityfn at index 14 (encoded as value-id + 1, or 0 if absent).
   personality <- if length (recordFields r) > 14
                     then do pid <- field 14 numeric
                             if (pid :: Int) == 0

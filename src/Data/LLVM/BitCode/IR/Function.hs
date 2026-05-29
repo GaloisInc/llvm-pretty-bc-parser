@@ -157,8 +157,6 @@ data PartialDefine = PartialDefine
   , partialGlobalMd   :: !(Seq.Seq PartialUnnamedMd)
   , partialComdatName :: Maybe String
   , partialPersonality :: Maybe Int
-    -- ^ Index into the module value table for the function's personality
-    -- routine (resolved during 'finalizePartialDefine').
   } deriving Show
 
 -- | Generate a partial function definition from a function prototype.
@@ -941,10 +939,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     result ty (LandingPad ty Nothing isCleanup clauses) d
 
   48 -> label "FUNC_CODE_CLEANUPRET" $ do
-    -- [val] (no unwind) or [val, bb#].  LLVM's bitcode writer uses
-    -- @pushValue@ (value-only) for the pad, but in well-formed bitcode the
-    -- pad always dominates its use, so the read is always a backward
-    -- reference and @getValueTypePair@ consumes exactly one field.
+    -- [val] (no unwind) or [val, bb#]
     let field = parseField r
     (pad,ix) <- getValueTypePair t r 0
     let nFields = length (recordFields r)
@@ -954,8 +949,7 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
       else effect (CleanupRet pad Nothing) d
 
   49 -> label "FUNC_CODE_CATCHRET" $ do
-    -- [val, bb#].  As with cleanupret, the pad operand is value-only on the
-    -- LLVM side; we rely on the pad being a backward reference here.
+    -- [val, bb#]
     let field = parseField r
     (pad,ix) <- getValueTypePair t r 0
     succBB   <- field ix numeric
@@ -983,10 +977,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
 
   52 -> label "FUNC_CODE_CATCHSWITCH" $ do
     -- [parent-(val,type), num_handlers, bb#*num_handlers, optional bb#].
-    -- @catchswitch@ is both a terminator AND a value-producing instruction
-    -- (its result is the token consumed by the @catchpad@ in each handler),
-    -- so we use 'result' rather than 'effect' to ensure the produced token
-    -- is added to the value table.
+    -- catchswitch produces a token consumed by its catchpad handlers, so
+    -- use 'result' rather than 'effect' to add it to the value table.
     let field = parseField r
     (parent,ix) <- getValueTypePair t r 0
     numHandlers <- field ix numeric
@@ -1003,21 +995,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
   -- 53 is unused
   -- 54 is unused
 
-  -- [tag_idx, (value, type)*]
-  --
-  -- Operand bundle records appear in the bitcode stream immediately before
-  -- the @call@ / @invoke@ / @callbr@ instruction they attach to.  We stash
-  -- the parsed bundle in the per-function 'psPendingBundles' list and the
-  -- next call-style instruction's parser consumes the accumulated list via
-  -- 'consumePendingBundles'.  The @tag_idx@ is a 0-based index into the
-  -- 'psOperandBundleTags' table populated from 'OPERAND_BUNDLE_TAGS_BLOCK_ID'
-  -- (block 21).  Subsequent fields are (value, type) pairs encoded the same
-  -- way as call arguments, via 'getValueTypePair' (which consumes 1 or 2
-  -- record fields per pair depending on the relative-id encoding).
-  --
-  -- An operand bundle is /not/ itself an instruction; it does not produce a
-  -- value and does not appear in the basic-block instruction list, so we
-  -- return the 'PartialDefine' unchanged.
+  -- [tag_idx, (value, type)*].  Bundles precede the call/invoke/callbr they
+  -- attach to; we stash them on 'psPendingBundles' and the following
+  -- instruction's parser consumes them via 'consumePendingBundles'.
   55 -> label "FUNC_CODE_OPERAND_BUNDLE" $ do
     let field   = parseField r
         nFields = length (recordFields r)

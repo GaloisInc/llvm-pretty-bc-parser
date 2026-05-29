@@ -2,41 +2,22 @@
 
 ## next
 
-* Support parsing **operand bundles** on `call` / `invoke` / `callbr`
-  instructions:
-  * Parse `OPERAND_BUNDLE_TAGS_BLOCK_ID` (block 21) into a module-level
-    table of bundle tag names.
-  * Parse `FUNC_CODE_OPERAND_BUNDLE` (opcode 55) records, which appear
-    immediately before the call-style instruction they attach to.  The
-    parsed bundles are stashed on the parse state and consumed by the
-    next `call` / `invoke` / `callbr` parser.
-  * The parsed bundles flow into the new `OperandBundle' lab` field on
-    `Call`, `Invoke`, and `CallBr` in llvm-pretty.
-  * This is what allows real `clang-cl /EHsc` bitcode to round-trip end
-    to end: the IR verifier requires every inner call inside a SEH
-    funclet to carry a `[ "funclet"(token %X) ]` bundle, and previously
-    `FUNC_CODE_OPERAND_BUNDLE` was a `notImplemented` fatal error.
-  * New checked-in artifact `disasm-test/bc_src_tests/windows-seh-funclets.bc`
-    (and accompanying `.ll`) is a real `clang-cl /EHsc` capture exercising
-    `catchswitch` / `catchpad` / `catchret` / `cleanuppad` / `cleanupret`,
-    the `__CxxFrameHandler3` personality, and three `"funclet"` operand
-    bundles.
-
-* Support parsing Windows SEH funclet opcodes used by clang-cl when lowering
-  C++ exception handling:
-  * `catchswitch` (now correctly added to the value table so that subsequent
-    `catchpad`/`cleanuppad` instructions can reference it as their parent
-    token),
-  * `catchpad`,
-  * `cleanuppad`,
-  * `catchret`, and
-  * `cleanupret`.
-* Add support for the `token` primitive type (`TYPE_CODE_TOKEN`), which is
-  produced by the SEH funclet opcodes above as well as by `ConstantTokenNone`.
-* Parse the `personalityfn` field of `MODULE_CODE_FUNCTION` so that the
-  pretty-printed round-trip preserves the `personality` clause on function
-  definitions.  This is required by the IR verifier whenever a function body
-  contains `landingpad` or any of the SEH funclet opcodes listed above.
+* Parse Windows SEH funclet opcodes used by `clang-cl` when lowering C++
+  exception handling: `catchswitch` (now correctly added to the value table),
+  `catchpad`, `cleanuppad`, `catchret`, and `cleanupret`.
+* Parse the `token` primitive type (`TYPE_CODE_TOKEN`) and the
+  `personalityfn` field of `MODULE_CODE_FUNCTION`, so that the pretty-printed
+  round-trip preserves the `personality` clause on function definitions
+  (required by the IR verifier whenever the body contains `landingpad` or
+  any SEH funclet opcode).
+* Parse **operand bundles** on `call` / `invoke` / `callbr` instructions
+  (`OPERAND_BUNDLE_TAGS_BLOCK_ID` plus `FUNC_CODE_OPERAND_BUNDLE`).  This
+  allows real `clang-cl /EHsc` bitcode to round-trip end to end, because
+  the IR verifier requires every inner call inside a SEH funclet to carry
+  a `[ "funclet"(token %X) ]` bundle.
+* Add `disasm-test/bc_src_tests/windows-seh-funclets.bc`, a real
+  `clang-cl /EHsc` capture exercising the new SEH opcodes, the
+  `__CxxFrameHandler3` personality, and three `"funclet"` operand bundles.
 * Support LLVM 22:
   * Support parsing `sourceLanguageVersion` fields in `DICompileUnit` debug
     metadata.
