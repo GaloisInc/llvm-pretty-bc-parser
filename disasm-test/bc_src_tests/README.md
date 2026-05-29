@@ -59,12 +59,10 @@ bitcode-format files from the Apple toolset is added directly here.
   `[ "funclet"(token %N) ]` operand bundles that the IR verifier requires
   on every inner call inside a SEH funclet.
 
-  The source (`windows-seh-funclets.cpp`) is reproduced inline in the
-  comment header of `windows-seh-funclets.ll`.  It defines
-  `test_catch_only` (try/catch with a logging call in the catch body) and
-  `test_cleanup_only` (an automatic variable whose destructor performs a
-  logging call); the destructor itself is also emitted with its own
-  cleanup funclet because the inner call can throw.
+  The C++ source defines `test_catch_only` (try/catch with a logging call
+  in the catch body) and `test_cleanup_only` (an automatic variable whose
+  destructor performs a logging call); the destructor itself is also
+  emitted with its own cleanup funclet because the inner call can throw.
 
   Generation pipeline (Windows, `x86_64-pc-windows-msvc`):
 
@@ -78,8 +76,4 @@ bitcode-format files from the Apple toolset is added directly here.
      `<rustlib>\bin\llvm-as.exe`).  LLVM 20's `llvm-as` cannot consume
      LLVM 21 textual IR, but the parser handles 21-emitted bitcode
      correctly.
-
-  The accompanying `.ll` is *not* part of the test comparison
-  (`runRawBCTest` in `disasm-test/Main.hs` round-trips the bitcode and
-  compares ASTs); it is checked in for human reference only.
 
