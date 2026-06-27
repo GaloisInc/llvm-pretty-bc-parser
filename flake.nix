@@ -156,7 +156,7 @@
                        echo Running disasm-test
                        ./dist/build/disasm-test/disasm-test
                        echo Running fuzzing
-                       ./dist/build/fuzz-llvm-disasm/fuzz-llvm-disasm --csmith-path ${pkgs.csmith}/include/csmith* --disasm ./dist/build/llvm-disasm/llvm-disasm
+                       ./dist/build/fuzz-llvm-disasm/fuzz-llvm-disasm --csmith-path ${pkgs.csmith}/include/ --disasm ./dist/build/llvm-disasm/llvm-disasm
                        echo Finished testing
                        echo OK > $out
                        ''
