@@ -20,26 +20,33 @@
       "inputs": {
         "html-parse-src": "html-parse-src",
         "levers": [
-          "tasty-sugar",
           "levers"
         ],
-        "named-text": "named-text",
+        "microlens-src": [
+          "microlens-src"
+        ],
+        "named-text": [
+          "named-text"
+        ],
         "nixpkgs": [
-          "tasty-sugar",
           "nixpkgs"
         ],
         "parameterized-utils-src": [
-          "tasty-sugar",
           "parameterized-utils-src"
         ],
-        "sayable": "sayable"
+        "sayable": [
+          "sayable"
+        ],
+        "tasty-checklist": [
+          "tasty-checklist"
+        ]
       },
       "locked": {
-        "lastModified": 1773156315,
-        "narHash": "sha256-ItwJH9PSGUmqau60wcjUFoRCfKv4mx8SPVsvBy4XXU0=",
+        "lastModified": 1782221162,
+        "narHash": "sha256-u/NNGWJ96TROKwDxi2RZJLbTgnwbKV2lReajy1g9bQk=",
         "owner": "kquick",
         "repo": "kvitable",
-        "rev": "32657dac1a73fa893151e84d90dd513d4b1ebdff",
+        "rev": "84c4e26ebe755745de1942f739ae4b04e8344a1e",
         "type": "github"
       },
       "original": {
@@ -55,11 +62,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1765117877,
-        "narHash": "sha256-Fzy3US4MdP/gAre2N0Dn4Dz+RirWVPfPO8VPNbsIjj0=",
+        "lastModified": 1782566967,
+        "narHash": "sha256-8GfhviRj8giYrwmsNluCQuNsy6z0oRjQJzgLBuKa9jw=",
         "owner": "kquick",
         "repo": "nix-levers",
-        "rev": "d4ffbdf56387ee5ffb6ae3aed176f37f56769948",
+        "rev": "603a167b59cb89ff0f24bae89075f48554d5ee0f",
         "type": "github"
       },
       "original": {
@@ -84,36 +91,49 @@
         "type": "github"
       }
     },
+    "microlens-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1758506353,
+        "narHash": "sha256-m4qQXZcHffx1OW1a6JVX3d/XzfSL9cFcTUR+O8yyFYo=",
+        "owner": "stevenfontanella",
+        "repo": "microlens",
+        "rev": "7d509d465c54dba45b182f9c60452b3b3aa71d1a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "stevenfontanella",
+        "repo": "microlens",
+        "type": "github"
+      }
+    },
     "named-text": {
       "inputs": {
         "levers": [
-          "tasty-sugar",
-          "kvitable",
           "levers"
         ],
+        "microlens-src": [
+          "microlens-src"
+        ],
         "nixpkgs": [
-          "tasty-sugar",
-          "kvitable",
           "nixpkgs"
         ],
         "parameterized-utils-src": [
-          "tasty-sugar",
-          "kvitable",
           "parameterized-utils-src"
         ],
         "sayable": [
-          "tasty-sugar",
-          "kvitable",
           "sayable"
         ],
-        "tasty-checklist": "tasty-checklist"
+        "tasty-checklist": [
+          "tasty-checklist"
+        ]
       },
       "locked": {
-        "lastModified": 1773150381,
-        "narHash": "sha256-Vs1fQL/pbydMKOoct4PpZogRiS1LfibATk5ZFZqqHak=",
+        "lastModified": 1782219765,
+        "narHash": "sha256-JQja/BovgSgYFckd2y9O8RmS75sKevnfK5A32eqtBNo=",
         "owner": "kquick",
         "repo": "named-text",
-        "rev": "633ebb0c7d831599cbce4d1717cc5474e2ad26f4",
+        "rev": "36a32e7d2d1e54765c495039f109cc38a6245026",
         "type": "github"
       },
       "original": {
@@ -124,11 +144,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1771923393,
-        "narHash": "sha256-Fy0+UXELv9hOE8WjYhJt8fMDLYTU2Dqn3cX4BwoGBos=",
+        "lastModified": 1782175435,
+        "narHash": "sha256-EMzXKmnOtBQ2MnvpiNOm7E+kOMvdPrIKaeg52Tip2Uk=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "ea7f1f06811ce7fcc81d6c6fd4213150c23edcf2",
+        "rev": "89570f24e97e614aa34aa9ab1c927b6578a43775",
         "type": "github"
       },
       "original": {
@@ -173,11 +193,11 @@
     "parameterized-utils-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1757597308,
-        "narHash": "sha256-fwZLglQthgfdd/MvCU1b6zpGHTpYPVVxnd85Yvd6gH4=",
+        "lastModified": 1782483466,
+        "narHash": "sha256-juPn9O9OfuJw9Y2giBkcFO1tI7bEb1WQoJcOJF+7iPk=",
         "owner": "GaloisInc",
         "repo": "parameterized-utils",
-        "rev": "ebd59241828a97e06af6f8eeead0968a90108256",
+        "rev": "b5f3419029e3ca8df47b15aa43f399a1a4cb0f45",
         "type": "github"
       },
       "original": {
@@ -188,33 +208,35 @@
     },
     "root": {
       "inputs": {
+        "kvitable": "kvitable",
         "levers": "levers",
         "llvm-pretty-src": "llvm-pretty-src",
+        "microlens-src": "microlens-src",
+        "named-text": "named-text",
         "nixpkgs": "nixpkgs",
         "nixpkgs_mid_llvm": "nixpkgs_mid_llvm",
         "nixpkgs_old_llvm": "nixpkgs_old_llvm",
+        "parameterized-utils-src": "parameterized-utils-src",
+        "sayable": "sayable",
+        "tasty-checklist": "tasty-checklist",
         "tasty-sugar": "tasty-sugar"
       }
     },
     "sayable": {
       "inputs": {
         "levers": [
-          "tasty-sugar",
-          "kvitable",
           "levers"
         ],
         "nixpkgs": [
-          "tasty-sugar",
-          "kvitable",
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1767578011,
-        "narHash": "sha256-XHABeHA9Ca8+X88kdSP0g+tyQExScPgOqrEfC7jmEIY=",
+        "lastModified": 1782219515,
+        "narHash": "sha256-2AJToFDNOkGcRiE4fxb+OHgV+wEFnMImIGfNCwlJL7M=",
         "owner": "kquick",
         "repo": "sayable",
-        "rev": "24a600ee82f855329b1dc0a6ba9106ec46215b7a",
+        "rev": "6f7ffe3095be3133fced90baa9e2b213d14f44c4",
         "type": "github"
       },
       "original": {
@@ -226,30 +248,24 @@
     "tasty-checklist": {
       "inputs": {
         "levers": [
-          "tasty-sugar",
-          "kvitable",
-          "named-text",
           "levers"
         ],
+        "microlens-src": [
+          "microlens-src"
+        ],
         "nixpkgs": [
-          "tasty-sugar",
-          "kvitable",
-          "named-text",
           "nixpkgs"
         ],
         "parameterized-utils-src": [
-          "tasty-sugar",
-          "kvitable",
-          "named-text",
           "parameterized-utils-src"
         ]
       },
       "locked": {
-        "lastModified": 1761568218,
-        "narHash": "sha256-9Qgmzeq25XeysQs/7U9nTfmRO4H3cuAueR9TWv40viw=",
+        "lastModified": 1782216418,
+        "narHash": "sha256-nzg8PnitnhNn2+/ygAQRCoZoeLmikCNwVQfuQhQl48Q=",
         "owner": "kquick",
         "repo": "tasty-checklist",
-        "rev": "1022211d94f9713c4c87327a1a008d19955d03b9",
+        "rev": "f30f28983ccd86635d67a7e1bd17dba29b9dcb4d",
         "type": "github"
       },
       "original": {
@@ -260,21 +276,37 @@
     },
     "tasty-sugar": {
       "inputs": {
-        "kvitable": "kvitable",
+        "kvitable": [
+          "kvitable"
+        ],
         "levers": [
           "levers"
+        ],
+        "microlens-src": [
+          "microlens-src"
+        ],
+        "named-text": [
+          "named-text"
         ],
         "nixpkgs": [
           "nixpkgs"
         ],
-        "parameterized-utils-src": "parameterized-utils-src"
+        "parameterized-utils-src": [
+          "parameterized-utils-src"
+        ],
+        "sayable": [
+          "sayable"
+        ],
+        "tasty-checklist": [
+          "tasty-checklist"
+        ]
       },
       "locked": {
-        "lastModified": 1773158139,
-        "narHash": "sha256-GRNwISL0Dybr4BvZNdgNgbJirSiCu+Bohzo9sTJFKAU=",
+        "lastModified": 1782305039,
+        "narHash": "sha256-uyW0NFKv497usnr8ZHG8nlJUsM+LRQOD89TwCALaToc=",
         "owner": "kquick",
         "repo": "tasty-sugar",
-        "rev": "8545a04cfd5648a61dd66b136df3bc1dac66de22",
+        "rev": "4b7f6f7ef6979e9f5d8f455824870019ca184ce0",
         "type": "github"
       },
       "original": {

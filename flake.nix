@@ -19,21 +19,72 @@
       url = "github:kquick/nix-levers";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    kvitable = {
+      url = "github:kquick/kvitable";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.levers.follows = "levers";
+      inputs.microlens-src.follows = "microlens-src";
+      inputs.named-text.follows = "named-text";
+      inputs.parameterized-utils-src.follows = "parameterized-utils-src";
+      inputs.sayable.follows = "sayable";
+      inputs.tasty-checklist.follows = "tasty-checklist";
+    };
     llvm-pretty-src = {
       url = "github:GaloisInc/llvm-pretty";
       flake = false;
+    };
+    microlens-src = {
+      url = "github:stevenfontanella/microlens";
+      flake = false;
+    };
+    named-text = {
+      url = "github:kquick/named-text";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.levers.follows = "levers";
+      inputs.sayable.follows = "sayable";
+      inputs.microlens-src.follows = "microlens-src";
+      inputs.parameterized-utils-src.follows = "parameterized-utils-src";
+      inputs.tasty-checklist.follows = "tasty-checklist";
+    };
+    parameterized-utils-src = {
+      url = "github:GaloisInc/parameterized-utils";
+      flake = false;
+    };
+    sayable = {
+      url = "github:kquick/sayable";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.levers.follows = "levers";
+    };
+    tasty-checklist = {
+      url = "github:kquick/tasty-checklist";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.levers.follows = "levers";
+      inputs.microlens-src.follows = "microlens-src";
+      inputs.parameterized-utils-src.follows = "parameterized-utils-src";
     };
     tasty-sugar = {
       url = "github:kquick/tasty-sugar";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.levers.follows = "levers";
+      inputs.kvitable.follows = "kvitable";
+      inputs.microlens-src.follows = "microlens-src";
+      inputs.named-text.follows = "named-text";
+      inputs.parameterized-utils-src.follows = "parameterized-utils-src";
+      inputs.sayable.follows = "sayable";
+      inputs.tasty-checklist.follows = "tasty-checklist";
     };
   };
 
   outputs = { self, levers, nixpkgs
             , nixpkgs_old_llvm
             , nixpkgs_mid_llvm
+            , kvitable
+            , microlens-src
+            , named-text
             , llvm-pretty-src
+            , parameterized-utils-src
+            , sayable
+            , tasty-checklist
             , tasty-sugar
             }:
     let pkg_ghcvers = pkgs:
@@ -105,7 +156,7 @@
                        echo Running disasm-test
                        ./dist/build/disasm-test/disasm-test
                        echo Running fuzzing
-                       ./dist/build/fuzz-llvm-disasm/fuzz-llvm-disasm --csmith-path ${pkgs.csmith}/include/csmith* --disasm ./dist/build/llvm-disasm/llvm-disasm
+                       ./dist/build/fuzz-llvm-disasm/fuzz-llvm-disasm --csmith-path ${pkgs.csmith}/include/ --disasm ./dist/build/llvm-disasm/llvm-disasm
                        echo Finished testing
                        echo OK > $out
                        ''
@@ -172,7 +223,9 @@
                 "22"
               ]
             );
-          llvm-pretty = mkHaskell "llvm-pretty" llvm-pretty-src {};
+          llvm-pretty = mkHaskell "llvm-pretty" llvm-pretty-src {
+            inherit microlens microlens-platform microlens-th;
+          };
           llvm-pretty-bc-parser = mkHaskell "llvm-pretty-bc-parser" self {
             inherit llvm-pretty tasty-sugar;
             configFlags = ["-ffuzz"] ++
@@ -200,6 +253,19 @@
                     cp -r dist $out/test-build/
                     '';
                 });
+          };
+          microlens = mkHaskell "microlens" "${microlens-src}/microlens" {};
+          microlens-ghc = mkHaskell "microlens" "${microlens-src}/microlens-ghc" {
+            inherit microlens;
+          };
+          microlens-mtl = mkHaskell "microlens" "${microlens-src}/microlens-mtl" {
+            inherit microlens;
+          };
+          microlens-platform = mkHaskell "microlens" "${microlens-src}/microlens-platform" {
+            inherit microlens microlens-ghc microlens-mtl microlens-th;
+          };
+          microlens-th = mkHaskell "microlens" "${microlens-src}/microlens-th" {
+            inherit microlens;
           };
         });
     };
