@@ -282,10 +282,18 @@ parseModuleBlockEntry pm (globalvalSummaryBlockId -> Just _) = do
   -- It should be safe to ignore this for now.
   return pm
 
-parseModuleBlockEntry pm (operandBundleTagsBlockId -> Just _) = do
-  -- OPERAND_BUNDLE_TAGS_BLOCK_ID
-  -- fail "OPERAND_BUNDLE_TAGS_BLOCK_ID"
-  return pm
+parseModuleBlockEntry pm (operandBundleTagsBlockId -> Just es) =
+  label "OPERAND_BUNDLE_TAGS_BLOCK_ID" $ do
+    -- Each record is OPERAND_BUNDLE_TAG (code 1) whose fields are the
+    -- bytes of one tag string (e.g. "funclet", "deopt").
+    forM_ es $ \e ->
+      case fromEntry e of
+        Just r | recordCode r == 1 -> do
+          chars <- parseFields r 0 char
+          addOperandBundleTag (UTF8.decode chars)
+        Just _  -> return ()
+        Nothing -> return ()
+    return pm
 
 parseModuleBlockEntry pm (metadataKindBlockId -> Just es) = label "METADATA_KIND_BLOCK_ID" $ do
   forM_ es $ \e ->
@@ -353,6 +361,13 @@ parseFunProto r pm = label "FUNCTION" $ do
                then do comdatID <- field 12 numeric
                        pure (fst <$> partialComdat pm `lkMb` comdatID)
                else pure Nothing
+  -- personalityfn at index 14 (encoded as value-id + 1, or 0 if absent).
+  personality <- if length (recordFields r) > 14
+                    then do pid <- field 14 numeric
+                            if (pid :: Int) == 0
+                               then return Nothing
+                               else return (Just (pid - 1))
+                    else return Nothing
   let proto = FunProto
         { protoType  = ty
         , protoLinkage =
@@ -366,6 +381,7 @@ parseFunProto r pm = label "FUNCTION" $ do
         , protoIndex = ix
         , protoSect  = section
         , protoComdat = comdat
+        , protoPersonality = personality
         }
 
   if isProto == (0 :: Int)

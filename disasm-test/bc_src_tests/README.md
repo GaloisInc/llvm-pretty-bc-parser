@@ -51,3 +51,29 @@ bitcode-format files from the Apple toolset is added directly here.
 
   Generated on Linux via: `llvm-as hello-world.ll -o hello-world.bc`
   with `llvm-as` version 11.1.0.
+
+* `windows-seh-funclets.bc` : Real MSVC C++ exception-handling bitcode
+  produced by `clang-cl /EHsc` on Windows.  Exercises the full SEH funclet
+  opcode set (`catchswitch`, `catchpad`, `catchret`, `cleanuppad`,
+  `cleanupret`), the `__CxxFrameHandler3` MSVC C++ personality, AND the
+  `[ "funclet"(token %N) ]` operand bundles that the IR verifier requires
+  on every inner call inside a SEH funclet.
+
+  The C++ source defines `test_catch_only` (try/catch with a logging call
+  in the catch body) and `test_cleanup_only` (an automatic variable whose
+  destructor performs a logging call); the destructor itself is also
+  emitted with its own cleanup funclet because the inner call can throw.
+
+  Generation pipeline (Windows, `x86_64-pc-windows-msvc`):
+
+  1. `clang-cl /EHsc /clang:-emit-llvm /clang:-S windows-seh-funclets.cpp`
+     using `clang-cl` version 20.1.6 — no `/O2`, since `/EHsc` is enough
+     to force MSVC funclet IR and skipping optimization avoids accidental
+     simplification of the funclets.
+  2. The resulting `.ll` is assembled to bitcode with LLVM 21's
+     `llvm-as.exe` (the version shipped with the Rust toolchain in
+     `rustup component add llvm-tools-preview` lives at
+     `<rustlib>\bin\llvm-as.exe`).  LLVM 20's `llvm-as` cannot consume
+     LLVM 21 textual IR, but the parser handles 21-emitted bitcode
+     correctly.
+

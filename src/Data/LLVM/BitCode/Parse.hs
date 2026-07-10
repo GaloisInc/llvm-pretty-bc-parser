@@ -126,6 +126,8 @@ data ParseState = ParseState
   , psKinds         :: !KindTable
   , psModVersion    :: !Int
   , psWarnings      :: Seq.Seq ParseWarning
+  , psOperandBundleTags :: Seq.Seq String
+  , psPendingBundles :: [OperandBundle' Int]
   } deriving (Show)
 
 -- | The initial parsing state.
@@ -145,6 +147,8 @@ emptyParseState  = ParseState
   , psKinds         = emptyKindTable
   , psModVersion    = 0
   , psWarnings      = Seq.empty
+  , psOperandBundleTags = Seq.empty
+  , psPendingBundles    = []
   }
 
 -- | The next implicit result id.
@@ -184,6 +188,34 @@ setModVersion v = Parse $ do
 getModVersion :: Parse Int
 getModVersion = Parse (psModVersion <$> get)
 
+-- | Append an operand bundle tag parsed from 'OPERAND_BUNDLE_TAGS_BLOCK_ID'.
+addOperandBundleTag :: String -> Parse ()
+addOperandBundleTag s = Parse $ do
+  ps <- get
+  put $! ps { psOperandBundleTags = psOperandBundleTags ps Seq.|> s }
+
+-- | Look up an operand bundle tag name by index.
+getOperandBundleTag :: Int -> Parse String
+getOperandBundleTag i = do
+  tags <- Parse (psOperandBundleTags <$> get)
+  case Seq.lookup i tags of
+    Just t  -> return t
+    Nothing -> fail ("operand bundle tag index out of range: " ++ show i)
+
+-- | Push a pending operand bundle parsed from 'FUNC_CODE_OPERAND_BUNDLE';
+-- consumed by the next 'call' / 'invoke' / 'callbr' parser.
+pushPendingBundle :: OperandBundle' Int -> Parse ()
+pushPendingBundle b = Parse $ do
+  ps <- get
+  put $! ps { psPendingBundles = psPendingBundles ps ++ [b] }
+
+-- | Take and clear the list of pending operand bundles.
+consumePendingBundles :: Parse [OperandBundle' Int]
+consumePendingBundles = Parse $ do
+  ps <- get
+  put $! ps { psPendingBundles = [] }
+  return (psPendingBundles ps)
+
 -- | Sort of a hack to preserve state between function body parses.  It would
 -- really be nice to separate this into a different monad, that could just run
 -- under the Parse monad, but sort of unnecessary in the long run.
@@ -191,15 +223,17 @@ enterFunctionDef :: Parse a -> Parse a
 enterFunctionDef m = Parse $ do
   ps  <- get
   put ps
-    { psNextResultId = 0
+    { psNextResultId   = 0
+    , psPendingBundles = []
     }
   res <- unParse m
   ps' <- get
   put ps'
-    { psValueTable = psValueTable ps
-    , psMdTable    = psMdTable ps
-    , psMdRefs     = psMdRefs ps
-    , psLastLoc    = Nothing
+    { psValueTable     = psValueTable ps
+    , psMdTable        = psMdTable ps
+    , psMdRefs         = psMdRefs ps
+    , psLastLoc        = Nothing
+    , psPendingBundles = []
     }
   return res
 
@@ -476,6 +510,7 @@ data FunProto = FunProto
   , protoIndex      :: Int
   , protoSect       :: Maybe String
   , protoComdat     :: Maybe String
+  , protoPersonality :: Maybe Int
   } deriving Show
 
 -- | Push a function prototype on to the prototype stack.
