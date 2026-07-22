@@ -1,6 +1,6 @@
 import Data.LLVM.BitCode (parseBitCodeWithWarnings, formatError, ppParseWarnings)
 import Data.LLVM.CFG (buildCFG, CFG(..), blockId)
-import Text.LLVM.AST (defBody, modDefines,Module)
+import Text.LLVM.AST (defBody, modDefines,Module, fixupOpaquePtrs)
 import Text.LLVM.PP (ppLLVM, ppLLVM35, ppLLVM36, ppLLVM37, ppLLVM38, llvmPP, llvmVlatest)
 
 import Control.Monad (unless, when)
@@ -103,7 +103,7 @@ disasm opts file = do
           hPrint stderr $ ppParseWarnings warnings
         if optAST opts
           then pPrint m
-          else renderLLVM opts m
+          else renderLLVM opts $ fixupOpaquePtrs m
 
 renderLLVM :: Options -> Module -> IO ()
 renderLLVM opts m = do
