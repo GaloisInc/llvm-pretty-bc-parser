@@ -141,6 +141,9 @@ moduleCodeHash = hasRecordCode 17 <=< fromEntry
 moduleCodeIFunc :: Match Entry Record
 moduleCodeIFunc = hasRecordCode 18 <=< fromEntry
 
+moduleCodeAsmProperty :: Match Entry Record
+moduleCodeAsmProperty = hasRecordCode 19 <=< fromEntry
+
 strtabBlobId :: Match Entry Record
 strtabBlobId = hasRecordCode 1 <=< fromEntry
 

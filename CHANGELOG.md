@@ -2,6 +2,10 @@
 
 ## next
 
+* Support LLVM 23:
+  * Support parsing `MODULE_CODE_ASM_PROPERTY` module codes. (Note that
+    `llvm-pretty-bc-parser` simply ignores the contents of these at the moment.)
+
 ## 0.6.1.0 -- 2026-08-27
 
 * Support LLVM 22:
