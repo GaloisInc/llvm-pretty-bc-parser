@@ -113,8 +113,8 @@
             # nixpkgs_old_llvm.legacyPackages.x86_64-linux.llvmPackages_16.clang
             # nixpkgs_old_llvm.legacyPackages.x86_64-linux.llvmPackages_16.llvm
 
-            nixpkgs.legacyPackages.x86_64-linux.llvmPackages_22.clang
-            nixpkgs.legacyPackages.x86_64-linux.llvmPackages_22.llvm
+            nixpkgs.legacyPackages.x86_64-linux.llvmPackages_23.clang
+            nixpkgs.legacyPackages.x86_64-linux.llvmPackages_23.llvm
 
             # Other packages to add to the development shell:
             pkgs.cabal-install
@@ -191,7 +191,7 @@
               # in separate jobs to avoid this.
               TESTS_10-15
               TESTS_16-21
-              TESTS_22
+              TESTS_22-23
             ];
           TESTS_10-15 = wrap "llvm-pretty-bc-parser-TESTS_10-15"
             (builtins.map
@@ -217,11 +217,12 @@
                 "21"
               ]
             );
-          TESTS_22 = wrap "llvm-pretty-bc-parser-TESTS_22"
+          TESTS_22-23 = wrap "llvm-pretty-bc-parser-TESTS_22-23"
             (builtins.map
               (llvm-pretty-bc-parser-test llvm-pretty-bc-parser)
               [
                 "22"
+                "23"
               ]
             );
           llvm-pretty = mkHaskell "llvm-pretty" llvm-pretty-src {
