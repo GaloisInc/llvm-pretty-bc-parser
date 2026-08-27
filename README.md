@@ -40,6 +40,7 @@ compilers.
 |           | v20     | ✓                             | ✓            | See [issues][llvm20]  |
 |           | v21     | ✓                             | ✓            | See [issues][llvm21]  |
 |           | v22     | ✓                             | ✓            | See [issues][llvm22]  |
+|           | v23     | ✓                             | ✓            | See [issues][llvm23]  |
 
 If you encounter problems with the output of *any* compiler, please file [an
 issue](https://github.com/GaloisInc/llvm-pretty-bc-parser/issues).
@@ -84,3 +85,4 @@ the developers' documentation for more details and a rationale:
 [llvm20]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F20.0
 [llvm21]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F21.0
 [llvm22]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F22.0
+[llvm23]: https://github.com/GaloisInc/llvm-pretty-bc-parser/issues?q=is%3Aopen+is%3Aissue+label%3Allvm%2F23.0
