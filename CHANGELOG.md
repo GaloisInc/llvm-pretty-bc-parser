@@ -9,6 +9,7 @@
     `llvm-pretty-bc-parser` simply ignores the contents of these at the moment.)
   * Support parsing `scope`, `file`, and `line` fields in `DIBasicType` debug
     metadata.
+  * Support parsing `dialect` fields in `DICompileUnit` debug metadata.
 
 ## 0.6.1.0 -- 2026-08-27
 

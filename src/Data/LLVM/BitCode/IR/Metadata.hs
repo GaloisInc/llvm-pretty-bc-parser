@@ -752,7 +752,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoSubroutineType dist)) pm
 
     20 -> label "METADATA_COMPILE_UNIT" $ do
-      assertRecordSizeBetween r 14 23
+      assertRecordSizeBetween r 14 24
       let recordSize = length (recordFields r)
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
@@ -797,6 +797,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         if recordSize <= 22
         then pure 0
         else parseField r 22 numeric
+      dicuDialect <-
+        if recordSize <= 23
+        then pure Nothing
+        else parseDwarfLLVMLangDialect r 23
       let dicu = DICompileUnit {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoCompileUnit dicu)) pm
@@ -1400,6 +1404,15 @@ parseMetadataKindEntry r = do
   kind <- parseField  r 0 numeric
   name <- parseFields r 1 char
   addKind kind (UTF8.decode name)
+
+parseDwarfLLVMLangDialect :: Record -> Int -> Parse (Maybe DwarfLLVMLangDialect)
+parseDwarfLLVMLangDialect r n = do
+  (dialectNum :: Word16) <- parseField r n numeric
+  case dialectNum of
+    0x00 -> pure Nothing
+    0x01 -> pure $ Just DwarfLLVMLangDialectSimt
+    0x02 -> pure $ Just DwarfLLVMLangDialectTile
+    _ -> fail $ "unexpected DICompileUnit dialect: " ++ show dialectNum
 
 ----------------------------------------------------------------------
 
