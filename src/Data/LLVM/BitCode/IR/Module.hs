@@ -268,6 +268,11 @@ parseModuleBlockEntry _ (moduleCodeIFunc -> Just _) = do
   -- MODULE_CODE_IFUNC
   fail "MODULE_CODE_IFUNC"
 
+parseModuleBlockEntry pm (moduleCodeAsmProperty -> Just _) = do
+  -- MODULE_CODE_ASM_PROPERTY
+  -- It should be safe to ignore this for now.
+  return pm
+
 parseModuleBlockEntry pm (uselistBlockId -> Just _) = do
   -- USELIST_BLOCK_ID
   -- XXX ?? fail "USELIST_BLOCK_ID"
