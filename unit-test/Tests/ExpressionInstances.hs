@@ -33,6 +33,7 @@ instance Arbitrary lab => Arbitrary (DINameSpace' lab)                where arbi
 instance Arbitrary lab => Arbitrary (DIBasicType' lab)                where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DISubrangeType' lab)             where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DICompileUnit' lab)              where arbitrary = genericArbitrary uniform
+instance Arbitrary DwarfLLVMLangDialect                               where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DICompositeType' lab)            where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DIDerivedType' lab)              where arbitrary = genericArbitrary uniform
 instance Arbitrary lab => Arbitrary (DIFixedPointType' lab)           where arbitrary = genericArbitrary uniform
