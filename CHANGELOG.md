@@ -1,5 +1,7 @@
 # Revision history for llvm-pretty-bc-parser
 
+## next
+
 ## 0.7.0.0 -- 2026-08-27
 
 * Support LLVM 22:
