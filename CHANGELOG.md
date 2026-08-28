@@ -2,6 +2,8 @@
 
 ## next
 
+## 0.6.1.0 -- 2026-08-27
+
 * Support LLVM 22:
   * Support parsing `sourceLanguageVersion` fields in `DICompileUnit` debug
     metadata.
