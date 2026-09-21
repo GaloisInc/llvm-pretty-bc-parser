@@ -110,11 +110,11 @@
             # you would like available in your development shell (or specify your
             # own version following these as a model):
 
-            # nixpkgs_old_llvm.legacyPackages.x86_64-linux.clang_16
-            # nixpkgs_old_llvm.legacyPackages.x86_64-linux.llvm_16
+            # nixpkgs_old_llvm.legacyPackages.x86_64-linux.llvmPackages_16.clang
+            # nixpkgs_old_llvm.legacyPackages.x86_64-linux.llvmPackages_16.llvm
 
-            nixpkgs.legacyPackages.x86_64-linux.clang_22
-            nixpkgs.legacyPackages.x86_64-linux.llvm_22
+            nixpkgs.legacyPackages.x86_64-linux.llvmPackages_22.clang
+            nixpkgs.legacyPackages.x86_64-linux.llvmPackages_22.llvm
 
             # Other packages to add to the development shell:
             pkgs.cabal-install
@@ -135,8 +135,9 @@
           # Runs the tests that were previously 'built', using the specified
           # version of LLVM and Clang.
           llvm-pretty-bc-parser-test = built: llvmver:
-            let llvm = levers.get_pkg_at_ver system nixpkg_list "llvm_" llvmver;
-                clang = levers.get_pkg_at_ver system nixpkg_list "clang_" llvmver;
+            let llvmPkgs = levers.get_version_of_pkg system nixpkg_list "llvmPackages_${llvmver}";
+                llvm = llvmPkgs.llvm;
+                clang = llvmPkgs.clang;
                 nixpkg_list = [
                   nixpkgs_mid_llvm # llvm 12-19
                   nixpkgs_old_llvm # llvm 5-16
