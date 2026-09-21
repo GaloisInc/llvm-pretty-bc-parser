@@ -611,7 +611,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       return $! updateMetadataTable (addDebugInfo isDistinct diEnum) pm
 
     15 -> label "METADATA_BASIC_TYPE" $ do
-      assertRecordSizeBetween r 6 9
+      assertRecordSizeBetween r 6 12
       ctx        <- getContext
       flags      <- parseField r 0 numeric
       let isDistinct     = testBit (flags :: Int) 0
@@ -632,6 +632,18 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         if length (recordFields r) <= 8
         then pure 0
         else parseField r 8 numeric
+      dibtFile <-
+        if length (recordFields r) <= 9
+        then pure Nothing
+        else ron 9
+      dibtLine <-
+        if length (recordFields r) <= 10
+        then pure 0
+        else parseField r 10 numeric
+      dibtScope <-
+        if length (recordFields r) <= 11
+        then pure Nothing
+        else ron 11
       let dibt = DIBasicType {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoBasicType dibt)) pm
@@ -740,7 +752,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         (addDebugInfo isDistinct (DebugInfoSubroutineType dist)) pm
 
     20 -> label "METADATA_COMPILE_UNIT" $ do
-      assertRecordSizeBetween r 14 23
+      assertRecordSizeBetween r 14 24
       let recordSize = length (recordFields r)
       ctx        <- getContext
       isDistinct <- parseField r 0 nonzero
@@ -785,6 +797,10 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
         if recordSize <= 22
         then pure 0
         else parseField r 22 numeric
+      dicuDialect <-
+        if recordSize <= 23
+        then pure Nothing
+        else parseDwarfLLVMLangDialect r 23
       let dicu = DICompileUnit {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoCompileUnit dicu)) pm
@@ -1388,6 +1404,15 @@ parseMetadataKindEntry r = do
   kind <- parseField  r 0 numeric
   name <- parseFields r 1 char
   addKind kind (UTF8.decode name)
+
+parseDwarfLLVMLangDialect :: Record -> Int -> Parse (Maybe DwarfLLVMLangDialect)
+parseDwarfLLVMLangDialect r n = do
+  (dialectNum :: Word16) <- parseField r n numeric
+  case dialectNum of
+    0x00 -> pure Nothing
+    0x01 -> pure $ Just DwarfLLVMLangDialectSimt
+    0x02 -> pure $ Just DwarfLLVMLangDialectTile
+    _ -> fail $ "unexpected DICompileUnit dialect: " ++ show dialectNum
 
 ----------------------------------------------------------------------
 
