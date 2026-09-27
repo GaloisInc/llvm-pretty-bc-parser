@@ -262,7 +262,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
                 -- `0`, but `true` may be encoded as `1` or `-1`.
                 Integer 1 <- elimPrimType ty
                 return (ValBool (n /= 0))
-    return (getTy, Typed ty val:cs)
+    return (getTy, asSignedTypedVal (Typed ty val):cs)
 
   -- [n x value]
   5 -> label "CST_CODE_WIDE_INTEGER" $ do
@@ -453,10 +453,7 @@ parseConstantEntry t (getTy,cs) (fromEntry -> Just r) =
                   | otherwise  = ValVector (PrimType elemTy) elems
           return (getTy, Typed ty val : cs)
     case elemTy of
-      Integer 8          -> build ValInteger
-      Integer 16         -> build ValInteger
-      Integer 32         -> build ValInteger
-      Integer 64         -> build ValInteger
+      Integer n          -> build (ValInteger . asSignedInt n)
       FloatType Float    -> build (ValFloat . castFloat)
       FloatType Double   -> build (ValDouble . castDouble)
       x                  -> Assert.unknownEntity "element type" x
