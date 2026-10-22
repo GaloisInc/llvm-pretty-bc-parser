@@ -1087,7 +1087,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       fail "not yet implemented"
 
     31 -> label "METADATA_IMPORTED_ENTITY" $ do
-      assertRecordSizeIn r [6, 7]
+      assertRecordSizeIn r [6, 7, 8]
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
       diieTag <- parseField r 1 numeric
@@ -1098,6 +1098,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
                   else pure Nothing
       diieLine <- parseField r 4 numeric
       diieName <- mdStringOrNull cxt pm <$> parseMdIdx r 5
+      diieElements <- if length (recordFields r) >= 8
+                      then ron 7
+                      else pure Nothing
       let diie = DIImportedEntity {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoImportedEntity diie)) pm
