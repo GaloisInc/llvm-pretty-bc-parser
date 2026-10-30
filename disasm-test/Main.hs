@@ -816,7 +816,9 @@ compileToBitCode :: FilePath -> FilePath -> TestM FilePath
 compileToBitCode pfx file = do
   tmp <- liftIO getTemporaryDirectory
   Clang comp' <- gets clang
-  let comp = if ".cc" `isSuffixOf` file then comp' <> "++" else comp'
+  let comp = if ".cc" `isSuffixOf` file
+             then let (a,b) = break (== '-') comp' in a <> "++" <> b
+             else comp'
   X.bracketOnError
     (liftIO $ openBinaryTempFile tmp (pfx <.> "bc"))
     (rmFile . fst)

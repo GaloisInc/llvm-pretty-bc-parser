@@ -960,9 +960,11 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       let nameIdx = bool 3 2 isNew
 
       cxt        <- getContext
-      isDistinct <- parseField r 0 nonzero
+      field0     <- parseField r 0 unsigned
+      let isDistinct = testBit field0 0
+          dinsExportSymbols = testBit field0 1
       dinsName <- mdStringOrNull cxt pm <$> parseMdIdx r nameIdx
-      dinsScope <- mdForwardRef cxt mt <$> parseMdIdx r 1
+      dinsScope <- mdForwardRefOrNull cxt mt <$> parseMdIdx r 1
       dinsFile <- if isNew
                   then return (ValMdString "")
                   else mdForwardRef cxt mt <$> parseMdIdx r 2
@@ -1085,7 +1087,7 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
       fail "not yet implemented"
 
     31 -> label "METADATA_IMPORTED_ENTITY" $ do
-      assertRecordSizeIn r [6, 7]
+      assertRecordSizeIn r [6, 7, 8]
       cxt        <- getContext
       isDistinct <- parseField r 0 nonzero
       diieTag <- parseField r 1 numeric
@@ -1096,6 +1098,9 @@ parseMetadataEntry vt mt pm (fromEntry -> Just r) =
                   else pure Nothing
       diieLine <- parseField r 4 numeric
       diieName <- mdStringOrNull cxt pm <$> parseMdIdx r 5
+      diieElements <- if length (recordFields r) >= 8
+                      then ron 7
+                      else pure Nothing
       let diie = DIImportedEntity {..}
       return $! updateMetadataTable
         (addDebugInfo isDistinct (DebugInfoImportedEntity diie)) pm

@@ -10,6 +10,9 @@
   * Support parsing `scope`, `file`, and `line` fields in `DIBasicType` debug
     metadata.
   * Support parsing `dialect` fields in `DICompileUnit` debug metadata.
+* Support `elements` field added to `DIImportedEntity` in LLVM 14 (record size 8).
+* Support `exportSymbols` field added to `DINameSpace` and handle
+  backwards-incompatible `scope` change to a `Maybe` field.
 
 ## 0.6.1.0 -- 2026-08-27
 
