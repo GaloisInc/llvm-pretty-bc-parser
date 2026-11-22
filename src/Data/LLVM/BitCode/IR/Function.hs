@@ -603,7 +603,22 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
                (1 `shiftL` 6) .|. -- explicit type
                (1 `shiftL` 7)     -- swift error
         aval = (1 `shiftL` (fromIntegral (align .&. complement mask))) `shiftR` 1
+        -- In the LLVM project, commit bdb49102 on Apr 28 2015 changed to
+        -- "[opaque pointer type] Encode the allocated type of an alloca rather
+        -- than its pointer result type". Essentially, before this time, the type
+        -- from the alloca include the Pointer aspect, and after this time, this
+        -- explicitType bit will always be set, indicating the alloca type is the
+        -- type pointed to directly.
         explicitType = testBit align 6
+        -- Now consider the special case of void pointers: the alloca is
+        -- frequently used to create storage space for the arguments passed to a
+        -- function, and if the argument to a function is itself a pointer, then
+        -- the alloca is allocating a pointer, and returning a pointer to that
+        -- allocation for a pointer.  In pre-void-pointer semantics, this was
+        -- fine, but now that LLVM has switch to void pointers, the argument type
+        -- will be PtrOpaque, and thus this can result in a @PtrTo PtrOpaque@,
+        -- which would get pretty-printed as the (invalid) @ptr*@; use
+        -- 'fixupOpaquePtrs' to ensure this does not occur.
         ity = if explicitType then PtrTo instty else instty
 
     ret <- if explicitType
