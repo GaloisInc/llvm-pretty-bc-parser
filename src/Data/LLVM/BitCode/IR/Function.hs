@@ -628,7 +628,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     aval    <- parseField r ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
-    result ret (Load ret tv Nothing align) d
+    volatile <- parseField r (ix' + 1) boolean
+    result ret (Load volatile ret tv Nothing align) d
 
   -- 21 is unused
   -- 22 is unused
@@ -650,7 +651,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     aval     <- field (ix+1) numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
-    effect (Store val ptr Nothing align) d
+    volatile <- field (ix+2) boolean
+    effect (Store volatile val ptr Nothing align) d
 
   -- 25 is unused
 
@@ -810,7 +812,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     when (ordval /= Nothing && align == Nothing)
          (fail "Invalid record")
 
-    result ret (Load ret tv ordval align) d
+    volatile <- parseField r (ix' + 1) boolean
+
+    result ret (Load volatile ret tv ordval align) d
 
 
   -- [ptrty, ptr, val, align, vol, ordering, synchscope]
@@ -829,7 +833,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     aval      <- field ix' numeric
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
-    effect (Store val ptr Nothing align) d
+    volatile  <- field (ix' + 1) boolean
+    effect (Store volatile val ptr Nothing align) d
 
   -- LLVM 6: [ptrty, ptr, val, align, vol, ordering, ssid]
   45 -> label "FUNC_CODE_INST_STOREATOMIC" $ do
@@ -850,7 +855,9 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     let align | aval > 0  = Just (bit aval `shiftR` 1)
               | otherwise = Nothing
 
-    effect (Store val ptr ordering align) d
+    volatile <- parseField r (ix' + 1) boolean
+
+    effect (Store volatile val ptr ordering align) d
 
   -- LLVM 6: [ptrty, ptr, cmp, new, vol, successordering, ssid,
   --          failureordering?, isweak?]
