@@ -13,6 +13,11 @@
 * Support `elements` field added to `DIImportedEntity` in LLVM 14 (record size 8).
 * Support `exportSymbols` field added to `DINameSpace` and handle
   backwards-incompatible `scope` change to a `Maybe` field.
+* Record whether `load` and `store` instructions are volatile, in the new
+  field of `llvm-pretty`'s `Load` and `Store`.  The flag was read past before,
+  so that disassembled output lost the `volatile` keyword.
+* Support parsing `FUNC_CODE_INST_STOREATOMIC_OLD`, the encoding of atomic
+  `store` instructions used by LLVM 3.6 and earlier.
 
 ## 0.6.1.0 -- 2026-08-27
 
