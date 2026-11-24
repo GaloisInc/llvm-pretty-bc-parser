@@ -642,17 +642,8 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
     resTy <- getType     =<< field 2 numeric
     result resTy (VaArg op resTy) d
 
-  -- [ptrty,ptr,val,align,vol]
-  24 -> label "FUNC_CODE_INST_STORE_OLD" $ do
-    let field = parseField r
-    (ptr,ix) <- getValueTypePair t r 0
-    ty       <- Assert.elimPtrTo "" (typedType ptr)
-    val      <- getValue t ty =<< field ix numeric
-    aval     <- field (ix+1) numeric
-    let align | aval > 0  = Just (bit aval `shiftR` 1)
-              | otherwise = Nothing
-    volatile <- field (ix+2) boolean
-    effect (Store volatile val ptr Nothing align) d
+  -- [ptrty, ptr, val, align, vol]
+  24 -> label "FUNC_CODE_INST_STORE_OLD" (parseStore True t r d)
 
   -- 25 is unused
 
@@ -818,46 +809,15 @@ parseFunctionBlockEntry _ t d (fromEntry -> Just r) =
 
 
   -- [ptrty, ptr, val, align, vol, ordering, synchscope]
-  42 -> label "FUNC_CODE_INST_STOREATOMIC_OLD" $ do
-    notImplemented
+  42 -> label "FUNC_CODE_INST_STOREATOMIC_OLD" (parseStoreAtomic True t r d)
 
   43 -> label "FUNC_CODE_INST_GEP" (parseGEP t Nothing r d)
 
-  44 -> label "FUNC_CODE_INST_STORE" $ do
-    let field = parseField r
-    (ptr,ix)  <- getValueTypePair t r 0
-    (val,ix') <- getValueTypePair t r ix
+  -- [ptrty, ptr, valty, val, align, vol]
+  44 -> label "FUNC_CODE_INST_STORE" (parseStore False t r d)
 
-    Assert.recordSizeIn r [ix' + 2]
-
-    aval      <- field ix' numeric
-    let align | aval > 0  = Just (bit aval `shiftR` 1)
-              | otherwise = Nothing
-    volatile  <- field (ix' + 1) boolean
-    effect (Store volatile val ptr Nothing align) d
-
-  -- LLVM 6: [ptrty, ptr, val, align, vol, ordering, ssid]
-  45 -> label "FUNC_CODE_INST_STOREATOMIC" $ do
-    (ptr, ix)  <- getValueTypePair t r 0
-    (val, ix') <- getValueTypePair t r ix
-
-    Assert.recordSizeIn r [ix' + 4]
-
-    -- TODO: There's no spot in the AST for this ordering. Should there be?
-    ordering <- getDecodedOrdering =<< parseField r (ix' + 2) unsigned
-    when (ordering `elem` Nothing:map Just [Acquire, AcqRel]) $
-      fail $ "Invalid atomic ordering: " ++ show ordering
-
-    -- TODO: parse sync scope (ssid)
-
-    -- copy-pasted from LOADATOMIC
-    aval    <- parseField r ix' numeric
-    let align | aval > 0  = Just (bit aval `shiftR` 1)
-              | otherwise = Nothing
-
-    volatile <- parseField r (ix' + 1) boolean
-
-    effect (Store volatile val ptr ordering align) d
+  -- LLVM 6: [ptrty, ptr, valty, val, align, vol, ordering, ssid]
+  45 -> label "FUNC_CODE_INST_STOREATOMIC" (parseStoreAtomic False t r d)
 
   -- LLVM 6: [ptrty, ptr, cmp, new, vol, successordering, ssid,
   --          failureordering?, isweak?]
@@ -1242,6 +1202,85 @@ parseGEP t mbInBound r d = do
   args    <- label "parseGepArgs" (parseGepArgs t r' ix)
   rty     <- label "interpGep"    (interpGep ty tv args)
   result rty (GEP ib ty tv args) d
+
+-- Parse a non-atomic @store@ instruction, which can be represented by one of
+-- the following function codes:
+--
+-- * FUNC_CODE_INST_STORE_OLD, which is used by LLVM 3.6 and earlier.
+--   [ptrty, ptr,        val, align, vol]
+--
+-- * FUNC_CODE_INST_STORE, which was introduced in LLVM 3.7.
+--   [ptrty, ptr, valty, val, align, vol]
+--
+-- The only difference between the two is that FUNC_CODE_INST_STORE has a
+-- @valty@ field, whereas FUNC_CODE_INST_STORE_OLD does not (it reuses the type
+-- that @ptrty@ points to as the @valty@). See 'parseStoreOperands'.
+parseStore :: Bool -> ValueTable -> Record -> PartialDefine -> Parse PartialDefine
+parseStore old t r d = do
+  (ptr, val, ix) <- parseStoreOperands old t r
+
+  Assert.recordSizeIn r [ix + 2]
+
+  aval     <- parseField r ix numeric
+  let align | aval > 0  = Just (bit aval `shiftR` 1)
+            | otherwise = Nothing
+  volatile <- parseField r (ix + 1) boolean
+
+  effect (Store volatile val ptr Nothing align) d
+
+-- Parse an atomic @store@ instruction, which can be represented by one of the
+-- following function codes:
+--
+-- * FUNC_CODE_INST_STOREATOMIC_OLD, which is used by LLVM 3.6 and earlier.
+--   [ptrty, ptr,        val, align, vol, ordering, ssid]
+--
+-- * FUNC_CODE_INST_STOREATOMIC, which was introduced in LLVM 3.7.
+--   [ptrty, ptr, valty, val, align, vol, ordering, ssid]
+--
+-- As with 'parseStore', the only difference between the two is that
+-- FUNC_CODE_INST_STOREATOMIC has a @valty@ field, whereas
+-- FUNC_CODE_INST_STOREATOMIC_OLD does not.
+parseStoreAtomic :: Bool -> ValueTable -> Record -> PartialDefine -> Parse PartialDefine
+parseStoreAtomic old t r d = do
+  (ptr, val, ix) <- parseStoreOperands old t r
+
+  Assert.recordSizeIn r [ix + 4]
+
+  aval     <- parseField r ix numeric
+  let align | aval > 0  = Just (bit aval `shiftR` 1)
+            | otherwise = Nothing
+  volatile <- parseField r (ix + 1) boolean
+
+  ordering <- getDecodedOrdering =<< parseField r (ix + 2) unsigned
+  when (ordering `elem` Nothing:map Just [Acquire, AcqRel]) $
+    fail $ "Invalid atomic ordering: " ++ show ordering
+
+  -- TODO: parse sync scope (ssid)
+
+  effect (Store volatile val ptr ordering align) d
+
+-- Parse the pointer and value operands that begin every @store@ record, atomic
+-- or not. Returns the pointer, the value to store, and the index of the field
+-- that follows them (the alignment).
+--
+-- If the 'Bool' is 'True', this parses the layout used by the @_OLD@ function
+-- codes, in which the value has no type of its own and is instead given the
+-- type that the pointer points to.
+parseStoreOperands ::
+  Bool -> ValueTable -> Record -> Parse (Typed PValue, Typed PValue, Int)
+parseStoreOperands old t r = do
+  (ptr, ix0) <- getValueTypePair t r 0
+
+  (val, ix1) <-
+    if old
+      then -- FUNC_CODE_INST_STORE_OLD, FUNC_CODE_INST_STOREATOMIC_OLD
+           do ty  <- Assert.elimPtrTo "store instruction not headed by pointer" (typedType ptr)
+              val <- getValue t ty =<< parseField r ix0 numeric
+              pure (val, ix0 + 1)
+      else -- FUNC_CODE_INST_STORE, FUNC_CODE_INST_STOREATOMIC
+           getValueTypePair t r ix0
+
+  pure (ptr, val, ix1)
 
 -- Parse an @atomicrmw@ instruction, which can be represented by one of the
 -- following function codes:
